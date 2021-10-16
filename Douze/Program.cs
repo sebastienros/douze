@@ -19,6 +19,7 @@ Console.WriteLine($"Parsed options in {stopwatch.ElapsedMilliseconds} ms");
 
 options.ContentMappings[".md"] = new MarkdownFileProcessor();
 options.ContentMappings[".html"] = new HtmlFileProcessor();
+options.ContentMappings[".liquid"] = new HtmlFileProcessor();
 options.DataMappings[".yml"] = new YamlDataFileProcessor();
 options.DataMappings[".json"] = new JsonDataFileProcessor();
 

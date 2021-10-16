@@ -18,43 +18,67 @@ namespace Douze.FileProcessors
         public abstract string Format { get; }
 
         public async IAsyncEnumerable<IResult> ProcessFileAsync(string path, Options options, JsonObject data)
-        {
-            var localFilePath = Path.GetFullPath(path).Substring(Path.GetFullPath(options.SourcePath).Length);
+        {           
+            string parts = await FrontMatterHelper.MergeFrontMatterData(options, data, path);
+
+            // Add page information
+            var page = new JsonObject();
+            data["page"] = page;
+            page.Add("date", new FileInfo(Path.GetFullPath(path)).CreationTime);
+
+            var template = options.FluidParser.Parse(parts);
+            var context = new TemplateContext(data, options.TemplateOptions);
+
+            // Copy the data with locally created variables for captures
+            var captures = new Dictionary<string, FluidValue>();
+
+            context.Captured = async (identifier, result) =>
+            {
+                result = await ProcessContentAsync(result);
+                captures.Add(identifier, new StringValue(result, false));
+                return result;
+            };
+
+            var source = await template.RenderAsync(context, HtmlEncoder.Default);
+            string content = await ProcessContentAsync(source);
+
+
+            // Apply layout
+
+            var html = await LayoutHelper.ProcessLayoutAsync(options, content, data, captures);
+
+            // Compute destination file path, e.g. blog/post1/index.html
+
+            string localFilePath = path.Substring(Path.GetFullPath(options.SourcePath).Length);
+            string extension = "html";
+
+            if (data.TryGetPropertyValue("permalink", out var permalink) && permalink != null && !String.IsNullOrWhiteSpace(permalink.ToString()))
+            {
+                var permalinkTemplate = options.FluidParser.Parse(permalink.ToString());
+                localFilePath = await permalinkTemplate.RenderAsync(context);
+
+                var permalinkExtensions = Path.GetExtension(localFilePath);
+                
+                if (permalinkExtensions != null)
+                {
+                    extension = permalinkExtensions;
+                }
+            }
 
             // If the processed file is named "index.*" then we don't need to create a folder, otherwise the name
             // of the file is used as a folder such that the url contains it.
             // blog/post1.html -> blog/post1/index.html
 
-            var destinationFilePath = Path.GetFileNameWithoutExtension(localFilePath) == "index"
-                ? Path.Combine(localFilePath)
-                : Path.Combine(Path.GetDirectoryName(localFilePath) ?? "", Path.GetFileNameWithoutExtension(localFilePath), "index.html")
-                ;
-
-            destinationFilePath = Path.ChangeExtension(destinationFilePath, "html");
-
-            var filePath = Path.GetFullPath(path);
-
-            string parts = await FrontMatterHelper.MergeFrontMatterData(options, data, filePath);
-
-            var template = options.FluidParser.Parse(parts);
-            var context = new TemplateContext(data, options.TemplateOptions);
-            var source = await template.RenderAsync(context, HtmlEncoder.Default);
-            string content = await ProcessContent(source);
-
-            // Copy the data with locally created variables for captures
-
-            var captures = new Dictionary<string, FluidValue>();
-
-            foreach (var name in context.ValueNames)
+            if (Path.GetFileNameWithoutExtension(localFilePath) != "index")
             {
-                captures.Add(name, context.GetValue(name));
+                localFilePath = Path.Combine(Path.GetDirectoryName(localFilePath) ?? "", Path.GetFileNameWithoutExtension(localFilePath), "index.html");
             }
 
-            var html = await LayoutHelper.ProcessLayoutAsync(options, content, data, captures);
+            localFilePath = Path.ChangeExtension(localFilePath, extension);
 
-            yield return new TextResult(destinationFilePath, $"Generating {Format} file .{localFilePath}", html, "text/html");
+            yield return new TextResult(localFilePath, $"Generating {Format} file {localFilePath}", html, "text/html");
         }
 
-        public abstract Task<string> ProcessContent(string content);
+        public abstract ValueTask<string> ProcessContentAsync(string content);
     }
 }

@@ -4,9 +4,9 @@
     {
         public override string Format => "HTML";
 
-        public override Task<string> ProcessContent(string content)
+        public override ValueTask<string> ProcessContentAsync(string content)
         {
-            return Task.FromResult(content);
+            return ValueTask.FromResult(content);
         }
     }
 }

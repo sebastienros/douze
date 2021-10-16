@@ -9,8 +9,6 @@ namespace Douze
     {
         public static async Task<string> ProcessLayoutAsync(Options options, string content, JsonObject data, Dictionary<string, FluidValue> captures)
         {
-            // TODO: should reused processors to parse layouts (md, html, ...), hence processors should return the content of the file and not create them
-
             if (!data.TryGetPropertyValue("layout", out var layoutValue) || layoutValue == null)
             {
                 // No layout to apply
@@ -19,10 +17,15 @@ namespace Douze
 
             var layout = layoutValue.ToString();
 
+            if (string.IsNullOrWhiteSpace(layout))
+            {
+                return content;
+            }
+
             var layoutFilePath = Path.GetFullPath(Path.Combine(options.SourcePath, options.IncludesFolder, layout));
 
             using var reader = File.OpenText(layoutFilePath);
-            var result = await FrontMatterHelper.ParseFrontMatterAsync(reader);
+            var result = await FrontMatterHelper.ParseFrontMatterAsync(reader, options);
 
             var template = options.FluidParser.Parse(result.Content);
 

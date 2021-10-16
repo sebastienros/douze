@@ -17,7 +17,7 @@ namespace Douze.FileProcessors
 
         public override string Format => "Markdown";
 
-        public override async Task<string> ProcessContent(string markdown)
+        public override async ValueTask<string> ProcessContentAsync(string markdown)
         {
             var document = Markdown.Parse(markdown, _markdownPipeline);
             string content = "";

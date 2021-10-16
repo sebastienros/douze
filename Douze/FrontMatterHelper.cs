@@ -1,5 +1,4 @@
 ﻿using Fluid;
-using Fluid.Values;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -7,19 +6,7 @@ namespace Douze
 {
     internal sealed class FrontMatterHelper
     {
-        static readonly TemplateOptions _options = new();
-
-        static FrontMatterHelper()
-        {
-            // When a property of a JObject value is accessed, try to look into its properties
-            _options.MemberAccessStrategy.Register<JsonObject, object?>((source, name) => source[name]);
-
-            // Convert JToken to FluidValue
-            _options.ValueConverters.Add(x => x is JsonObject o ? new ObjectValue(o) : null);
-            _options.ValueConverters.Add(x => x is JsonValue v ? v.GetValue<object>() : null);
-        }
-
-        public static async Task<(string FrontMatter, string Content)> ParseFrontMatterAsync(TextReader reader)
+        public static async Task<(string FrontMatter, string Content)> ParseFrontMatterAsync(TextReader reader, Options options)
         {
             var contentBuilder = new StringBuilder();
             var frontMatterBuilder = new StringBuilder();
@@ -74,13 +61,10 @@ namespace Douze
         {
             using (var reader = File.OpenText(filePath))
             {
-                var yaml = await FrontMatterHelper.ParseFrontMatterAsync(reader);
+                var yaml = await FrontMatterHelper.ParseFrontMatterAsync(reader, options);
 
                 if (!String.IsNullOrWhiteSpace(yaml.FrontMatter))
                 {
-                    // Convert from Liquid
-                    yaml.FrontMatter = await options.FluidParser.Parse(yaml.FrontMatter).RenderAsync(new TemplateContext(data, _options));
-
                     YamlHelper.MergeData(data, new StringReader(yaml.FrontMatter));
                 }
 
