@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>douze</AssemblyName>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Markdig" Version="0.26.0" />
+    <PackageReference Include="Fluid.Core" Version="2.1.1" />
+    <PackageReference Include="YamlDotNet" Version="11.2.1" />
+    <PackageReference Include="SharpYaml" Version="1.8.0" />
+  </ItemGroup>
+</Project>

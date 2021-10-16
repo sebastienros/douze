@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Douze": {
+      "commandName": "Project",
+      "commandLineArgs": "-s ..\\Sample\\ -o c:\\temp\\_site",
+      "workingDirectory": "C:\\Users\\sebros.REDMOND\\Documents\\Projects\\Douze\\Douze"
+    }
+  }
+}
