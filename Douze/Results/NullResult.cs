@@ -1,6 +1,6 @@
 ﻿namespace Douze.Results
 {
-    internal class NullResult : IResult
+    internal sealed class NullResult : IResult
     {
         public NullResult(string description)
         {

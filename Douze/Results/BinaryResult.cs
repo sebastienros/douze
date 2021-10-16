@@ -1,6 +1,6 @@
 ﻿namespace Douze.Results
 {
-    internal class BinaryResult : IResult
+    internal sealed class BinaryResult : IResult
     {
         public BinaryResult(string filePath, string description, byte[] content, string contentType)
         {

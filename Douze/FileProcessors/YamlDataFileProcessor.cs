@@ -1,9 +1,9 @@
 ﻿using Douze.Results;
 using System.Text.Json.Nodes;
 
-namespace Douze
+namespace Douze.FileProcessors
 {
-    internal class YamlDataFileProcessor : IFileProcessor
+    internal sealed class YamlDataFileProcessor : IFileProcessor
     {
         public async IAsyncEnumerable<IResult> ProcessFileAsync(string path, Options options, JsonObject data)
         {

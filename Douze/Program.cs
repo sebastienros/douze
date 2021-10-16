@@ -1,6 +1,7 @@
 ﻿
 
 using Douze;
+using Douze.FileProcessors;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
@@ -17,6 +18,7 @@ Console.WriteLine($"Parsed options in {stopwatch.ElapsedMilliseconds} ms");
 // Configure files extensions mappings
 
 options.ContentMappings[".md"] = new MarkdownFileProcessor();
+options.ContentMappings[".html"] = new HtmlFileProcessor();
 options.DataMappings[".yml"] = new YamlDataFileProcessor();
 options.DataMappings[".json"] = new JsonDataFileProcessor();
 

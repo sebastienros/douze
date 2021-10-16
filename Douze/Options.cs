@@ -1,8 +1,9 @@
-﻿using Fluid;
+﻿using Douze.FileProcessors;
+using Fluid;
 
 namespace Douze
 {
-    internal partial class Options
+    internal sealed partial class Options
     {
         public string SourcePath { get; set; } = ".";
         public string OutputPath { get; set; } = "_site";

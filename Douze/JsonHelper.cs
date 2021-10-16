@@ -2,7 +2,7 @@
 
 namespace Douze
 {
-    internal class JsonHelper
+    internal sealed class JsonHelper
     {
         public static void Merge(JsonObject target, JsonObject node)
         {

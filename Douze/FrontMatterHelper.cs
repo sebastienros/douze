@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace Douze
 {
-    internal class FrontMatterHelper
+    internal sealed class FrontMatterHelper
     {
         static readonly TemplateOptions _options = new();
 

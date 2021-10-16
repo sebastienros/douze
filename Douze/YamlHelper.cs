@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Douze
 {
-    internal class YamlHelper
+    internal sealed class YamlHelper
     {
         public static JsonObject Parse(string content)
         {

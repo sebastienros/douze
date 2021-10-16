@@ -3,7 +3,7 @@ using Fluid.Ast;
 
 namespace Douze.Liquid
 {
-    internal class LiquidParser : FluidParser
+    internal sealed class LiquidParser : FluidParser
     {
         public static string SectionsIndex = "$$sections";
 

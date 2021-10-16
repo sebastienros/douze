@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace Douze
 {
-    internal sealed partial class Options
+    internal partial class Options
     {
         public TemplateOptions TemplateOptions { get; } = new TemplateOptions();
 

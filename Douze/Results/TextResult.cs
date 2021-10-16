@@ -1,6 +1,6 @@
 ﻿namespace Douze.Results
 {
-    internal class TextResult : IResult
+    internal sealed class TextResult : IResult
     {
         public TextResult(string filePath, string description, string content, string contentType)
         {

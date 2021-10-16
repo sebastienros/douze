@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace Douze
 {
-    internal class LayoutHelper
+    internal sealed class LayoutHelper
     {
         public static async Task<string> ProcessLayoutAsync(Options options, string content, JsonObject data, Dictionary<string, FluidValue> captures)
         {
