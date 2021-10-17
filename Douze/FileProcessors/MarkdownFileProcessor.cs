@@ -7,7 +7,7 @@ namespace Douze.FileProcessors;
 internal sealed class MarkdownFileProcessor : TemplateFileProcessor
 {
     // Configure markdown
-    readonly MarkdownPipeline _markdownPipeline;
+    private readonly MarkdownPipeline _markdownPipeline;
 
     public MarkdownFileProcessor()
     {

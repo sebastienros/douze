@@ -86,7 +86,7 @@
 //                    var scalarNode = (YamlScalarNode)node;
 
 //                    return scalarNode.Value;
-                
+
 //                case YamlNodeType.Sequence:
 //                    var sequenceNode = (YamlSequenceNode)node;
 
@@ -105,3 +105,4 @@
 //        }
 //    }
 //}
+

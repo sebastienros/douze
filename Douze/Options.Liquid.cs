@@ -7,7 +7,7 @@ namespace Douze;
 
 internal partial class Options
 {
-    public TemplateOptions TemplateOptions { get; } = new TemplateOptions();
+    public TemplateOptions TemplateOptions { get; } = new();
 
     public Options()
     {

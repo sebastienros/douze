@@ -18,7 +18,7 @@ internal sealed class TextResult : IResult
     public async Task SaveFileAsync(Stream outputStream)
     {
         ArgumentNullException.ThrowIfNull(nameof(outputStream));
-            
+
         using (var sw = new StreamWriter(outputStream))
         {
             await sw.WriteAsync(Content);
