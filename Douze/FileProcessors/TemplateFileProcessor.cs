@@ -19,7 +19,7 @@ internal abstract class TemplateFileProcessor : IFileProcessor
 
     public async IAsyncEnumerable<IResult> ProcessFileAsync(string path, Options options, JsonObject data)
     {
-        string parts = await FrontMatterHelper.MergeFrontMatterData(options, data, path);
+        var parts = await FrontMatterHelper.MergeFrontMatterData(options, data, path);
 
         // Add page information
         var page = new JsonObject();
@@ -40,7 +40,7 @@ internal abstract class TemplateFileProcessor : IFileProcessor
         };
 
         var source = await template.RenderAsync(context, HtmlEncoder.Default);
-        string content = await ProcessContentAsync(source);
+        var content = await ProcessContentAsync(source);
 
 
         // Apply layout
@@ -49,8 +49,8 @@ internal abstract class TemplateFileProcessor : IFileProcessor
 
         // Compute destination file path, e.g. blog/post1/index.html
 
-        string localFilePath = path.Substring(Path.GetFullPath(options.SourcePath).Length);
-        string extension = "html";
+        var localFilePath = path.Substring(Path.GetFullPath(options.SourcePath).Length);
+        var extension = "html";
 
         if (data.TryGetPropertyValue("permalink", out var permalink) && permalink != null && !string.IsNullOrWhiteSpace(permalink.ToString()))
         {

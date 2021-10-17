@@ -60,6 +60,7 @@ internal static class SlugFilter
                 {
                     j++;
                 }
+
                 if (j > 0)
                 {
                     slug = slug.Remove(i + 1, j);

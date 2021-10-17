@@ -11,12 +11,12 @@ internal interface IResult
     /// Gets the relative path of the file.
     /// </summary>
     string? FilePath { get; }
-        
+
     /// <summary>
     /// Gets the content-type of the file.
     /// </summary>
     string? ContentType { get; }
-        
+
     /// <summary>
     /// Saves the file.
     /// </summary>

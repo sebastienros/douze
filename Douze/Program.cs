@@ -76,6 +76,7 @@ async Task<int> BuildSiteAsync(Options options)
                         await using var stream = File.Create(filePath);
                         await result.SaveFileAsync(stream);
                     }
+
                     sw.Stop();
 
                     Console.WriteLine($"{result.Description} in {sw.ElapsedMilliseconds} ms");
@@ -139,6 +140,7 @@ async Task<int> BuildSiteAsync(Options options)
                     await using var stream = File.Create(filePath);
                     await result.SaveFileAsync(stream);
                 }
+
                 Console.WriteLine($"{result.Description} in {sw.ElapsedMilliseconds} ms");
             }
         }
