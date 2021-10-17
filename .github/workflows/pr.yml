@@ -1,0 +1,49 @@
+name: PR Check
+
+on:
+  
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+    - 'doc/**'
+    - '*.md'
+
+jobs:
+
+  windows:
+    runs-on: windows-latest
+    env:
+        DOTNET_NOLOGO: true
+        DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v2
+
+    - name: Setup dotnet 6.0
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 6.0.x
+        include-prerelease: true
+
+    - name: Build
+      run: dotnet build --configuration Release
+
+  linux:
+    runs-on: ubuntu-latest
+    env:
+        DOTNET_NOLOGO: true
+        DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v2
+
+    - name: Setup dotnet 6.0
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 6.0.x
+        include-prerelease: true
+
+    - name: Build
+      run: dotnet build --configuration Release
