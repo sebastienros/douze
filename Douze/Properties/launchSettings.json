@@ -1,8 +1,8 @@
 {
-  "profiles": {
-    "Douze": {
-      "commandName": "Project",
-      "commandLineArgs": "-s ..\\..\\..\\..\\Sample\\ -o c:\\temp\\_site",
+    "profiles": {
+        "Douze": {
+            "commandName": "Project",
+            "commandLineArgs": "-s ..\\..\\..\\..\\Sample\\ -o c:\\temp\\_site",
+        }
     }
-  }
 }
