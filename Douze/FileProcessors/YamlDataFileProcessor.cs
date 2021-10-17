@@ -1,20 +1,19 @@
 ﻿using Douze.Results;
 using System.Text.Json.Nodes;
 
-namespace Douze.FileProcessors
+namespace Douze.FileProcessors;
+
+internal sealed class YamlDataFileProcessor : IFileProcessor
 {
-    internal sealed class YamlDataFileProcessor : IFileProcessor
+    public async IAsyncEnumerable<IResult> ProcessFileAsync(string path, Options options, JsonObject data)
     {
-        public async IAsyncEnumerable<IResult> ProcessFileAsync(string path, Options options, JsonObject data)
+        using (var reader = File.OpenText(path))
         {
-            using (var reader = File.OpenText(path))
-            {
-                YamlHelper.MergeData(data, reader);
-            }
-
-            await Task.Yield();
-
-            yield return new NullResult($"Reading yaml data file {path}");
+            YamlHelper.MergeData(data, reader);
         }
+
+        await Task.Yield();
+
+        yield return new NullResult($"Reading yaml data file {path}");
     }
 }

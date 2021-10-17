@@ -1,13 +1,10 @@
-﻿
-
-using Douze;
+﻿using Douze;
 using Douze.FileProcessors;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 
-var stopwatch = new Stopwatch();
-stopwatch.Start();
+var stopwatch = Stopwatch.StartNew();
 
 // Parse command line options
 
@@ -25,6 +22,8 @@ options.DataMappings[".json"] = new JsonDataFileProcessor();
 
 // Build site
 var result = await BuildSiteAsync(options);
+
+stopwatch.Stop();
 
 Console.WriteLine($"Site generated at '{Path.GetFullPath(Path.Combine(options.SourcePath, options.OutputPath))}' in {stopwatch.ElapsedMilliseconds} ms");
 
@@ -66,23 +65,20 @@ async Task<int> BuildSiteAsync(Options options)
 
             if (options.DataMappings.TryGetValue(extension, out var processor))
             {
-                var stopWatch = new Stopwatch();
-
-                stopWatch.Restart();
                 await foreach (var result in processor.ProcessFileAsync(file, options, data))
                 {
+                    var sw = Stopwatch.StartNew();
                     if (result.FilePath != null)
                     {
                         var filePath = Path.Combine(Path.GetFullPath(options.OutputPath), result.FilePath);
                         Directory.CreateDirectory(Path.GetDirectoryName(filePath) ?? "");
 
-                        using (var stream = File.Create(filePath))
-                        {
-                            await result.SaveFileAsync(stream);
-                        }
+                        await using var stream = File.Create(filePath);
+                        await result.SaveFileAsync(stream);
                     }
+                    sw.Stop();
 
-                    Console.WriteLine($"{result.Description} in {stopWatch.ElapsedMilliseconds} ms");
+                    Console.WriteLine($"{result.Description} in {sw.ElapsedMilliseconds} ms");
                 }
             }
         }
@@ -132,22 +128,18 @@ async Task<int> BuildSiteAsync(Options options)
 
         if (options.ContentMappings.TryGetValue(extension, out var processor))
         {
-            var stopwatch = new Stopwatch();
-            stopwatch.Start();
-            
             await foreach (var result in processor.ProcessFileAsync(file, options, data))
             {
+                var sw = Stopwatch.StartNew();
                 if (result.FilePath != null)
                 {
                     var filePath = Path.Combine(Path.GetFullPath(options.OutputPath), result.FilePath);
                     Directory.CreateDirectory(Path.GetDirectoryName(filePath) ?? "");
 
-                    using (var stream = File.Create(filePath))
-                    {
-                        await result.SaveFileAsync(stream);
-                    }
+                    await using var stream = File.Create(filePath);
+                    await result.SaveFileAsync(stream);
                 }
-                Console.WriteLine($"{result.Description} in {stopwatch.ElapsedMilliseconds} ms");
+                Console.WriteLine($"{result.Description} in {sw.ElapsedMilliseconds} ms");
             }
         }
     });
