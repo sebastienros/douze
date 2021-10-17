@@ -6,18 +6,20 @@ internal partial class Options
     {
         var options = new Options();
 
-        foreach (var arg in args)
+        for (var i = 0; i < args.Length; i++)
         {
-            if (arg is "-o" or "--output")
+            var arg = args[i];
+
+            if (arg == "-o" || arg == "--output")
             {
-                options.OutputPath = arg;
-                continue;
+                i++;
+                options.OutputPath = args[i];
             }
 
-            if (arg is "-s" or "--source")
+            if (arg == "-s" || arg == "--source")
             {
-                options.SourcePath = arg;
-                continue;
+                i++;
+                options.SourcePath = args[i];
             }
         }
 
