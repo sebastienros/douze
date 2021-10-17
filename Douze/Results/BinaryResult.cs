@@ -1,8 +1,10 @@
-﻿namespace Douze.Results;
+﻿using Zio;
+
+namespace Douze.Results;
 
 internal sealed class BinaryResult : IResult
 {
-    public BinaryResult(string filePath, string description, byte[] content, string contentType)
+    public BinaryResult(UPath filePath, string description, byte[] content, string contentType)
     {
         FilePath = filePath;
         Description = description;
@@ -10,7 +12,7 @@ internal sealed class BinaryResult : IResult
         ContentType = contentType;
     }
 
-    public string FilePath { get; }
+    public UPath FilePath { get; }
     public string Description { get; }
     public byte[] Content { get; }
     public string ContentType { get; }

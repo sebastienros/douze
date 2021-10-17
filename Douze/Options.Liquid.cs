@@ -9,7 +9,7 @@ internal partial class Options
 {
     public TemplateOptions TemplateOptions { get; } = new();
 
-    public Options()
+    private Options()
     {
         // When a property of a JObject value is accessed, try to look into its properties
         TemplateOptions.MemberAccessStrategy.Register<JsonObject, object?>((source, name) => source[name]);

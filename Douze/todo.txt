@@ -1,8 +1,6 @@
 ﻿- Split some processors, for instance FrontMatter, Markdown and Liquid
 - Results should list which source files can alter its results to the rebuilds can be incremental.
-- HtmlFileProcessor, copy paste of markdown processor but don't process md, just FM amd liquid template
 - The result's content type will drive post-processors (images can be compressed, html can be minified, ...)
-- Virtual FS for testing and for in-memory support
 - Should .html files be liquified, or just use .liquid in that case? Example when generating a json api/file, what extension to use? (currently they are both equivalent)
 
 - Implemented
