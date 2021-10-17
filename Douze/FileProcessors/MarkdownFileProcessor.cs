@@ -1,4 +1,5 @@
-﻿using Markdig;
+﻿using Cysharp.Text;
+using Markdig;
 using Markdig.Renderers;
 
 namespace Douze.FileProcessors;
@@ -20,16 +21,15 @@ internal sealed class MarkdownFileProcessor : TemplateFileProcessor
     public override async ValueTask<string> ProcessContentAsync(string markdown)
     {
         var document = Markdown.Parse(markdown, _markdownPipeline);
-        string content = "";
 
-        await using var writer = new StringWriter();
+        await using var writer = new ZStringWriter();
         var renderer = new HtmlRenderer(writer);
         _markdownPipeline.Setup(renderer);
 
         renderer.Render(document);
         await writer.FlushAsync();
 
-        content = writer.ToString();
+        var content = writer.ToString();
 
         return content;
     }

@@ -2,6 +2,7 @@
 using Fluid.Values;
 using System.Globalization;
 using System.Text;
+using Cysharp.Text;
 
 namespace Douze.Liquid;
 
@@ -16,7 +17,7 @@ internal static class SlugFilter
             return StringValue.Empty;
         }
 
-        var sb = new StringBuilder();
+        using var sb = ZString.CreateStringBuilder();
 
         var stFormKD = text.Trim().ToLower().Normalize(NormalizationForm.FormKD);
         foreach (var t in stFormKD)

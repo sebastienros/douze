@@ -1,5 +1,5 @@
-﻿using System.Text;
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
+using Cysharp.Text;
 
 namespace Douze;
 
@@ -7,8 +7,8 @@ internal static class FrontMatterHelper
 {
     public static async Task<(string FrontMatter, string Content)> ParseFrontMatterAsync(TextReader reader, Options options)
     {
-        var contentBuilder = new StringBuilder();
-        var frontMatterBuilder = new StringBuilder();
+        using var contentBuilder = ZString.CreateStringBuilder();
+        using var frontMatterBuilder = ZString.CreateStringBuilder();
 
         var line = await reader.ReadLineAsync();
 
