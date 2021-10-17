@@ -1,29 +1,28 @@
-﻿namespace Douze
+﻿namespace Douze;
+
+internal partial class Options
 {
-    internal partial class Options
+    public static Options ParseOptions(string[] args)
     {
-        public static Options ParseOptions(string[] args)
+        var options = new Options();
+
+        for (var i = 0; i < args.Length; i++)
         {
-            var options = new Options();
+            var arg = args[i];
 
-            for (var i = 0; i < args.Length; i++)
+            if (arg == "-o" || arg == "--output")
             {
-                var arg = args[i];
-
-                if (arg == "-o" || arg == "--output")
-                {
-                    i++;
-                    options.OutputPath = args[i];                    
-                }
-
-                if (arg == "-s" || arg == "--source")
-                {
-                    i++;
-                    options.SourcePath = args[i];
-                }
+                i++;
+                options.OutputPath = args[i];
             }
 
-            return options;
+            if (arg == "-s" || arg == "--source")
+            {
+                i++;
+                options.SourcePath = args[i];
+            }
         }
+
+        return options;
     }
 }

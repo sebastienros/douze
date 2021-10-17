@@ -1,0 +1,30 @@
+name: Build
+
+on:
+
+  push:
+    branches: [ main ]
+    paths-ignore:
+    - 'doc/**'
+    - '*.md'
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    env:
+        DOTNET_NOLOGO: true
+        DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v2
+
+    - name: Setup dotnet 6.0
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 6.0.x
+        include-prerelease: true
+
+    - name: Build
+      run: dotnet build --configuration Release
