@@ -1,8 +1,10 @@
-﻿namespace Douze.Results;
+﻿using Zio;
+
+namespace Douze.Results;
 
 internal sealed class TextResult : IResult
 {
-    public TextResult(string filePath, string description, string content, string contentType)
+    public TextResult(UPath filePath, string description, string content, string contentType)
     {
         FilePath = filePath;
         Description = description;
@@ -10,7 +12,7 @@ internal sealed class TextResult : IResult
         ContentType = contentType;
     }
 
-    public string FilePath { get; }
+    public UPath FilePath { get; }
     public string Description { get; }
     public string Content { get; }
     public string ContentType { get; }

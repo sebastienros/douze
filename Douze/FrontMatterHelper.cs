@@ -1,5 +1,5 @@
 ﻿using System.Text.Json.Nodes;
-using Cysharp.Text;
+using Zio;
 
 namespace Douze;
 
@@ -7,46 +7,36 @@ internal static class FrontMatterHelper
 {
     public static async Task<(string FrontMatter, string Content)> ParseFrontMatterAsync(TextReader reader, Options options)
     {
-        using var contentBuilder = ZString.CreateStringBuilder();
-        using var frontMatterBuilder = ZString.CreateStringBuilder();
+        var content = await reader.ReadToEndAsync();
 
-        var line = await reader.ReadLineAsync();
+        var fmStart = content.IndexOf("---");
 
-        contentBuilder.AppendLine(line);
-
-        // Read empty lines
-
-        while (line != null && string.IsNullOrWhiteSpace(line))
+        if (content.Length < 6 || fmStart == -1)
         {
-            contentBuilder.AppendLine(line = await reader.ReadLineAsync());
+            return ("", content);
         }
 
-        // If it's not "---" then there is no FM block
-        if (line != null && line.Trim() == "---")
+        var fmEnd = content.IndexOf("---", fmStart + 4);
+
+        if (fmEnd == -1)
         {
-            contentBuilder.Clear();
-            line = await reader.ReadLineAsync();
-
-            while (line != null && line != "---")
-            {
-                frontMatterBuilder.AppendLine(line);
-
-                line = await reader.ReadLineAsync();
-            }
-
-            if (line == null)
-            {
-                contentBuilder.Append(frontMatterBuilder);
-                frontMatterBuilder.Clear();
-            }
+            return ("", content);
         }
 
-        while (line != null)
+        // Check --- appears at the start of a line
+
+        if ((fmStart == 0 || content[fmStart - 1] == '\n') && (content[fmStart + 3] == '\n' || content[fmStart + 4] == '\n') && content[fmEnd - 1] == '\n' && (content[fmEnd + 3] == '\n' || content[fmEnd + 4] == '\n'))
         {
-            contentBuilder.AppendLine(line = await reader.ReadLineAsync());
+            var docStart = content.IndexOf('\n', fmEnd + 1) + 1;
+            fmStart = content.IndexOf('\n', fmStart + 1) + 1;
+
+            var fm = content.Substring(fmStart, fmEnd - fmStart).Trim();
+            var doc = content.Substring(docStart);
+
+            return (fm, doc);
         }
 
-        return (frontMatterBuilder.ToString(), contentBuilder.ToString());
+        return ("", content);
     }
 
     /// <summary>
@@ -56,9 +46,10 @@ internal static class FrontMatterHelper
     /// <param name="data"></param>
     /// <param name="filePath"></param>
     /// <returns></returns>
-    public static async Task<string> MergeFrontMatterData(Options options, JsonObject data, string filePath)
+    public static async Task<string> MergeFrontMatterData(Options options, JsonObject data, FileEntry file)
     {
-        using var reader = File.OpenText(filePath);
+        using var stream = file.Open(FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
         var (frontMatter, content) = await ParseFrontMatterAsync(reader, options);
 
         if (!string.IsNullOrWhiteSpace(frontMatter))

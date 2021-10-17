@@ -1,4 +1,6 @@
-﻿namespace Douze.Results;
+﻿using Zio;
+
+namespace Douze.Results;
 
 internal sealed class NullResult : IResult
 {
@@ -7,7 +9,7 @@ internal sealed class NullResult : IResult
         Description = description;
     }
 
-    public string? FilePath => null;
+    public UPath FilePath => UPath.Empty;
     public string Description { get; }
     public string? ContentType => null;
 

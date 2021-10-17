@@ -2,6 +2,7 @@
 using Fluid.Values;
 using System.Text.Encodings.Web;
 using System.Text.Json.Nodes;
+using Zio;
 
 namespace Douze;
 
@@ -22,10 +23,11 @@ internal static class LayoutHelper
             return content;
         }
 
-        var layoutFilePath = Path.GetFullPath(Path.Combine(options.SourcePath, options.IncludesFolder, layout));
+        var layoutFilePath = UPath.Combine(options.IncludesFolder.ToAbsolute(), layout);
 
-        using var reader = File.OpenText(layoutFilePath);
-        var result = await FrontMatterHelper.ParseFrontMatterAsync(reader, options);
+        using var stream = options.SourceFileSystem.OpenFile(layoutFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var streamReader = new StreamReader(stream);
+        var result = await FrontMatterHelper.ParseFrontMatterAsync(streamReader, options);
 
         var template = options.FluidParser.Parse(result.Content);
 
