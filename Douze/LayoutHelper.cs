@@ -25,13 +25,22 @@ internal static class LayoutHelper
 
         var layoutFilePath = UPath.Combine(options.IncludesFolder.ToAbsolute(), layout);
 
-        using var stream = options.SourceFileSystem.OpenFile(layoutFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var streamReader = new StreamReader(stream);
-        var result = await FrontMatterHelper.ParseFrontMatterAsync(streamReader, options);
+        if (!options.PropertyBag.TryGetValue(layoutFilePath.ToString(), out var cache) || !(cache is CachedLayout cachedLayout))
+        {
+            using var stream = options.SourceFileSystem.OpenFile(layoutFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var streamReader = new StreamReader(stream);
+            var result = await FrontMatterHelper.ParseFrontMatterAsync(streamReader, options);
 
-        var template = options.FluidParser.Parse(result.Content);
+            var template = options.FluidParser.Parse(result.Content);
 
-        var localData = result.FrontMatter != null ? YamlHelper.Parse(result.FrontMatter) : new JsonObject();
+            var frontMatter = !String.IsNullOrEmpty(result.FrontMatter) ? YamlHelper.Parse(result.FrontMatter) : new JsonObject();
+
+            cachedLayout = new CachedLayout(frontMatter, template);
+
+            options.PropertyBag[layoutFilePath.ToString()] = cachedLayout;
+        }
+
+        var localData = cachedLayout.Data;
 
         // Remove layout property from markdown data to prevent loss of base layout (layout chaining)
         data.Remove("layout");
@@ -40,14 +49,21 @@ internal static class LayoutHelper
 
         var context = new TemplateContext(localData, options.TemplateOptions);
 
-        context.SetValue("content", new StringValue(content, false));
-
         foreach (var capture in captures)
         {
             context.SetValue(capture.Key, capture.Value);
         }
 
-        var html = await template.RenderAsync(context, HtmlEncoder.Default);
+        context.SetValue("content", new StringValue(content, false));
+
+        var html = await cachedLayout.Template.RenderAsync(context, HtmlEncoder.Default);
+
+        // Check if the evaluated layout has a base layout
+
+        if (!localData.TryGetPropertyValue("layout", out layoutValue))
+        {
+            return html;
+        }
 
         captures = new Dictionary<string, FluidValue>();
 
@@ -57,6 +73,20 @@ internal static class LayoutHelper
         }
 
         // Apply layout chaining
+
         return await ProcessLayoutAsync(options, html, localData, captures);
     }
+
+    private class CachedLayout
+    {
+        public CachedLayout(JsonObject data, IFluidTemplate template)
+        {
+            Data = data;
+            Template = template;
+        }
+
+        public JsonObject Data { get; set; }
+        public IFluidTemplate Template { get; set; }
+    }
+
 }

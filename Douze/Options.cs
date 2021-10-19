@@ -1,4 +1,5 @@
-﻿using Douze.FileProcessors;
+﻿using System.Collections.Concurrent;
+using Douze.FileProcessors;
 using Fluid;
 using Zio;
 using Zio.FileSystems;
@@ -26,7 +27,7 @@ internal sealed partial class Options
     public FluidParser FluidParser { get; } = new();
     public Dictionary<string, IFileProcessor> ContentMappings { get; } = new();
     public Dictionary<string, IFileProcessor> DataMappings { get; } = new();
-    public Dictionary<string, object?> PropertyBag { get; } = new();
+    public ConcurrentDictionary<string, object?> PropertyBag { get; } = new();
 
     /// <summary>
     /// Gets or sets the file system rooted to the source folder.

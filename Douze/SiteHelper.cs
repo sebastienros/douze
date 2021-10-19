@@ -10,7 +10,7 @@ internal class SiteHelper
     internal static async Task<int> BuildSiteAsync(Options options)
     {
         var files = options.SourceFileSystem.EnumerateItems(UPath.Root, SearchOption.AllDirectories).Where(x => !x.IsDirectory).OrderBy(x => x.Path).ToArray();
-        
+
         // Process all data files and store the values per folder
 
         var dataByPath = new ConcurrentDictionary<UPath, JsonObject>();
@@ -75,6 +75,14 @@ internal class SiteHelper
 
         await Parallel.ForEachAsync(files, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (file, cancellationToken) =>
         {
+            // Ignore templates in special folders
+
+            if (file.Path.IsInDirectory(options.IncludesFolder.ToAbsolute(), true) ||
+                file.Path.IsInDirectory(options.DataFolder.ToAbsolute(), true))
+            {
+                return;
+            }
+
             var extension = file.Path.GetExtensionWithDot() ?? "";
 
             // Apply corresponding file processor
