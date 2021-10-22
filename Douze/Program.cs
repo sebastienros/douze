@@ -1,7 +1,7 @@
 ﻿using Douze;
 using Douze.FileProcessors;
+using Douze.FileSystems;
 using System.Diagnostics;
-using Zio.FileSystems;
 
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Douze.Tests")]
 
@@ -11,11 +11,9 @@ var stopwatch = Stopwatch.StartNew();
 
 var arguments = Arguments.ParseArguments(args);
 
-var fs = new PhysicalFileSystem();
-
 var options = new Options(
-    new ReadOnlyFileSystem(new SubFileSystem(fs, fs.ConvertPathFromInternal(arguments.SourcePath))),
-    new SubFileSystem(fs, fs.ConvertPathFromInternal(arguments.OutputPath))
+    new PhysicalFileSystem(Path.GetFullPath(arguments.SourcePath)),
+    new PhysicalFileSystem(Path.GetFullPath(arguments.OutputPath))
     );
 
 Console.WriteLine($"Parsed options in {stopwatch.ElapsedMilliseconds} ms");

@@ -1,6 +1,6 @@
-﻿using Douze.Results;
+﻿using Douze.FileSystems;
+using Douze.Results;
 using System.Text.Json.Nodes;
-using Zio;
 
 namespace Douze.FileProcessors;
 
@@ -8,8 +8,8 @@ internal sealed class JsonDataFileProcessor : IFileProcessor
 {
     public async IAsyncEnumerable<IResult> ProcessFileAsync(FileEntry file, Options options, JsonObject data)
     {
+        using var stream = await file.FileSystem.OpenFileAsync(file.Path);
 
-        using var stream = file.Open(FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         var document = JsonNode.Parse(stream)?.AsObject();
 
         if (document != null)

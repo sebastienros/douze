@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
-using Zio;
+using Douze.FileSystems;
 
 namespace Douze;
 
@@ -9,11 +9,11 @@ internal class SiteHelper
 {
     internal static async Task<int> BuildSiteAsync(Options options)
     {
-        var files = options.SourceFileSystem.EnumerateItems(UPath.Root, SearchOption.AllDirectories).Where(x => !x.IsDirectory).OrderBy(x => x.Path).ToArray();
+        var files = (await options.SourceFileSystem.EnumerateFileSystemEntriesAsync(FPath.Root, true, null)).Where(x => !x.IsDirectory).OrderBy(x => x.Path).ToArray();
 
         // Process all data files and store the values per folder
 
-        var dataByPath = new ConcurrentDictionary<UPath, JsonObject>();
+        var dataByPath = new ConcurrentDictionary<FPath, JsonObject>();
 
         // Data files are computed in parallel by directory
 
@@ -23,15 +23,15 @@ internal class SiteHelper
         {
             foreach (var file in entry.Value)
             {
-                var extension = file.Path.GetExtensionWithDot() ?? "";
+                var extension = Path.GetExtension(file.Path.FullName) ?? "";
 
                 if (options.DataMappings.TryGetValue(extension, out var processor))
                 {
                     var directoryName = entry.Key;
-                    var fileEntry = options.SourceFileSystem.GetFileEntry(file.Path);
+                    var fileEntry = await options.SourceFileSystem.GetFileEntryAsync(file.Path);
 
                     // Don't process data files from the root folder, use the _data folder instead
-                    if (directoryName == "")
+                    if (directoryName == FPath.Root)
                     {
                         continue;
                     }
@@ -49,12 +49,12 @@ internal class SiteHelper
                         {
                             var directory = result.FilePath.GetDirectory();
 
-                            if (directory != UPath.Root)
+                            if (directory != FPath.Root)
                             {
-                                options.OutputFileSystem.CreateDirectory(directory);
+                                await options.OutputFileSystem.CreateDirectoryAsync(directory);
                             }
 
-                            await using var stream = options.OutputFileSystem.CreateFile(result.FilePath);
+                            await using var stream = await options.OutputFileSystem.CreateFileAsync(result.FilePath);
                             await result.SaveFileAsync(stream);
                         }
 
@@ -69,7 +69,7 @@ internal class SiteHelper
             globalData = new JsonObject();
         }
 
-        dataByPath[UPath.Root] = globalData;
+        dataByPath[FPath.Root] = globalData;
 
         // Process all content files
 
@@ -77,8 +77,8 @@ internal class SiteHelper
         {
             // Ignore templates in special folders
 
-            if (file.Path.IsInDirectory(options.IncludesFolder.ToAbsolute(), true) ||
-                file.Path.IsInDirectory(options.DataFolder.ToAbsolute(), true))
+            if (file.Path.IsInDirectory(options.IncludesFolder.ToAbsolute()) ||
+                file.Path.IsInDirectory(options.DataFolder.ToAbsolute()))
             {
                 return;
             }
@@ -91,26 +91,26 @@ internal class SiteHelper
             {
                 // Gather all data from each parent folder
 
-                var fileEntry = options.SourceFileSystem.GetFileEntry(file.Path);
-                var directoryEntry = fileEntry.Directory;
+                var fileEntry = await options.SourceFileSystem.GetFileEntryAsync(file.Path);
+                var directoryEntry = await options.SourceFileSystem.GetDirectoryEntryAsync(file.Path.GetDirectory());
 
                 var data = JsonHelper.Clone(globalData)?.AsObject() ?? new JsonObject();
 
                 var folderDataObjects = new List<JsonObject>();
 
-                while (directoryEntry!.Exists)
+                while (directoryEntry.Exists)
                 {
                     if (dataByPath.TryGetValue(directoryEntry.Path, out var folderData))
                     {
                         folderDataObjects.Insert(0, folderData);
                     }
 
-                    if (directoryEntry.Path == UPath.Root)
+                    if (directoryEntry.Path == FPath.Root)
                     {
                         break;
                     }
 
-                    directoryEntry = directoryEntry.Parent;
+                    directoryEntry = await options.SourceFileSystem.GetDirectoryEntryAsync(FileSystemHelper.GetParentDirectory(directoryEntry.Path));
                 }
 
                 foreach (var folderData in folderDataObjects)
@@ -126,12 +126,9 @@ internal class SiteHelper
                     {
                         var directory = result.FilePath.GetDirectory();
 
-                        if (directory != UPath.Root)
-                        {
-                            options.OutputFileSystem.CreateDirectory(directory);
-                        }
+                        await options.OutputFileSystem.CreateDirectoryAsync(directory);
 
-                        await using var stream = options.OutputFileSystem.CreateFile(result.FilePath);
+                        await using var stream = await options.OutputFileSystem.CreateFileAsync(result.FilePath);
                         await result.SaveFileAsync(stream);
                     }
 

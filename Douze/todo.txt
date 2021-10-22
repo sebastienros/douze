@@ -2,7 +2,6 @@
 - Results should list which source files can alter its results to the rebuilds can be incremental.
 - The result's content type will drive post-processors (images can be compressed, html can be minified, ...)
 - Should .html files be liquified, or just use .liquid in that case? Example when generating a json api/file, what extension to use? (currently they are both equivalent)
-- FM parsing should return the FM content and the position of the start of the document so it doesn't have to be buffered in memory before it needs to be processed.
 - Tags/Collections. Create a representation of all the resulting files with their data (including filename), before processing them.
 - Pagination
 - Shortcodes

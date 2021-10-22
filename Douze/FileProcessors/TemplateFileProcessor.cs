@@ -1,9 +1,9 @@
-﻿using Douze.Results;
+﻿using System.Text.Encodings.Web;
+using System.Text.Json.Nodes;
+using Douze.FileSystems;
+using Douze.Results;
 using Fluid;
 using Fluid.Values;
-using System.Text.Encodings.Web;
-using System.Text.Json.Nodes;
-using Zio;
 
 namespace Douze.FileProcessors;
 
@@ -25,7 +25,10 @@ internal abstract class TemplateFileProcessor : IFileProcessor
         // Add page information
         var page = new JsonObject();
         data["page"] = page;
-        page.Add("date", file.LastWriteTime);
+
+        // TODO: Load attributes
+        // page.Add("date", file.LastWriteTime);
+        page.Add("date", DateTime.UtcNow);
 
         var template = options.FluidParser.Parse(parts);
         var context = new TemplateContext(data, options.TemplateOptions);
@@ -53,24 +56,24 @@ internal abstract class TemplateFileProcessor : IFileProcessor
         var localFilePath = file.Path;
         var extension = "html";
 
-        if (data.TryGetPropertyValue("permalink", out var permalink) && permalink != null && !string.IsNullOrWhiteSpace(permalink.ToString()))
+        if (data.TryGetPropertyValue("permalink", out var permalink) && permalink != null && !string.IsNullOrWhiteSpace(permalink.GetValue<string>()))
         {
             var permalinkTemplate = options.FluidParser.Parse(permalink.ToString());
-            localFilePath = UPath.Combine("/", await permalinkTemplate.RenderAsync(context));
+            localFilePath = FPath.Combine("/", await permalinkTemplate.RenderAsync(context));
 
-            extension = localFilePath.GetExtensionWithDot() ?? ".";
+            extension = Path.GetExtension(localFilePath.FullName) ?? ".";
         }
 
         // If the processed file is named "index.*" then we don't need to create a folder, otherwise the name
         // of the file is used as a folder such that the url contains it.
         // blog/post1.html -> blog/post1/index.html
 
-        if (localFilePath.GetNameWithoutExtension() != "index")
+        if (Path.GetFileNameWithoutExtension(localFilePath.FullName) != "index")
         {
-            localFilePath = UPath.Combine("/", localFilePath.GetDirectory(), localFilePath.GetNameWithoutExtension() ?? "", "index.html");
+            localFilePath = FPath.Combine("/", localFilePath.GetDirectory(), Path.GetFileNameWithoutExtension(localFilePath.FullName) ?? "", "index.html");
         }
 
-        localFilePath = localFilePath.ChangeExtension(extension);
+        localFilePath = Path.ChangeExtension(localFilePath.FullName, extension);
 
         yield return new TextResult(localFilePath, $"Generating {Format} file {localFilePath}", html, "text/html");
     }

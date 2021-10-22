@@ -1,5 +1,5 @@
 ﻿using System.Text.Json.Nodes;
-using Zio;
+using Douze.FileSystems;
 
 namespace Douze;
 
@@ -48,7 +48,7 @@ internal static class FrontMatterHelper
     /// <returns></returns>
     public static async Task<string> MergeFrontMatterData(Options options, JsonObject data, FileEntry file)
     {
-        using var stream = file.Open(FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var stream = await file.FileSystem.OpenFileAsync(file.Path);
         using var reader = new StreamReader(stream);
         var (frontMatter, content) = await ParseFrontMatterAsync(reader, options);
 

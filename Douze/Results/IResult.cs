@@ -1,4 +1,4 @@
-﻿using Zio;
+﻿using Douze.FileSystems;
 
 namespace Douze.Results;
 
@@ -12,7 +12,7 @@ internal interface IResult
     /// <summary>
     /// Gets the relative path of the file.
     /// </summary>
-    UPath FilePath { get; }
+    FPath FilePath { get; }
         
     /// <summary>
     /// Gets the content-type of the file.
