@@ -1,25 +1,27 @@
-﻿using SharpYaml.Serialization;
-using Zio;
+﻿using System.IO;
+using System.Threading.Tasks;
+using Douze.FileSystems;
+using SharpYaml.Serialization;
 
 namespace Douze.Tests
 {
     internal static class FileSystemExtensions
     {
-        public static void CreateTemplate(this IFileSystem fs, UPath path, string content, object? data = null)
+        public static async ValueTask CreateTemplateAsync(this IFileSystem fs, FPath path, string content, object? data = null)
         {
             var directory = path.GetDirectory();
 
-            if (directory != UPath.Root)
-            {
-                fs.CreateDirectory(directory);
-            }
+            await fs.CreateDirectoryAsync(directory);
+
+            using var stream = await fs.CreateFileAsync(path);
+            using var sw = new StreamWriter(stream);
 
             if (data != null)
             {
-                fs.WriteAllText(path, $"---\n{new Serializer().Serialize(data)}---\n");
+                await sw.WriteAsync($"---\n{new Serializer().Serialize(data)}---\n");
             }
 
-            fs.AppendAllText(path, content);
+            await sw.WriteAsync(content);
         }
     }
 }

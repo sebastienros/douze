@@ -1,8 +1,8 @@
-﻿using Fluid;
+﻿using Douze.FileSystems;
+using Fluid;
 using Fluid.Values;
 using System.Text.Encodings.Web;
 using System.Text.Json.Nodes;
-using Zio;
 
 namespace Douze;
 
@@ -10,24 +10,24 @@ internal static class LayoutHelper
 {
     public static async Task<string> ProcessLayoutAsync(Options options, string content, JsonObject data, Dictionary<string, FluidValue> captures)
     {
-        if (!data.TryGetPropertyValue("layout", out var layoutValue) || layoutValue == null)
+        if (!data.TryGetPropertyValue("layout", out var layoutProperty) || layoutProperty == null)
         {
             // No layout to apply
             return content;
         }
 
-        var layout = layoutValue.ToString();
+        var layout = layoutProperty.GetValue<string>();
 
         if (string.IsNullOrWhiteSpace(layout))
         {
             return content;
         }
 
-        var layoutFilePath = UPath.Combine(options.IncludesFolder.ToAbsolute(), layout);
+        var layoutFilePath = FPath.Combine(options.IncludesFolder, layout);
 
         if (!options.PropertyBag.TryGetValue(layoutFilePath.ToString(), out var cache) || !(cache is CachedLayout cachedLayout))
         {
-            using var stream = options.SourceFileSystem.OpenFile(layoutFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var stream = await options.SourceFileSystem.OpenFileAsync(layoutFilePath);
             using var streamReader = new StreamReader(stream);
             var result = await FrontMatterHelper.ParseFrontMatterAsync(streamReader, options);
 
@@ -60,7 +60,7 @@ internal static class LayoutHelper
 
         // Check if the evaluated layout has a base layout
 
-        if (!localData.TryGetPropertyValue("layout", out layoutValue))
+        if (!localData.ContainsKey("layout"))
         {
             return html;
         }

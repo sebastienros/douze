@@ -1,6 +1,4 @@
-﻿using Zio;
-
-namespace Douze;
+﻿namespace Douze;
 
 internal partial class Arguments
 {

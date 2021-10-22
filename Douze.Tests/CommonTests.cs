@@ -1,8 +1,8 @@
 ﻿using Douze.FileProcessors;
+using Douze.FileSystems;
+using System.Linq;
 using System.Threading.Tasks;
 using Xunit;
-using Zio;
-using Zio.FileSystems;
 
 namespace Douze.Tests
 {
@@ -29,37 +29,56 @@ namespace Douze.Tests
         [Fact]
         public async Task ShouldRenderHtmlFile()
         {
-            _sourceFs.WriteAllText("/index.html", "Hello World");
+            await _sourceFs.WriteTextFileAsync("/index.html", "Hello World");
 
             await SiteHelper.BuildSiteAsync(_options);
 
-            Assert.True(_outputFs.FileExists("/index.html"));
-            Assert.Equal("Hello World", _outputFs.ReadAllText("/index.html"));
+            Assert.True((await _outputFs.GetFileEntryAsync("/index.html")).Exists);
+            Assert.Equal("Hello World", await _outputFs.ReadAllTextAsync("/index.html"));
         }
 
         [Fact]
         public async Task ShouldRenderLayout()
         {
-            _sourceFs.CreateTemplate("/index.html", "Hello World", new { layout = "layout.html" });
-            _sourceFs.CreateTemplate("/_includes/layout.html", "BEFFORE {{ content }} AFTER");
+            await _sourceFs.CreateTemplateAsync("/index.html", "Hello World", new { layout = "layout.html" });
+            await _sourceFs.CreateTemplateAsync("/_includes/layout.html", "BEFFORE {{ content }} AFTER");
 
             await SiteHelper.BuildSiteAsync(_options);
 
-            Assert.True(_outputFs.FileExists("/index.html"));
-            Assert.Equal("BEFFORE Hello World AFTER", _outputFs.ReadAllText("/index.html"));
+            // 1 File and 1 Directory entries
+            Assert.Equal(2, (await _outputFs.EnumerateFileSystemEntriesAsync(FPath.Root, true, null)).Count());
+
+            Assert.True((await _outputFs.GetFileEntryAsync("/index.html")).Exists);
+            Assert.Equal("BEFFORE Hello World AFTER", await _outputFs.ReadAllTextAsync("/index.html"));
+        }
+
+        [Fact]
+        public async Task ShouldLoadDataFiles()
+        {
+            await _sourceFs.CreateTemplateAsync("/index.html", "Hello World");
+            await _sourceFs.WriteTextFileAsync("/_data/theme.yml", "layout: layout.html");
+            await _sourceFs.CreateTemplateAsync("/_includes/layout.html", "BEFFORE {{ content }} AFTER");
+
+            await SiteHelper.BuildSiteAsync(_options);
+
+            // 1 File and 1 Directory entries
+            Assert.Equal(2, (await _outputFs.EnumerateFileSystemEntriesAsync(FPath.Root, true, null)).Count());
+
+            Assert.True((await _outputFs.GetFileEntryAsync("/index.html")).Exists);
+            Assert.Equal("BEFFORE Hello World AFTER", await _outputFs.ReadAllTextAsync("/index.html"));
         }
 
         [Fact]
         public async Task ShouldRenderBaseLayout()
         {
-            _sourceFs.CreateTemplate("/index.html", "Hello World", new { layout = "layout.html" });
-            _sourceFs.CreateTemplate("/_includes/layout.html", "BEFFORE {{ content }} AFTER", new { layout = "master.html" });
-            _sourceFs.CreateTemplate("/_includes/master.html", "BEGIN {{ content }} END");
+            await _sourceFs.CreateTemplateAsync("/index.html", "Hello World", new { layout = "layout.html" });
+            await _sourceFs.CreateTemplateAsync("/_includes/layout.html", "BEFFORE {{ content }} AFTER", new { layout = "master.html" });
+            await _sourceFs.CreateTemplateAsync("/_includes/master.html", "BEGIN {{ content }} END");
 
             await SiteHelper.BuildSiteAsync(_options);
 
-            Assert.True(_outputFs.FileExists("/index.html"));
-            Assert.Equal("BEGIN BEFFORE Hello World AFTER END", _outputFs.ReadAllText("/index.html"));
+            Assert.True((await _outputFs.GetFileEntryAsync("/index.html")).Exists);
+            Assert.Equal("BEGIN BEFFORE Hello World AFTER END", await _outputFs.ReadAllTextAsync("/index.html"));
         }
     }
 }
