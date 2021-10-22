@@ -17,8 +17,6 @@ internal sealed class JsonDataFileProcessor : IFileProcessor
             JsonHelper.Merge(data, document);
         }
 
-        await Task.Yield();
-
         yield return new NullResult($"Reading json data file {file.Path}");
     }
 }

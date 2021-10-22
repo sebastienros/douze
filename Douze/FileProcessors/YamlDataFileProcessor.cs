@@ -12,8 +12,6 @@ internal sealed class YamlDataFileProcessor : IFileProcessor
         using var reader = new StreamReader(stream);
         YamlHelper.MergeData(data, reader);
 
-        await Task.Yield();
-
         yield return new NullResult($"Reading yaml data file {file.Path}");
     }
 }
