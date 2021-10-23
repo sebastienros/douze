@@ -1,5 +1,10 @@
 ﻿namespace Douze.FileSystems
 {
+    /// <summary>
+    /// Represent an absolute or relative path.
+    /// File paths never end with a directory separator.
+    /// Directory paths always end with a directory separator.
+    /// </summary>
     public readonly struct FPath : IEquatable<FPath>, IComparable<FPath>
     {
         public static readonly FPath Empty = new FPath(string.Empty, true);
@@ -30,18 +35,15 @@
 
         public string FullName { get; }
 
-        public bool IsAbsolute => FullName.StartsWith(DirectorySeparator);
-
+        public bool IsAbsolute => !IsEmpty && FullName.StartsWith(DirectorySeparator);
+        public bool IsRelative => !IsEmpty && !FullName.StartsWith(DirectorySeparator);
+        public bool IsDirectory => !IsEmpty && FullName.EndsWith(DirectorySeparator);
+        public bool IsFile => !IsEmpty && !FullName.EndsWith(DirectorySeparator);
         public bool IsEmpty => this == Empty;
 
         public static implicit operator FPath(string path)
         {
             return new FPath(path);
-        }
-
-        public static explicit operator string(FPath path)
-        {
-            return path.FullName;
         }
 
         public static FPath Combine(FPath path1, FPath path2)
@@ -86,11 +88,25 @@
                             return new FPath("/" + path2.FullName, false);
                         }
 
-                        return new FPath(path1.FullName + "/" + path2.FullName, false);
+                        if (path1.IsDirectory)
+                        {
+                            return new FPath(path1.FullName + path2.FullName, false);
+                        }
+                        else
+                        {
+                            return new FPath(path1.FullName + FPath.DirectorySeparator + path2.FullName, false);
+                        }
                     }
                     else
                     {
-                        return new FPath("/" + path1.FullName + "/" + path2.FullName, false);
+                        if (path1.IsDirectory)
+                        {
+                            return new FPath("/" + path1.FullName + path2.FullName, false);
+                        }
+                        else
+                        {
+                            return new FPath("/" + path1.FullName + FPath.DirectorySeparator + path2.FullName, false);
+                        }
                     }
                 }
             }
@@ -203,8 +219,45 @@
             return string.Compare(FullName, other.FullName, StringComparison.Ordinal);
         }
 
+        public FPath GetParentDirectory()
+        {
+            if (IsEmpty)
+            {
+                return this;
+            }
+
+            if (IsFile)
+            {
+                return GetDirectory();
+            }
+
+            if (this == FPath.Root)
+            {
+                return FPath.Empty;
+            }
+
+            var index = FullName.AsSpan(0, FullName.Length - 1).TrimEnd().LastIndexOf('/');
+
+            if (index == 0 || index == -1)
+            {
+                return FPath.Root;
+            }
+
+            return new FPath(FullName.Substring(0, index) + DirectorySeparator, false);
+        }
+
+
+        /// <summary>
+        /// Returns the directory on the current path. It will end with a directory separator.
+        /// </summary>
+        /// <returns></returns>
         public FPath GetDirectory()
         {
+            if (FullName.EndsWith(DirectorySeparator))
+            {
+                return this;
+            }
+
             var index = FullName.LastIndexOf('/');
 
             if (index == 0 || index == -1)
@@ -212,21 +265,7 @@
                 return FPath.Root;
             }
 
-            return FullName.Substring(0, index);
-        }
-
-        /// <summary>
-        /// Adds a directory separator at the end of the path.
-        /// </summary>
-        /// <returns></returns>
-        public FPath ToDirectory()
-        {
-            if (FullName.EndsWith("/"))
-            {
-                return this;
-            }
-
-            return new FPath(FullName + "/", false);
+            return new FPath(FullName.Substring(0, index) + DirectorySeparator, false);
         }
 
         /// <summary>
@@ -235,7 +274,7 @@
         /// <returns></returns>
         public FPath ToAbsolute()
         {
-            if (IsAbsolute)
+            if (IsAbsolute || IsEmpty)
             {
                 return this;
             }
@@ -244,23 +283,22 @@
         }
 
         /// <summary>
-        /// Removes any directory separator from the beginning of the path.
+        /// Adds a directory separator at the beginning of the path.
         /// </summary>
         /// <returns></returns>
         public FPath ToRelative()
         {
-            if (!IsAbsolute)
+            if (IsRelative || IsEmpty)
             {
                 return this;
             }
 
-            return new FPath(FullName.TrimStart(DirectorySeparator), false);
+            return new FPath(FullName[1..], false);
         }
-
 
         public bool IsInDirectory(FPath path)
         {
-            return FullName.StartsWith(path.ToDirectory().FullName);
+            return FullName.StartsWith(path.GetDirectory().FullName);
         }
 
         public string GetExtensionWithDot()

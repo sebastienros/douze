@@ -5,11 +5,11 @@
         /// <summary>
         /// The base path the file system is rooted on.
         /// </summary>
-        private readonly FPath _basePath;
+        private readonly FPath _basePathWithoutTrailingSeparator;
 
         public PhysicalFileSystem(FPath basePath)
         {
-            _basePath = new FPath(basePath.FullName.TrimEnd('/'));
+            _basePathWithoutTrailingSeparator = new FPath(basePath.FullName.TrimEnd(FPath.DirectorySeparator));
         }
 
         /// <summary>
@@ -19,16 +19,31 @@
         /// <returns></returns>
         public ValueTask CreateDirectoryAsync(FPath path)
         {
-            path = _basePath.FullName + path.ToAbsolute();
+            if (!path.IsDirectory)
+            {
+                ThrowArgumentException(path);
+            }
+
+            path = _basePathWithoutTrailingSeparator.FullName + path.ToAbsolute();
 
             Directory.CreateDirectory(path.FullName);
 
             return ValueTask.CompletedTask;
+
+            static void ThrowArgumentException(FPath path)
+            {
+                throw new ArgumentException($"Not a directory path: '{path}'");
+            }
         }
 
         public ValueTask<Stream> CreateFileAsync(FPath path)
         {
-            path = new FPath(_basePath.FullName + path.ToAbsolute(), false);
+            if (!path.IsFile)
+            {
+                ThrowArgumentException(path);
+            }
+
+            path = new FPath(_basePathWithoutTrailingSeparator.FullName + path.ToAbsolute(), false);
 
             var directoryName = Path.GetDirectoryName(path.FullName);
 
@@ -38,11 +53,16 @@
             }
 
             return new(File.Create(path.FullName));
+
+            static void ThrowArgumentException(FPath path)
+            {
+                throw new ArgumentException($"Not a file path: '{path}'");
+            }
         }
 
         public ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath path, bool recursive, Predicate<string>? filter)
         {
-            path = new FPath(_basePath.FullName + path.ToAbsolute(), false);
+            path = new FPath(_basePathWithoutTrailingSeparator.FullName + path.ToAbsolute(), false);
 
             return new(EnumerateFileEntries(path.FullName, recursive, filter));
         }
@@ -58,7 +78,7 @@
                 yield break;
             }
 
-            var localPath = path.Substring(_basePath.FullName.Length);
+            var localPath = path.Substring(_basePathWithoutTrailingSeparator.FullName.Length);
 
             if (filter == null || filter(localPath))
             {
@@ -70,7 +90,7 @@
             {
                 if (filter == null || filter(file))
                 {
-                    yield return new FileEntry(new FPath(file.Substring(_basePath.FullName.Length), true), this);
+                    yield return new FileEntry(new FPath(file.Substring(_basePathWithoutTrailingSeparator.FullName.Length), true), this);
                 }
             }
 
@@ -88,7 +108,14 @@
 
         public ValueTask<FileEntry> GetFileEntryAsync(FPath path)
         {
-            var fullPath = _basePath.FullName + path.ToAbsolute();
+            if (!path.IsFile)
+            {
+                ThrowArgumentException(path);
+            }
+
+            path = path.ToAbsolute();
+
+            var fullPath = _basePathWithoutTrailingSeparator + path.FullName;
 
             if (!File.Exists(fullPath))
             {
@@ -96,11 +123,21 @@
             }
 
             return new(new FileEntry(path, this));
+
+            static void ThrowArgumentException(FPath path)
+            {
+                throw new ArgumentException($"Not a file path: '{path}'");
+            }
         }
 
         public ValueTask<DirectoryEntry> GetDirectoryEntryAsync(FPath path)
         {
-            var fullPath = _basePath.FullName + path.ToAbsolute();
+            if (!path.IsDirectory)
+            {
+                ThrowArgumentException(path);
+            }
+
+            var fullPath = _basePathWithoutTrailingSeparator.FullName + path.ToAbsolute();
 
             if (!Directory.Exists(fullPath))
             {
@@ -108,11 +145,16 @@
             }
 
             return new(new DirectoryEntry(path, this));
+
+            static void ThrowArgumentException(FPath path)
+            {
+                throw new ArgumentException($"Not a directory path: '{path}'");
+            }
         }
 
         public ValueTask<Stream> OpenFileAsync(FPath path)
         {
-            var fullPath = _basePath.FullName + path.ToAbsolute();
+            var fullPath = _basePathWithoutTrailingSeparator.FullName + path.ToAbsolute();
 
             if (!File.Exists(fullPath))
             {
