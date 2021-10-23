@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Nodes;
 
 namespace Douze;
 
@@ -42,10 +43,38 @@ internal static class JsonHelper
 
         return node switch
         {
-            JsonValue => JsonValue.Create(node.AsValue().GetValue<object>()),
+            // Doesn't work with trimming
+            //JsonValue.Create(node.AsValue().GetValue<object>()),
+
+            JsonValue => CloneJsValue(node.AsValue()),
             JsonArray => new JsonArray(node.AsArray().Select(x => x == null ? null : Clone(x)).ToArray()),
             JsonObject => new JsonObject(node.AsObject().Select(x => new KeyValuePair<string, JsonNode?>(x.Key, Clone(x.Value)))),
             _ => throw new NotImplementedException()
         };
+
+        static JsonValue? CloneJsValue(JsonValue value)
+        {
+            if (value.TryGetValue<string>(out var s))
+            {
+                return JsonValue.Create(s);
+            }
+
+            if (value.TryGetValue<bool>(out var b))
+            {
+                return JsonValue.Create(b);
+            }
+
+            if (value.TryGetValue<DateTime>(out var dt))
+            {
+                return JsonValue.Create(dt);
+            }
+
+            if (value.TryGetValue<decimal>(out var d))
+            {
+                return JsonValue.Create(d);
+            }
+
+            return JsonValue.Create(value.GetValue<object>().ToString());
+        }
     }
 }
