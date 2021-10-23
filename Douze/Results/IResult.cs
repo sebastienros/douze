@@ -13,7 +13,7 @@ internal interface IResult
     /// Gets the relative path of the file.
     /// </summary>
     FPath FilePath { get; }
-        
+
     /// <summary>
     /// Gets the content-type of the file.
     /// </summary>

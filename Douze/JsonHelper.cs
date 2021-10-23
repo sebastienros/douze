@@ -30,6 +30,10 @@ internal static class JsonHelper
                         target[property.Key] = Clone(valueProperty);
                     }
                 }
+                else
+                {
+                    target[property.Key] = Clone(property.Value);
+                }
             }
         }
     }

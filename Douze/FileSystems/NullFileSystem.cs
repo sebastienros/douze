@@ -33,5 +33,10 @@
         {
             throw new NotImplementedException();
         }
+
+        public ValueTask<FileMetadata> GetFileMetadaAsync(FPath path)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

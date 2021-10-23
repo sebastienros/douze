@@ -120,5 +120,22 @@ namespace Douze.FileSystems
 
             return new(stream);
         }
+
+        public ValueTask<FileMetadata> GetFileMetadaAsync(FPath path)
+        {
+            path = path.ToAbsolute();
+
+            if (!_files.ContainsKey(path))
+            {
+                throw new FileNotFoundException(path.FullName);
+            }
+
+            if (!_streams.TryGetValue(path, out var stream))
+            {
+                throw new FileNotFoundException(path.FullName);
+            }
+
+            return new(stream.Metadata);
+        }
     }
 }

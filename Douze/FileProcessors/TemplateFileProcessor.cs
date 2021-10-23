@@ -21,14 +21,16 @@ internal abstract class TemplateFileProcessor : IFileProcessor
     public async IAsyncEnumerable<IResult> ProcessFileAsync(FileEntry file, Options options, JsonObject data)
     {
         var parts = await FrontMatterHelper.MergeFrontMatterData(options, data, file);
+        var metadata = await file.FileSystem.GetFileMetadaAsync(file.Path);
 
-        // Add page information
-        var page = new JsonObject();
-        data["page"] = page;
+        var page = data["page"] as JsonObject;
 
-        // TODO: Load attributes
-        // page.Add("date", file.LastWriteTime);
-        page.Add("date", DateTime.UtcNow);
+        if (page == null)
+        {
+            data["page"] = page = new JsonObject();
+        }
+
+        page.Add("date", metadata.LastWriteTimeUtc);
 
         var template = options.FluidParser.Parse(parts);
         var context = new TemplateContext(data, options.TemplateOptions);
@@ -45,7 +47,6 @@ internal abstract class TemplateFileProcessor : IFileProcessor
 
         var source = await template.RenderAsync(context, HtmlEncoder.Default);
         var content = await ProcessContentAsync(source);
-
 
         // Apply layout
 

@@ -163,5 +163,13 @@
 
             return new(new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true));
         }
+
+        public ValueTask<FileMetadata> GetFileMetadaAsync(FPath path)
+        {
+            var fullPath = _basePathWithoutTrailingSeparator.FullName + path.ToAbsolute();
+
+            var fileInfo = new FileInfo(fullPath);
+            return new(new FileMetadata(fileInfo.Length, fileInfo.CreationTimeUtc, fileInfo.LastAccessTimeUtc, fileInfo.LastWriteTimeUtc));
+        }
     }
 }

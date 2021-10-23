@@ -8,6 +8,7 @@
         ValueTask<Stream> OpenFileAsync(FPath path);
 
         ValueTask<FileEntry> GetFileEntryAsync(FPath path);
+
         ValueTask<DirectoryEntry> GetDirectoryEntryAsync(FPath path);
 
         ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath basePath, bool recursive, Predicate<string>? filter);
@@ -15,6 +16,9 @@
         ValueTask<Stream> CreateFileAsync(FPath path);
 
         ValueTask CreateDirectoryAsync(FPath path);
+
+        ValueTask<FileMetadata> GetFileMetadaAsync(FPath path);
+
     }
 
     public static class FileSystemExtensions
