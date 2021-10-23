@@ -9,6 +9,16 @@ internal class SiteHelper
 {
     internal static async Task<int> BuildSiteAsync(Options options)
     {
+        if (!options.IncludesFolder.IsDirectory)
+        {
+            throw new ArgumentException($"Not a directory path: {options.IncludesFolder}");
+        }
+
+        if (!options.DataFolder.IsDirectory)
+        {
+            throw new ArgumentException($"Not a directory path: {options.DataFolder}");
+        }
+
         var files = (await options.SourceFileSystem.EnumerateFileSystemEntriesAsync(FPath.Root, true, null)).Where(x => !x.IsDirectory).OrderBy(x => x.Path).ToArray();
 
         // Process all data files and store the values per folder
@@ -110,7 +120,7 @@ internal class SiteHelper
                         break;
                     }
 
-                    directoryEntry = await options.SourceFileSystem.GetDirectoryEntryAsync(FileSystemHelper.GetParentDirectory(directoryEntry.Path));
+                    directoryEntry = await options.SourceFileSystem.GetDirectoryEntryAsync(directoryEntry.Path.GetParentDirectory());
                 }
 
                 foreach (var folderData in folderDataObjects)

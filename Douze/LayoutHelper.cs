@@ -23,7 +23,7 @@ internal static class LayoutHelper
             return content;
         }
 
-        var layoutFilePath = FPath.Combine(options.IncludesFolder, layout);
+        var layoutFilePath = FPath.Combine(options.IncludesFolder, new FPath(layout, true).ToRelative());
 
         if (!options.PropertyBag.TryGetValue(layoutFilePath.ToString(), out var cache) || !(cache is CachedLayout cachedLayout))
         {

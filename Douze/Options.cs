@@ -16,12 +16,12 @@ internal sealed partial class Options
     /// <summary>
     /// Gets or sets the data folder relative to <see cref="SourceFileSystem"/>
     /// </summary>
-    public FPath DataFolder { get; set; } = "/_data";
+    public FPath DataFolder { get; set; } = "/_data/";
 
     /// <summary>
     /// Gets or sets the includes folder relative to <see cref="SourceFileSystem"/>
     /// </summary>
-    public FPath IncludesFolder { get; set; } = "/_includes";
+    public FPath IncludesFolder { get; set; } = "/_includes/";
 
     public FluidParser FluidParser { get; } = new();
     public Dictionary<string, IFileProcessor> ContentMappings { get; } = new();

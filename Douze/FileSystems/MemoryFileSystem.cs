@@ -14,17 +14,16 @@ namespace Douze.FileSystems
         /// <returns></returns>
         public ValueTask CreateDirectoryAsync(FPath path)
         {
-            path = FPath.Combine(FPath.Root, path);
-            var key = path.ToDirectory();
+            path = path.ToAbsolute().GetDirectory();
 
             if (_files.ContainsKey(path))
             {
                 return ValueTask.CompletedTask;
             }
 
-            _files[key] = new DirectoryEntry(FPath.Combine(FPath.Root, path), this);
+            _files[path] = new DirectoryEntry(path, this);
 
-            var parent = FileSystemHelper.GetParentDirectory(path);
+            var parent = path.GetParentDirectory();
 
             if (parent != FPath.Empty)
             {
@@ -34,16 +33,15 @@ namespace Douze.FileSystems
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask<Stream> CreateFileAsync(FPath path)
+        public async ValueTask<Stream> CreateFileAsync(FPath path)
         {
             path = path.ToAbsolute();
 
             var directory = path.GetDirectory();
-            var directoryKey = FPath.Combine(FPath.Root, directory).ToDirectory();
 
-            if (!_files.ContainsKey(directoryKey))
+            if (!_files.ContainsKey(directory))
             {
-                throw new DirectoryNotFoundException(path.FullName);
+                await CreateDirectoryAsync(directory.FullName);
             }
 
             if (!_files.ContainsKey(path))
@@ -58,7 +56,7 @@ namespace Douze.FileSystems
                 _streams[path] = stream;
             }
 
-            return new(stream);
+            return stream;
         }
 
         public ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath basePath, bool recursive, Predicate<string>? filter)
@@ -68,20 +66,40 @@ namespace Douze.FileSystems
 
         public ValueTask<FileEntry> GetFileEntryAsync(FPath path)
         {
+            if (!path.IsFile)
+            {
+                ThrowArgumentException(path);
+            }
+
             path = path.ToAbsolute();
 
             _files.TryGetValue(path, out var fileEntry);
 
             return new(fileEntry as FileEntry ?? FileEntry.NotFound);
+
+            static void ThrowArgumentException(FPath path)
+            {
+                throw new ArgumentException($"Not a file path: '{path}'");
+            }
         }
 
         public ValueTask<DirectoryEntry> GetDirectoryEntryAsync(FPath path)
         {
-            var key = path.ToAbsolute().ToDirectory();
+            if (!path.IsDirectory)
+            {
+                ThrowArgumentException(path);
+            }
 
-            _files.TryGetValue(key, out var directoryEntry);
+            path = path.ToAbsolute();
+
+            _files.TryGetValue(path, out var directoryEntry);
 
             return new(directoryEntry as DirectoryEntry ?? DirectoryEntry.NotFound);
+
+            static void ThrowArgumentException(FPath path)
+            {
+                throw new ArgumentException($"Not a directory path: '{path}'");
+            }
         }
 
         public ValueTask<Stream> OpenFileAsync(FPath path)
