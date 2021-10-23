@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Douze.FileSystems;
+using Douze.Results;
 
 namespace Douze;
 
@@ -21,58 +22,55 @@ internal class SiteHelper
 
         var files = (await options.SourceFileSystem.EnumerateFileSystemEntriesAsync(FPath.Root, true, null)).Where(x => !x.IsDirectory).OrderBy(x => x.Path).ToArray();
 
+        var documents = files.Select(x => new SourceDocument(options.SourceFileSystem, x.Path)).ToList<IDocument>();
+
         // Process all data files and store the values per folder
 
         var dataByPath = new ConcurrentDictionary<FPath, JsonObject>();
 
-        // Data files are computed in parallel by directory
+        var filesByDirectory = documents.GroupBy(x => x.Path.GetDirectory()).ToDictionary(x => x.Key, x => x.ToArray());
 
-        var filesByDirectory = files.GroupBy(x => x.Path.GetDirectory()).ToDictionary(x => x.Key, x => x.ToArray());
+        var dataProcessorsResult = new List<IDocument>();
 
-        await Parallel.ForEachAsync(filesByDirectory, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (entry, cancellationToken) =>
+        foreach (var entry in filesByDirectory)
         {
-            foreach (var file in entry.Value)
+            foreach (var processor in options.DataProcessors)
             {
-                var extension = Path.GetExtension(file.Path.FullName) ?? "";
+                var directoryName = entry.Key;
 
-                if (options.DataMappings.TryGetValue(extension, out var processor))
+                // Don't process data files from the root folder, use the _data folder instead
+                if (directoryName == FPath.Root)
                 {
-                    var directoryName = entry.Key;
-                    var fileEntry = await options.SourceFileSystem.GetFileEntryAsync(file.Path);
+                    continue;
+                }
 
-                    // Don't process data files from the root folder, use the _data folder instead
-                    if (directoryName == FPath.Root)
+                if (!dataByPath.TryGetValue(directoryName, out var data))
+                {
+                    dataByPath[directoryName] = data = new JsonObject();
+                }
+
+                var lsw = Stopwatch.StartNew();
+
+                var allResults = new List<IResult>();
+
+                foreach (var document in entry.Value)
+                {
+                    await foreach (var result in processor.ProcessFileAsync(document, options))
                     {
-                        continue;
-                    }
+                        JsonHelper.Merge(data, document.Data);
 
-                    if (!dataByPath.TryGetValue(directoryName, out var data))
-                    {
-                        dataByPath[directoryName] = data = new JsonObject();
-                    }
+                        await result.ExecuteAsync(dataProcessorsResult);
 
-                    var sw = Stopwatch.StartNew();
-
-                    await foreach (var result in processor.ProcessFileAsync(fileEntry, options, data))
-                    {
-                        if (!result.FilePath.IsEmpty)
+                        if (!String.IsNullOrEmpty(result.Description))
                         {
-                            var directory = result.FilePath.GetDirectory();
-
-                            if (directory != FPath.Root)
-                            {
-                                await options.OutputFileSystem.CreateDirectoryAsync(directory);
-                            }
-
-                            await using var stream = await options.OutputFileSystem.CreateFileAsync(result.FilePath);
-                            await result.SaveFileAsync(stream);
+                            Console.WriteLine($"{result.Description} in {lsw.ElapsedMilliseconds} ms");
                         }
-
-                        Console.WriteLine($"{result.Description} in {sw.ElapsedMilliseconds} ms");
                     }
                 }
             }
-        });
+        }
+
+        // The data from the data folder is associated to the root folder by convention
 
         if (!dataByPath.TryGetValue(options.DataFolder.ToAbsolute(), out var globalData))
         {
@@ -81,70 +79,87 @@ internal class SiteHelper
 
         dataByPath[FPath.Root] = globalData;
 
-        // Process all content files
+        // 2- Map: Create all new documents
 
-        await Parallel.ForEachAsync(files, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (file, cancellationToken) =>
+        // TODO: cache data per folder
+
+        // Create data for each document
+
+        foreach (var document in documents)
         {
-            // Ignore templates in special folders
+            var dir = document.Path.GetDirectory();
 
-            if (file.Path.IsInDirectory(options.IncludesFolder.ToAbsolute()) ||
-                file.Path.IsInDirectory(options.DataFolder.ToAbsolute()))
+            // Gather all data from each parent folder
+
+            var data = JsonHelper.Clone(globalData)?.AsObject() ?? new JsonObject();
+
+            var folderDataObjects = new List<JsonObject>();
+
+            while (dir != FPath.Root)
             {
-                return;
-            }
-
-            var extension = file.Path.GetExtensionWithDot() ?? "";
-
-            // Apply corresponding file processor
-
-            if (options.ContentMappings.TryGetValue(extension, out var processor))
-            {
-                // Gather all data from each parent folder
-
-                var fileEntry = await options.SourceFileSystem.GetFileEntryAsync(file.Path);
-                var directoryEntry = await options.SourceFileSystem.GetDirectoryEntryAsync(file.Path.GetDirectory());
-
-                var data = JsonHelper.Clone(globalData)?.AsObject() ?? new JsonObject();
-
-                var folderDataObjects = new List<JsonObject>();
-
-                while (directoryEntry.Exists)
+                if (dataByPath.TryGetValue(dir, out var folderData))
                 {
-                    if (dataByPath.TryGetValue(directoryEntry.Path, out var folderData))
-                    {
-                        folderDataObjects.Insert(0, folderData);
-                    }
-
-                    if (directoryEntry.Path == FPath.Root)
-                    {
-                        break;
-                    }
-
-                    directoryEntry = await options.SourceFileSystem.GetDirectoryEntryAsync(directoryEntry.Path.GetParentDirectory());
+                    folderDataObjects.Insert(0, folderData);
                 }
 
-                foreach (var folderData in folderDataObjects)
+                dir = dir.GetParentDirectory();
+            }
+
+            foreach (var folderData in folderDataObjects)
+            {
+                JsonHelper.Merge(data, folderData);
+            }
+
+            JsonHelper.Merge(document.Data, data);
+
+        }
+
+        var semaphore = new SemaphoreSlim(1);
+
+        foreach (var processor in options.ContentProcessors)
+        {
+            var results = new ConcurrentBag<IResult>();
+
+            await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
+            {
+                // Ignore templates in special folders
+
+                if (document.Path.IsInDirectory(options.IncludesFolder.ToAbsolute()) ||
+                    document.Path.IsInDirectory(options.DataFolder.ToAbsolute()))
                 {
-                    JsonHelper.Merge(data, folderData);
+                    return;
                 }
 
                 var sw = Stopwatch.StartNew();
 
-                await foreach (var result in processor.ProcessFileAsync(fileEntry, options, data))
+                await foreach (var result in processor.ProcessFileAsync(document, options))
                 {
-                    if (!result.FilePath.IsEmpty)
+                    results.Add(result);
+
+                    if (!String.IsNullOrEmpty(result.Description))
                     {
-                        var directory = result.FilePath.GetDirectory();
-
-                        await options.OutputFileSystem.CreateDirectoryAsync(directory);
-
-                        await using var stream = await options.OutputFileSystem.CreateFileAsync(result.FilePath);
-                        await result.SaveFileAsync(stream);
+                        Console.WriteLine($"{result.Description} in {sw.ElapsedMilliseconds} ms");
                     }
-
-                    Console.WriteLine($"{result.Description} in {sw.ElapsedMilliseconds} ms");
                 }
+            });
+
+            documents.Clear();
+
+            foreach (var result in results)
+            {
+                await result.ExecuteAsync(documents);
             }
+        }
+
+        // 3- Reduce: Alter documents based on all results
+
+        var sw = Stopwatch.StartNew();
+
+        // TODO: Apply filters before saving documents
+
+        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
+        {
+            await document.SaveFileAsync();
         });
 
         return 0;

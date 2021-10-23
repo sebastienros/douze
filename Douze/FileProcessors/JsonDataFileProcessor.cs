@@ -1,22 +1,27 @@
-﻿using Douze.FileSystems;
+﻿using System.Text.Json.Nodes;
 using Douze.Results;
-using System.Text.Json.Nodes;
 
 namespace Douze.FileProcessors;
 
 internal sealed class JsonDataFileProcessor : IFileProcessor
 {
-    public async IAsyncEnumerable<IResult> ProcessFileAsync(FileEntry file, Options options, JsonObject data)
+    public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
     {
-        using var stream = await file.FileSystem.OpenFileAsync(file.Path);
-
-        var document = JsonNode.Parse(stream)?.AsObject();
-
-        if (document != null)
+        if (document.Path.GetExtensionWithDot().ToLowerInvariant() != ".json")
         {
-            JsonHelper.Merge(data, document);
+            yield return new DocumentResult(document);
+            yield break;
         }
 
-        yield return new NullResult($"Reading json data file {file.Path}");
+        using var stream = await document.OpenAsync();
+
+        var json = JsonNode.Parse(stream)?.AsObject();
+
+        if (json != null)
+        {
+            JsonHelper.Merge(document.Data, json);
+        }
+
+        yield return new DocumentResult($"Reading json data file {document.Path}");
     }
 }

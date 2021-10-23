@@ -46,9 +46,8 @@ internal static class FrontMatterHelper
     /// <param name="data"></param>
     /// <param name="filePath"></param>
     /// <returns></returns>
-    public static async Task<string> MergeFrontMatterData(Options options, JsonObject data, FileEntry file)
+    public static async Task<string> MergeFrontMatterData(Options options, JsonObject data, Stream stream)
     {
-        using var stream = await file.FileSystem.OpenFileAsync(file.Path);
         using var reader = new StreamReader(stream);
         var (frontMatter, content) = await ParseFrontMatterAsync(reader, options);
 

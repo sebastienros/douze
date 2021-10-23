@@ -1,4 +1,5 @@
 ﻿using Cysharp.Text;
+using Douze.FileSystems;
 using Markdig;
 using Markdig.Renderers;
 
@@ -9,14 +10,14 @@ internal sealed class MarkdownFileProcessor : TemplateFileProcessor
     // Configure markdown
     private readonly MarkdownPipeline _markdownPipeline;
 
-    public MarkdownFileProcessor()
+    public MarkdownFileProcessor(Predicate<FPath>? match)
     {
         _markdownPipeline = new MarkdownPipelineBuilder()
             .UseYamlFrontMatter()
             .Build();
-    }
 
-    public override string Format => "Markdown";
+        Match = match;
+    }
 
     public override async ValueTask<string> ProcessContentAsync(string markdown)
     {

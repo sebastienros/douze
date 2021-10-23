@@ -1,5 +1,4 @@
 ﻿using System.Text.Encodings.Web;
-using System.Text.Json.Nodes;
 using Douze.FileSystems;
 using Douze.Results;
 using Fluid;
@@ -16,24 +15,23 @@ namespace Douze.FileProcessors;
 /// </summary>
 internal abstract class TemplateFileProcessor : IFileProcessor
 {
-    public abstract string Format { get; }
+    public Predicate<FPath>? Match { get; set; }
 
-    public async IAsyncEnumerable<IResult> ProcessFileAsync(FileEntry file, Options options, JsonObject data)
+    public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
     {
-        var parts = await FrontMatterHelper.MergeFrontMatterData(options, data, file);
-        var metadata = await file.FileSystem.GetFileMetadaAsync(file.Path);
-
-        var page = data["page"] as JsonObject;
-
-        if (page == null)
+        if (Match != null && !Match(document.Path))
         {
-            data["page"] = page = new JsonObject();
+            yield return new DocumentResult(document);
+            yield break;
         }
 
-        page.Add("date", metadata.LastWriteTimeUtc);
+        using var stream = await document.OpenAsync();
+        using var sr = new StreamReader(stream);
 
-        var template = options.FluidParser.Parse(parts);
-        var context = new TemplateContext(data, options.TemplateOptions);
+        var fileContent = await sr.ReadToEndAsync();
+
+        var template = options.FluidParser.Parse(fileContent);
+        var context = new TemplateContext(document.Data, options.TemplateOptions);
 
         // Copy the data with locally created variables for captures
         var captures = new Dictionary<string, FluidValue>();
@@ -50,14 +48,14 @@ internal abstract class TemplateFileProcessor : IFileProcessor
 
         // Apply layout
 
-        var html = await LayoutHelper.ProcessLayoutAsync(options, content, data, captures);
+        var html = await LayoutHelper.ProcessLayoutAsync(options, content, document.Data, captures);
 
         // Compute destination file path, e.g. blog/post1/index.html
 
-        var localFilePath = file.Path;
+        var localFilePath = document.Path;
         var extension = "html";
 
-        if (data.TryGetPropertyValue("permalink", out var permalink) && permalink != null && !string.IsNullOrWhiteSpace(permalink.GetValue<string>()))
+        if (document.Data.TryGetPropertyValue("permalink", out var permalink) && permalink != null && !string.IsNullOrWhiteSpace(permalink.GetValue<string>()))
         {
             var permalinkTemplate = options.FluidParser.Parse(permalink.ToString());
             localFilePath = FPath.Combine("/", await permalinkTemplate.RenderAsync(context));
@@ -76,7 +74,8 @@ internal abstract class TemplateFileProcessor : IFileProcessor
 
         localFilePath = Path.ChangeExtension(localFilePath.FullName, extension);
 
-        yield return new TextResult(localFilePath, $"Generating {Format} file {localFilePath}", html, "text/html");
+
+        yield return new DocumentResult($"Generating file {localFilePath}", new TextDocument(options.OutputFileSystem, localFilePath, html, document.Data, "text/html"));
     }
 
     public abstract ValueTask<string> ProcessContentAsync(string content);
