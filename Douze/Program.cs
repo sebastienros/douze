@@ -20,11 +20,12 @@ Console.WriteLine($"Parsed options in {stopwatch.ElapsedMilliseconds} ms");
 
 // Configure files extensions mappings
 
-options.ContentMappings[".md"] = new MarkdownFileProcessor();
-options.ContentMappings[".html"] = new HtmlFileProcessor();
-options.ContentMappings[".liquid"] = new HtmlFileProcessor();
-options.DataMappings[".yml"] = new YamlDataFileProcessor();
-options.DataMappings[".json"] = new JsonDataFileProcessor();
+options.ContentProcessors.Add(new PageMetadataProcessor());
+options.ContentProcessors.Add(new FrontMatterProcessor(static (FPath x) => Array.IndexOf(new[] { ".md", ".html", ".liquid" }, x.GetExtensionWithDot().ToLowerInvariant()) != -1));
+options.ContentProcessors.Add(new MarkdownFileProcessor(static (FPath x) => Array.IndexOf(new[] { ".md" }, x.GetExtensionWithDot().ToLowerInvariant()) != -1));
+options.ContentProcessors.Add(new HtmlFileProcessor(static (FPath x) => Array.IndexOf(new[] { ".html", ".liquid" }, x.GetExtensionWithDot().ToLowerInvariant()) != -1));
+options.DataProcessors.Add(new YamlDataFileProcessor());
+options.DataProcessors.Add(new JsonDataFileProcessor());
 
 // Build site
 var result = await SiteHelper.BuildSiteAsync(options);

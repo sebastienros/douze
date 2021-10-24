@@ -1,10 +1,11 @@
-﻿- Split some processors, for instance FrontMatter, Markdown and Liquid
+﻿- Create dedicated liquid processor
 - Results should list which source files can alter its results to the rebuilds can be incremental.
 - The result's content type will drive post-processors (images can be compressed, html can be minified, ...)
 - Should .html files be liquified, or just use .liquid in that case? Example when generating a json api/file, what extension to use? (currently they are both equivalent)
 - Tags/Collections. Create a representation of all the resulting files with their data (including filename), before processing them.
 - Pagination
 - Shortcodes
+- Don't merge global data and local data in templates. Instead use a wrapper that can resolve from both sources. All other merges are fine.
 
 - Implemented
     - File created based on folder and source file name. blog/post-1.md => blog/post-1/index.html

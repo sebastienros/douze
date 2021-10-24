@@ -1,10 +1,8 @@
-﻿using Douze.FileSystems;
-using Douze.Results;
-using System.Text.Json.Nodes;
+﻿using Douze.Results;
 
 namespace Douze.FileProcessors;
 
 internal interface IFileProcessor
 {
-    IAsyncEnumerable<IResult> ProcessFileAsync(FileEntry file, Options options, JsonObject data);
+    IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options);
 }

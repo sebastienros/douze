@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
 using Douze.FileProcessors;
 using Douze.FileSystems;
 using Fluid;
@@ -13,6 +14,8 @@ internal sealed partial class Options
     public int MaxDegreeOfParallelism { get; set; } = -1;
 #endif
 
+    public JsonObject GlobalData { get; set; } = new JsonObject();
+
     /// <summary>
     /// Gets or sets the data folder relative to <see cref="SourceFileSystem"/>
     /// </summary>
@@ -24,8 +27,12 @@ internal sealed partial class Options
     public FPath IncludesFolder { get; set; } = "/_includes/";
 
     public FluidParser FluidParser { get; } = new();
-    public Dictionary<string, IFileProcessor> ContentMappings { get; } = new();
-    public Dictionary<string, IFileProcessor> DataMappings { get; } = new();
+
+    // File processors that generate actual documents. This is the second pass on all documents.
+    public List<IFileProcessor> ContentProcessors { get; } = new();
+
+    // File processors that generate global data. This is the first pass on all documents.
+    public List<IFileProcessor> DataProcessors { get; } = new();
     public ConcurrentDictionary<string, object?> PropertyBag { get; } = new();
 
     /// <summary>
