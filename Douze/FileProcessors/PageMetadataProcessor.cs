@@ -13,14 +13,14 @@ namespace Douze.FileProcessors;
 /// </summary>
 internal class PageMetadataProcessor : IFileProcessor
 {
-    public Predicate<FPath>? Match { get; set; }
+    public Predicate<FPath> Match { get; set; } = _ => true;
 
     public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
     {
         // Pass-through
         yield return new DocumentResult(document);
 
-        if ((Match == null || Match(document.Path)) && document is SourceDocument sourceDocument)
+        if (Match(document.Path) && document is SourceDocument sourceDocument)
         {
             var metadata = await sourceDocument.FileSystem.GetFileMetadaAsync(document.Path);
 

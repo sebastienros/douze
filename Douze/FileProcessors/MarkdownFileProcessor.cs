@@ -10,7 +10,7 @@ internal sealed class MarkdownFileProcessor : TemplateFileProcessor
     // Configure markdown
     private readonly MarkdownPipeline _markdownPipeline;
 
-    public MarkdownFileProcessor(Predicate<FPath>? match)
+    public MarkdownFileProcessor(Predicate<FPath> match)
     {
         _markdownPipeline = new MarkdownPipelineBuilder()
             .UseYamlFrontMatter()

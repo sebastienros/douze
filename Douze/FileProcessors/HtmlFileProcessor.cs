@@ -4,7 +4,7 @@ namespace Douze.FileProcessors;
 
 internal sealed class HtmlFileProcessor : TemplateFileProcessor
 {
-    public HtmlFileProcessor(Predicate<FPath>? match)
+    public HtmlFileProcessor(Predicate<FPath> match)
     {
         Match = match;
     }

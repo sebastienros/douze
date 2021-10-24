@@ -13,7 +13,7 @@ namespace Douze.FileProcessors;
 /// </summary>
 internal class FrontMatterProcessor : IFileProcessor
 {
-    public Predicate<FPath>? Match { get; set; }
+    public Predicate<FPath> Match { get; set; } = _ => true;
 
     public FrontMatterProcessor(Predicate<FPath> match)
     {
@@ -22,7 +22,7 @@ internal class FrontMatterProcessor : IFileProcessor
 
     public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
     {
-        if (Match != null && !Match(document.Path))
+        if (!Match(document.Path))
         {
             yield return new DocumentResult(document);
             yield break;

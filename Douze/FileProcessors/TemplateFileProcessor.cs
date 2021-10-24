@@ -15,11 +15,11 @@ namespace Douze.FileProcessors;
 /// </summary>
 internal abstract class TemplateFileProcessor : IFileProcessor
 {
-    public Predicate<FPath>? Match { get; set; }
+    public Predicate<FPath> Match { get; set; } = _ => true;
 
     public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
     {
-        if (Match != null && !Match(document.Path))
+        if (!Match(document.Path))
         {
             yield return new DocumentResult(document);
             yield break;
