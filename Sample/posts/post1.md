@@ -5,3 +5,5 @@ permalink: "posts/{{ page.date | date: '%Y/%m/%d' }}/{{title | slug }}/index.htm
 <!-- Layout: {{ layout }} -->
 
 # Contact Page
+
+<img src="/posts/images/coffee.jpg" alt="coffee cup" />

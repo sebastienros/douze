@@ -26,10 +26,8 @@ internal sealed class BinaryDocument : IDocument
 
     public async Task SaveFileAsync()
     {
-        using (var stream = await FileSystem.CreateFileAsync(Path))
-        {
-            await using var ms = new MemoryStream(Content);
-            await ms.CopyToAsync(stream);
-        }
+        var stream = await FileSystem.CreateFileAsync(Path);
+        await using var ms = new MemoryStream(Content);
+        await ms.CopyToAsync(stream);
     }
 }

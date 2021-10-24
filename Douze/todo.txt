@@ -10,10 +10,12 @@
 - Implemented
     - File created based on folder and source file name. blog/post-1.md => blog/post-1/index.html
     - Chained layouts, {{ content }} to render the page
+    - Layout sections, {% capture %} from template
     - FrontMatter parsing
     - Json data source
     - Yaml data source
     - Data inheritance per folder
     - Global data in _data
-    - Permalinks
-
+    - Permalinks, 'permalink' metadata, can use 'slug' filter
+    - Copy files to destination
+    - page.date represents the template's UTC last write time
