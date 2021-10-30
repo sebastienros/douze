@@ -23,10 +23,10 @@ Console.WriteLine($"Parsed options in {stopwatch.ElapsedMilliseconds} ms");
 
 options.ContentProcessors.Add(new PageMetadataProcessor());
 options.ContentProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
-options.ContentProcessors.Add(new LiquidTemplateFileProcessor(IncludeRule.ParseRules("*.md")));
+options.ContentProcessors.Add(new LiquidTemplateFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
 options.ContentProcessors.Add(new LayoutFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
 options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
-options.ContentProcessors.Add(new PermalinkFileProcessor(IncludeRule.ParseRules("*.md")));
+options.ContentProcessors.Add(new PermalinkFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
 options.ContentProcessors.Add(new CopyDocumentProcessor(IncludeRule.ParseRules("*.jpg", "*.gif", "*.png")));
 
 options.DataProcessors.Add(new YamlDataFileProcessor());

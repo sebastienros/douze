@@ -32,8 +32,6 @@ internal class PermalinkFileProcessor : IFileProcessor
 
         var localFilePath = document.Path;
 
-        var defaultExtension = Path.GetExtension(document.Path.FullName);
-
         if (document.Data.TryGetPropertyValue("permalink", out var permalink) && permalink != null && !string.IsNullOrWhiteSpace(permalink.GetValue<string>()))
         {
             var permalinkTemplate = options.FluidParser.Parse(permalink.ToString());

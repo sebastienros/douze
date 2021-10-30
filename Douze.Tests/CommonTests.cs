@@ -113,11 +113,12 @@ namespace Douze.Tests
         [Fact]
         public async Task PermalinkShouldPreserveCustomFilenames()
         {
-            await _sourceFs.CreateTemplateAsync("/rss.html", "Hello World", new { permalink = "posts/feed/rss.xml" });
+            await _sourceFs.CreateTemplateAsync("/api.html", "{ \"error\": false }", new { permalink = "posts/api.json" });
 
             await SiteHelper.BuildSiteAsync(_options);
 
-            Assert.True((await _outputFs.GetFileEntryAsync("posts/feed/rss.xml")).Exists);
+            Assert.True((await _outputFs.GetFileEntryAsync("posts/api.json")).Exists);
+            Assert.Equal("{ \"error\": false }", await _outputFs.ReadAllTextAsync("/posts/api.json"));
         }
     }
 }

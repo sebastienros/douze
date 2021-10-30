@@ -5,7 +5,6 @@ internal partial class Arguments
     public string SourcePath { get; set; } = ".";
     public string OutputPath { get; set; } = "_site";
 
-
     public static Arguments ParseArguments(string[] args)
     {
         var arguments = new Arguments();
