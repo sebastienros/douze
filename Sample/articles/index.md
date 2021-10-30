@@ -1,5 +1,4 @@
 ---
-layout: articles.html
 ---
 <!-- Layout: {{ layout }} -->
 # Articles

@@ -9,9 +9,9 @@ title: My Rad Blog
     <title>{{ title }}</title>
   </head>
   <body>
-    {{ content }}
+    {{ content | raw }}
   </body>
-{% if footer %}{{ footer }}{% endif %}
+{% if footer %}{{ footer | raw }}{% endif %}
 </html>
 <!-- Generated on {{ "now" | date: "%c" }} -->
 <!-- Content modified on {{ page.date | date: "%c" }} -->

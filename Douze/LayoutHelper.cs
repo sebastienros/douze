@@ -8,7 +8,7 @@ namespace Douze;
 
 internal static class LayoutHelper
 {
-    public static async Task<string> ProcessLayoutAsync(Options options, string content, JsonObject data, Dictionary<string, FluidValue> captures)
+    public static async Task<string> ProcessLayoutAsync(Options options, string content, JsonObject data)
     {
         if (!data.TryGetPropertyValue("layout", out var layoutProperty) || layoutProperty == null)
         {
@@ -40,7 +40,8 @@ internal static class LayoutHelper
             options.PropertyBag[layoutFilePath.ToString()] = cachedLayout;
         }
 
-        var localData = cachedLayout.Data;
+        // Clone the cache data since it will be altered to remove the layout
+        var localData = JsonHelper.Clone(cachedLayout.Data) as JsonObject ?? new JsonObject();
 
         // Remove layout property from markdown data to prevent loss of base layout (layout chaining)
         data.Remove("layout");
@@ -48,11 +49,6 @@ internal static class LayoutHelper
         JsonHelper.Merge(localData, data);
 
         var context = new TemplateContext(localData, options.TemplateOptions);
-
-        foreach (var capture in captures)
-        {
-            context.SetValue(capture.Key, capture.Value);
-        }
 
         context.SetValue("content", new StringValue(content, false));
 
@@ -65,16 +61,9 @@ internal static class LayoutHelper
             return html;
         }
 
-        captures = new Dictionary<string, FluidValue>();
-
-        foreach (var name in context.ValueNames)
-        {
-            captures.Add(name, context.GetValue(name));
-        }
-
         // Apply layout chaining
 
-        return await ProcessLayoutAsync(options, html, localData, captures);
+        return await ProcessLayoutAsync(options, html, localData);
     }
 
     private class CachedLayout

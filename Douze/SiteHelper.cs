@@ -51,21 +51,19 @@ internal class SiteHelper
 
                 var lsw = Stopwatch.StartNew();
 
-                var allResults = new List<IResult>();
+                foreach (var result in await processor.ProcessFileAsync(entry.Value, options))
+                {
+                    await result.ExecuteAsync(dataProcessorsResult);
+
+                    if (!String.IsNullOrEmpty(result.Description))
+                    {
+                        Console.WriteLine($"{result.Description} in {lsw.ElapsedMilliseconds} ms");
+                    }
+                }
 
                 foreach (var document in entry.Value)
                 {
-                    await foreach (var result in processor.ProcessFileAsync(document, options))
-                    {
-                        JsonHelper.Merge(data, document.Data);
-
-                        await result.ExecuteAsync(dataProcessorsResult);
-
-                        if (!String.IsNullOrEmpty(result.Description))
-                        {
-                            Console.WriteLine($"{result.Description} in {lsw.ElapsedMilliseconds} ms");
-                        }
-                    }
+                    JsonHelper.Merge(data, document.Data);
                 }
             }
         }
@@ -116,38 +114,28 @@ internal class SiteHelper
 
         var semaphore = new SemaphoreSlim(1);
 
+        // Ignore templates in special folders
+
+        documents = documents.Where(document =>
+            !document.Path.IsInDirectory(options.IncludesFolder.ToAbsolute())
+            && !document.Path.IsInDirectory(options.DataFolder.ToAbsolute())).ToList();
+
         foreach (var processor in options.ContentProcessors)
         {
-            var results = new ConcurrentBag<IResult>();
+            var sw2 = Stopwatch.StartNew();
 
-            await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
-            {
-                // Ignore templates in special folders
-
-                if (document.Path.IsInDirectory(options.IncludesFolder.ToAbsolute()) ||
-                    document.Path.IsInDirectory(options.DataFolder.ToAbsolute()))
-                {
-                    return;
-                }
-
-                var sw = Stopwatch.StartNew();
-
-                await foreach (var result in processor.ProcessFileAsync(document, options))
-                {
-                    results.Add(result);
-
-                    if (!String.IsNullOrEmpty(result.Description))
-                    {
-                        Console.WriteLine($"{result.Description} in {sw.ElapsedMilliseconds} ms");
-                    }
-                }
-            });
+            var results = await processor.ProcessFileAsync(documents, options);
 
             documents.Clear();
 
             foreach (var result in results)
             {
                 await result.ExecuteAsync(documents);
+
+                if (!String.IsNullOrEmpty(result.Description))
+                {
+                    Console.WriteLine($"{result.Description} in {sw2.ElapsedMilliseconds} ms");
+                }
             }
         }
 

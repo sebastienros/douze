@@ -1,22 +1,32 @@
-﻿using Douze.Results;
+﻿using System.Collections.Concurrent;
+using Douze.Results;
 
 namespace Douze.FileProcessors;
 
 internal sealed class YamlDataFileProcessor : IFileProcessor
 {
-    public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
+    public async Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options)
     {
-        if (document.Path.GetExtensionWithDot().ToLowerInvariant() != ".yml")
+        var result = new ConcurrentBag<IResult>();
+
+        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
         {
-            yield return new DocumentResult(document);
-            yield break;
-        }
 
-        using var stream = await document.OpenAsync();
-        using var reader = new StreamReader(stream);
+            if (document.Path.GetExtensionWithDot().ToLowerInvariant() != ".yml")
+            {
+                result.Add(new DocumentResult(document));
+                return;
+            }
 
-        YamlHelper.MergeData(document.Data, reader);
 
-        yield return new DocumentResult($"Reading yaml data file {document.Path}");
+            using var stream = await document.OpenAsync();
+            using var reader = new StreamReader(stream);
+
+            YamlHelper.MergeData(document.Data, reader);
+
+            result.Add(new DocumentResult($"Reading yaml data file {document.Path}"));
+        });
+
+        return result;
     }
 }

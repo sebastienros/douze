@@ -1,4 +1,5 @@
-﻿using System.Text.Encodings.Web;
+﻿using System.Collections.Concurrent;
+using System.Text.Encodings.Web;
 using Douze.FileSystems;
 using Douze.Results;
 using Fluid;
@@ -15,23 +16,31 @@ internal class LayoutFileProcessor : IFileProcessor
         Match = match;
     }
 
-    public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
+    public async Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options)
     {
-        if (!Match(document.Path))
+        var result = new ConcurrentBag<IResult>();
+
+        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
         {
-            yield return new DocumentResult(document);
-            yield break;
-        }
 
-        using var stream = await document.OpenAsync();
-        using var sr = new StreamReader(stream);
+            if (!Match(document.Path))
+            {
+                result.Add(new DocumentResult(document));
+                return;
+            }
 
-        var content = await sr.ReadToEndAsync();
+            using var stream = await document.OpenAsync();
+            using var sr = new StreamReader(stream);
 
-        // Apply layout
+            var content = await sr.ReadToEndAsync();
 
-        var html = await LayoutHelper.ProcessLayoutAsync(options, content, document.Data, new Dictionary<string, FluidValue>());
+            // Apply layout
 
-        yield return new DocumentResult($"Applying layout for {document.Path}", new TextDocument(options.OutputFileSystem, document.Path, html, document.Data, document.ContentType));
+            var html = await LayoutHelper.ProcessLayoutAsync(options, content, document.Data);
+
+            result.Add(new DocumentResult($"Applying layout for {document.Path}", new TextDocument(options.OutputFileSystem, document.Path, html, document.Data, document.ContentType)));
+        });
+
+        return result;
     }
 }

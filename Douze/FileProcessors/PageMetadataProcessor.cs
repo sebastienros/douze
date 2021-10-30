@@ -1,37 +1,39 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
 using Douze.FileSystems;
 using Douze.Results;
 
 namespace Douze.FileProcessors;
 
-/// <summary>
-/// Implements
-/// - FrontMatter
-/// - Liquid pre-processing
-/// - Layout chaining
-/// - Permalink
-/// </summary>
 internal class PageMetadataProcessor : IFileProcessor
 {
     public Predicate<FPath> Match { get; set; } = _ => true;
 
-    public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
+    public async Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options)
     {
-        // Pass-through
-        yield return new DocumentResult(document);
+        var result = new ConcurrentBag<IResult>();
 
-        if (Match(document.Path) && document is SourceDocument sourceDocument)
+        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
         {
-            var metadata = await sourceDocument.FileSystem.GetFileMetadaAsync(document.Path);
 
-            var page = document.Data["page"] as JsonObject;
+            // Pass-through
+            result.Add(new DocumentResult(document));
 
-            if (page == null)
+            if (Match(document.Path) && document is SourceDocument sourceDocument)
             {
-                document.Data["page"] = page = new JsonObject();
-            }
+                var metadata = await sourceDocument.FileSystem.GetFileMetadaAsync(document.Path);
 
-            page.Add("date", metadata.LastWriteTimeUtc);
-        }
+                var page = document.Data["page"] as JsonObject;
+
+                if (page == null)
+                {
+                    document.Data["page"] = page = new JsonObject();
+                }
+
+                page.Add("date", metadata.LastWriteTimeUtc);
+            }
+        });
+
+        return result;
     }
 }

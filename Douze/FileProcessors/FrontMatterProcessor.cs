@@ -1,16 +1,9 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.Collections.Concurrent;
 using Douze.FileSystems;
 using Douze.Results;
 
 namespace Douze.FileProcessors;
 
-/// <summary>
-/// Implements
-/// - FrontMatter
-/// - Liquid pre-processing
-/// - Layout chaining
-/// - Permalink
-/// </summary>
 internal class FrontMatterProcessor : IFileProcessor
 {
     public Predicate<FPath> Match { get; set; } = _ => true;
@@ -20,28 +13,35 @@ internal class FrontMatterProcessor : IFileProcessor
         Match = match;
     }
 
-    public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
+    public async Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options)
     {
-        if (!Match(document.Path))
+        var result = new ConcurrentBag<IResult>();
+
+        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
         {
-            yield return new DocumentResult(document);
-            yield break;
-        }
-
-        if (document is SourceDocument sourceDocument)
-        {
-            using var stream = await document.OpenAsync();
-
-            var filecontent = await FrontMatterHelper.MergeFrontMatterData(options, document.Data, stream);
-
-            if (filecontent != null)
+            if (!Match(document.Path))
             {
-                yield return new DocumentResult(new TextDocument(options.OutputFileSystem, document.Path, filecontent, document.Data, document.ContentType));
+                result.Add(new DocumentResult(document));
+                return;
             }
-            else
+
+            if (document is SourceDocument sourceDocument)
             {
-                yield return new DocumentResult(document);
+                using var stream = await document.OpenAsync();
+
+                var filecontent = await FrontMatterHelper.MergeFrontMatterData(options, document.Data, stream);
+
+                if (filecontent != null)
+                {
+                    result.Add(new DocumentResult(new TextDocument(options.OutputFileSystem, document.Path, filecontent, document.Data, document.ContentType)));
+                }
+                else
+                {
+                    result.Add(new DocumentResult(document));
+                }
             }
-        }
+        });
+
+        return result;
     }
 }

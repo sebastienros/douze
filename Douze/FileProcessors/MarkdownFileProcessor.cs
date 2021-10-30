@@ -1,4 +1,5 @@
-﻿using Cysharp.Text;
+﻿using System.Collections.Concurrent;
+using Cysharp.Text;
 using Douze.FileSystems;
 using Douze.Results;
 using Markdig;
@@ -25,21 +26,29 @@ internal sealed class MarkdownFileProcessor : IFileProcessor
         Match = match;
     }
 
-    public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
+    public async Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options)
     {
-        if (!Match(document.Path))
+        var result = new ConcurrentBag<IResult>();
+
+        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
         {
-            yield return new DocumentResult(document);
-            yield break;
-        }
 
-        using var stream = await document.OpenAsync();
-        using var sr = new StreamReader(stream);
-        var fileContent = await sr.ReadToEndAsync();
+            if (!Match(document.Path))
+            {
+                result.Add(new DocumentResult(document));
+                return;
+            }
 
-        var content = await ProcessContentAsync(fileContent);
+            using var stream = await document.OpenAsync();
+            using var sr = new StreamReader(stream);
+            var fileContent = await sr.ReadToEndAsync();
 
-        yield return new DocumentResult($"Converting markdown of {document.Path}", new TextDocument(options.OutputFileSystem, document.Path, content, document.Data, "text/html"));
+            var content = await ProcessContentAsync(fileContent);
+
+            result.Add(new DocumentResult($"Converting markdown of {document.Path}", new TextDocument(options.OutputFileSystem, document.Path, content, document.Data, "text/html")));
+        });
+
+        return result;
     }
 
     public async ValueTask<string> ProcessContentAsync(string markdown)

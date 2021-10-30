@@ -1,3 +1,6 @@
+---
+title: This is article 1
+---
 <!-- Layout: {{ layout }} -->
 
 # Article 1

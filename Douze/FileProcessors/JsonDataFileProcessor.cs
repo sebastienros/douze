@@ -1,27 +1,36 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
 using Douze.Results;
 
 namespace Douze.FileProcessors;
 
 internal sealed class JsonDataFileProcessor : IFileProcessor
 {
-    public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
+    public async Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options)
     {
-        if (document.Path.GetExtensionWithDot().ToLowerInvariant() != ".json")
+        var result = new ConcurrentBag<IResult>();
+
+        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
         {
-            yield return new DocumentResult(document);
-            yield break;
-        }
 
-        using var stream = await document.OpenAsync();
+            if (document.Path.GetExtensionWithDot().ToLowerInvariant() != ".json")
+            {
+                result.Add(new DocumentResult(document));
+                return;
+            }
 
-        var json = JsonNode.Parse(stream)?.AsObject();
+            using var stream = await document.OpenAsync();
 
-        if (json != null)
-        {
-            JsonHelper.Merge(document.Data, json);
-        }
+            var json = JsonNode.Parse(stream)?.AsObject();
 
-        yield return new DocumentResult($"Reading json data file {document.Path}");
+            if (json != null)
+            {
+                JsonHelper.Merge(document.Data, json);
+            }
+
+            result.Add(new DocumentResult($"Reading json data file {document.Path}"));
+        });
+
+        return result;
     }
 }

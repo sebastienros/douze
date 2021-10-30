@@ -4,5 +4,5 @@ namespace Douze.FileProcessors;
 
 internal interface IFileProcessor
 {
-    IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options);
+    Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options);
 }

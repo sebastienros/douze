@@ -1,4 +1,5 @@
-﻿using Douze.FileSystems;
+﻿using System.Collections.Concurrent;
+using Douze.FileSystems;
 using Douze.Results;
 
 namespace Douze.FileProcessors;
@@ -12,16 +13,24 @@ internal class CopyDocumentProcessor : IFileProcessor
         Match = match;
     }
 
-    public async IAsyncEnumerable<IResult> ProcessFileAsync(IDocument document, Options options)
+    public async Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options)
     {
-        if (!Match(document.Path))
+        var result = new ConcurrentBag<IResult>();
+
+        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
         {
-            yield return new DocumentResult(document);
-            yield break;
-        }
 
-        yield return new DocumentResult($"Copying file {document.Path}", new CopyDocument(document, options.OutputFileSystem));
+            if (!Match(document.Path))
+            {
+                result.Add(new DocumentResult(document));
+                return;
+            }
 
-        await Task.Yield();
+            result.Add(new DocumentResult($"Copying file {document.Path}", new CopyDocument(document, options.OutputFileSystem)));
+
+            await Task.Yield();
+        });
+
+        return result;
     }
 }
