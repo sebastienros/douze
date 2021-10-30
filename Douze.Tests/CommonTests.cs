@@ -1,4 +1,5 @@
-﻿using Douze.FileProcessors;
+﻿using Douze.Configuration;
+using Douze.FileProcessors;
 using Douze.FileSystems;
 using System;
 using System.Linq;
@@ -21,9 +22,10 @@ namespace Douze.Tests
             _options = new Options(_sourceFs, _outputFs);
 
             _options.ContentProcessors.Add(new PageMetadataProcessor());
-            _options.ContentProcessors.Add(new FrontMatterProcessor(static (FPath x) => Array.IndexOf(new[] { ".md", ".html", ".liquid" }, x.GetExtensionWithDot().ToLowerInvariant()) != -1));
-            _options.ContentProcessors.Add(new MarkdownFileProcessor(static (FPath x) => Array.IndexOf(new[] { ".md" }, x.GetExtensionWithDot().ToLowerInvariant()) != -1));
-            _options.ContentProcessors.Add(new HtmlFileProcessor(static (FPath x) => Array.IndexOf(new[] { ".html", ".liquid" }, x.GetExtensionWithDot().ToLowerInvariant()) != -1));
+            _options.ContentProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
+            _options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
+            _options.ContentProcessors.Add(new HtmlFileProcessor(IncludeRule.ParseRules("*.html", "*.liquid")));
+            _options.ContentProcessors.Add(new CopyDocumentProcessor(IncludeRule.ParseRules("*.jpg", "*.gif", "*.png")));
             _options.DataProcessors.Add(new YamlDataFileProcessor());
             _options.DataProcessors.Add(new JsonDataFileProcessor());
 

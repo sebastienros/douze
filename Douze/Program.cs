@@ -1,4 +1,5 @@
 ﻿using Douze;
+using Douze.Configuration;
 using Douze.FileProcessors;
 using Douze.FileSystems;
 using System.Diagnostics;
@@ -21,10 +22,10 @@ Console.WriteLine($"Parsed options in {stopwatch.ElapsedMilliseconds} ms");
 // Configure files extensions mappings
 
 options.ContentProcessors.Add(new PageMetadataProcessor());
-options.ContentProcessors.Add(new FrontMatterProcessor(static (FPath x) => Array.IndexOf(new[] { ".md", ".html", ".liquid" }, x.GetExtensionWithDot().ToLowerInvariant()) != -1));
-options.ContentProcessors.Add(new MarkdownFileProcessor(static (FPath x) => Array.IndexOf(new[] { ".md" }, x.GetExtensionWithDot().ToLowerInvariant()) != -1));
-options.ContentProcessors.Add(new HtmlFileProcessor(static (FPath x) => Array.IndexOf(new[] { ".html", ".liquid" }, x.GetExtensionWithDot().ToLowerInvariant()) != -1));
-options.ContentProcessors.Add(new CopyDocumentProcessor(static (FPath x) => Array.IndexOf(new[] { ".jpg", ".gif", ".png" }, x.GetExtensionWithDot().ToLowerInvariant()) != -1));
+options.ContentProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
+options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
+options.ContentProcessors.Add(new HtmlFileProcessor(IncludeRule.ParseRules("*.html", "*.liquid")));
+options.ContentProcessors.Add(new CopyDocumentProcessor(IncludeRule.ParseRules("*.jpg", "*.gif", "*.png")));
 
 options.DataProcessors.Add(new YamlDataFileProcessor());
 options.DataProcessors.Add(new JsonDataFileProcessor());
