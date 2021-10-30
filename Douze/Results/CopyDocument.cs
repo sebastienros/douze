@@ -3,8 +3,20 @@ using Douze.FileSystems;
 
 namespace Douze.Results;
 
+/// <summary>
+/// Creates a copy of an existing document and an optional new file name.
+/// </summary>
 internal class CopyDocument : IDocument
 {
+    public CopyDocument(IDocument document, IFileSystem newFileSystem, FPath newPath)
+    {
+        FileSystem = newFileSystem;
+        Document = document;
+        Path = newPath;
+        ContentType = document.ContentType;
+        Data = document.Data;
+    }
+
     public CopyDocument(IDocument document, IFileSystem newFileSystem)
     {
         FileSystem = newFileSystem;
@@ -30,7 +42,7 @@ internal class CopyDocument : IDocument
     public async Task SaveFileAsync()
     {
         using var source = await OpenAsync();
-        using   var stream = await FileSystem.CreateFileAsync(Path);
+        using var stream = await FileSystem.CreateFileAsync(Path);
         await source.CopyToAsync(stream);
     }
 }

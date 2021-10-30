@@ -23,12 +23,14 @@ namespace Douze.Tests
 
             _options.ContentProcessors.Add(new PageMetadataProcessor());
             _options.ContentProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
+            _options.ContentProcessors.Add(new LiquidTemplateFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
+            _options.ContentProcessors.Add(new LayoutFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
             _options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
-            _options.ContentProcessors.Add(new HtmlFileProcessor(IncludeRule.ParseRules("*.html", "*.liquid")));
+            _options.ContentProcessors.Add(new PermalinkFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
             _options.ContentProcessors.Add(new CopyDocumentProcessor(IncludeRule.ParseRules("*.jpg", "*.gif", "*.png")));
+
             _options.DataProcessors.Add(new YamlDataFileProcessor());
             _options.DataProcessors.Add(new JsonDataFileProcessor());
-
         }
 
         [Fact]
@@ -84,6 +86,38 @@ namespace Douze.Tests
 
             Assert.True((await _outputFs.GetFileEntryAsync("/index.html")).Exists);
             Assert.Equal("BEGIN BEFORE Hello World AFTER END", await _outputFs.ReadAllTextAsync("/index.html"));
+        }
+
+        [Fact]
+        public async Task PermalinkShouldChangeFilename()
+        {
+            await _sourceFs.CreateTemplateAsync("/index.html", "Hello World", new { permalink = "posts/my-post" });
+
+            await SiteHelper.BuildSiteAsync(_options);
+
+            Assert.True((await _outputFs.GetFileEntryAsync("/posts/my-post/index.html")).Exists);
+            Assert.Equal("Hello World", await _outputFs.ReadAllTextAsync("/posts/my-post/index.html"));
+        }
+
+        [Fact]
+        public async Task PermalinkShouldBeTemplated()
+        {
+            await _sourceFs.CreateTemplateAsync("/index.html", "Hello World", new { title = "My Blog Post", permalink = "posts//{{ title | slug }}/index.html" });
+
+            await SiteHelper.BuildSiteAsync(_options);
+
+            Assert.True((await _outputFs.GetFileEntryAsync("/posts/my-blog-post/index.html")).Exists);
+            Assert.Equal("Hello World", await _outputFs.ReadAllTextAsync("/posts/my-blog-post/index.html"));
+        }
+
+        [Fact]
+        public async Task PermalinkShouldPreserveCustomFilenames()
+        {
+            await _sourceFs.CreateTemplateAsync("/rss.html", "Hello World", new { permalink = "posts/feed/rss.xml" });
+
+            await SiteHelper.BuildSiteAsync(_options);
+
+            Assert.True((await _outputFs.GetFileEntryAsync("posts/feed/rss.xml")).Exists);
         }
     }
 }

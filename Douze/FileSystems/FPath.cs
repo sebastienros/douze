@@ -43,7 +43,7 @@
 
         public static implicit operator FPath(string path)
         {
-            return new FPath(path);
+            return new FPath(path, true);
         }
 
         public static FPath Combine(FPath path1, FPath path2)
@@ -199,6 +199,11 @@
                         c[i] = n == '\\' ? '/' : n;
                     }
                 });
+            }
+
+            while (path.Contains("//"))
+            {
+                path = path.Replace("//", "/");
             }
 
             if (path.Contains(".."))
