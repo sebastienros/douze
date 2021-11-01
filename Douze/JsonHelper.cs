@@ -1,84 +1,54 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
+using Douze.Nodes;
 
 namespace Douze;
 
 internal static class JsonHelper
 {
-    public static void Merge(JsonObject target, JsonObject node)
+    public static Node? Convert(JsonNode? jsonNode)
     {
-        foreach (var property in node)
-        {
-            if (property.Value is JsonValue value)
-            {
-                target[property.Key] = Clone(value);
-            }
-            else if (property.Value is JsonArray array)
-            {
-                target[property.Key] = Clone(array);
-            }
-            else if (property.Value is JsonObject)
-            {
-                if (target.TryGetPropertyValue(property.Key, out var valueProperty))
-                {
-                    if (valueProperty is JsonObject jsonObject)
-                    {
-                        Merge(jsonObject, node);
-                    }
-                    else
-                    {
-                        target[property.Key] = Clone(valueProperty);
-                    }
-                }
-                else
-                {
-                    target[property.Key] = Clone(property.Value);
-                }
-            }
-        }
-    }
-
-    public static JsonNode? Clone(JsonNode? node)
-    {
-        if (node == null)
+        if (jsonNode == null)
         {
             return null;
         }
 
-        return node switch
+        if (jsonNode is JsonValue value)
         {
-            // Doesn't work with trimming
-            //JsonValue.Create(node.AsValue().GetValue<object>()),
+            var underlyingValue = value.GetValue<object>();
 
-            JsonValue => CloneJsValue(node.AsValue()),
-            JsonArray => new JsonArray(node.AsArray().Select(x => x == null ? null : Clone(x)).ToArray()),
-            JsonObject => new JsonObject(node.AsObject().Select(x => new KeyValuePair<string, JsonNode?>(x.Key, Clone(x.Value)))),
-            _ => throw new NotImplementedException()
-        };
-
-        static JsonValue? CloneJsValue(JsonValue value)
-        {
-            if (value.TryGetValue<string>(out var s))
+            if (underlyingValue is JsonElement element)
             {
-                return JsonValue.Create(s);
+                return element.ValueKind switch
+                {
+                    JsonValueKind.String => NodeValue.Create(element.GetString()),
+                    JsonValueKind.Number => NodeValue.Create(element.GetDecimal()),
+                    JsonValueKind.False => NodeValue.Create(false),
+                    JsonValueKind.True => NodeValue.Create(true),
+                    _ => null
+                };
             }
-
-            if (value.TryGetValue<bool>(out var b))
+            else
             {
-                return JsonValue.Create(b);
+                return NodeValue.Create(underlyingValue);
             }
-
-            if (value.TryGetValue<DateTime>(out var dt))
-            {
-                return JsonValue.Create(dt);
-            }
-
-            if (value.TryGetValue<decimal>(out var d))
-            {
-                return JsonValue.Create(d);
-            }
-
-            return JsonValue.Create(value.GetValue<object>().ToString());
         }
+        else if (jsonNode is JsonArray array)
+        {
+            return new NodeArray(array.Select(a => Convert(a)).ToArray());
+        }
+        else if (jsonNode is JsonObject obj)
+        {
+            var result = new NodeObject();
+
+            foreach (var item in obj)
+            {
+                result.Add(item.Key, Convert(item.Value));
+            }
+
+            return result;
+        }
+
+        return null;
     }
 }

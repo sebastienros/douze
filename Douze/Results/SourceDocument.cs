@@ -1,5 +1,5 @@
-﻿using System.Text.Json.Nodes;
-using Douze.FileSystems;
+﻿using Douze.FileSystems;
+using Douze.Nodes;
 
 namespace Douze.Results;
 
@@ -11,7 +11,8 @@ internal class SourceDocument : IDocument
         FileSystem = fileSystem;
     }
 
-    public JsonObject Data { get; set; } = new JsonObject();
+    public bool IsContent => false;
+    public NodeObject Data { get; set; } = new NodeObject();
 
     public FPath Path { get; set; }
 

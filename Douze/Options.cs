@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
-using System.Text.Json.Nodes;
 using Douze.FileProcessors;
 using Douze.FileSystems;
+using Douze.Nodes;
 using Fluid;
 
 namespace Douze;
@@ -14,7 +14,7 @@ internal sealed partial class Options
     public int MaxDegreeOfParallelism { get; set; } = -1;
 #endif
 
-    public JsonObject GlobalData { get; set; } = new JsonObject();
+    public NodeObject GlobalData { get; set; } = new NodeObject();
 
     /// <summary>
     /// Gets or sets the data folder relative to <see cref="SourceFileSystem"/>

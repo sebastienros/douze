@@ -25,6 +25,7 @@ options.ContentProcessors.Add(new PageMetadataProcessor());
 options.ContentProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
 options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
 options.ContentProcessors.Add(new UrlFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
+options.ContentProcessors.Add(new CollectionsProcessor(IncludeRule.ParseRules("*.html")));
 options.ContentProcessors.Add(new LiquidTemplateFileProcessor(IncludeRule.ParseRules("*.html", "*.json")));
 options.ContentProcessors.Add(new LayoutFileProcessor(IncludeRule.ParseRules("*.html")));
 options.ContentProcessors.Add(new CopyDocumentProcessor(IncludeRule.ParseRules("*.jpg", "*.gif", "*.png")));

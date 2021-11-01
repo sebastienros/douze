@@ -119,7 +119,7 @@
 
         public static FPath Combine(FPath path1, FPath path2, FPath path3, FPath path4)
         {
-            return Combine(Combine(path1, path2), Combine(path3, path4));
+            return Combine(Combine(path1, path2, path3), path4);
         }
 
         public static FPath Combine(params FPath[] paths)

@@ -1,5 +1,5 @@
-﻿using System.Text.Json.Nodes;
-using Douze.FileSystems;
+﻿using Douze.FileSystems;
+using Douze.Nodes;
 
 namespace Douze.Results;
 
@@ -11,9 +11,10 @@ internal sealed class BinaryDocument : IDocument
         Path = filePath;
         Content = content;
         ContentType = contentType;
-        Data = new JsonObject();
+        Data = new NodeObject();
     }
-    public JsonObject Data { get; set; }
+    public bool IsContent => false;
+    public NodeObject Data { get; set; }
     public IFileSystem FileSystem { get; }
     public FPath Path { get; }
     public byte[] Content { get; }

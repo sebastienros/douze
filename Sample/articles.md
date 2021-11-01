@@ -7,10 +7,9 @@ title: Articles
 This is the articles index
 
 <div class="articles">
-    {% for a in collections.article %}
+    {%- for a in collections.article %}
     <div class="article">
-        {{ a.url }}
-        {{ a.data.url }}
+        <a href="{{ a.data.url }}">{{ a.data.title }}</a>
     </div>
-    {% endfor %}
+    {%- endfor %}
 </div>

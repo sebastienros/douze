@@ -38,9 +38,9 @@ internal class UrlFileProcessor : IFileProcessor
 
             var localFilePath = document.Path;
 
-            if (document.Data.TryGetPropertyValue("permalink", out var permalink) && permalink != null && !string.IsNullOrWhiteSpace(permalink.GetValue<string>()))
+            if (document.Data.TryGetItem("permalink", out var permalink) && permalink != null && !string.IsNullOrWhiteSpace(permalink.GetValue<string>()))
             {
-                var permalinkTemplate = options.FluidParser.Parse(permalink.ToString());
+                var permalinkTemplate = options.FluidParser.Parse(permalink.GetValue<string>());
                 localFilePath = FPath.Combine("/", await permalinkTemplate.RenderAsync(context));
 
                 var extension = Path.GetExtension(localFilePath.FullName);
@@ -59,11 +59,11 @@ internal class UrlFileProcessor : IFileProcessor
 
                 if (Path.GetFileNameWithoutExtension(localFilePath.FullName) != "index")
                 {
-                    localFilePath = FPath.Combine("/", localFilePath.GetDirectory(), Path.GetFileNameWithoutExtension(localFilePath.FullName) ?? "", "index.html");
+                    localFilePath = FPath.Combine(localFilePath.GetDirectory().ToAbsolute(), Path.GetFileNameWithoutExtension(localFilePath.FullName) ?? "", "index.html");
                 }
                 else
                 {
-                    localFilePath = FPath.Combine("/", localFilePath.GetDirectory(), "index.html");
+                    localFilePath = FPath.Combine(localFilePath.GetDirectory().ToAbsolute(), "index.html");
                 }
 
             }

@@ -25,6 +25,7 @@ namespace Douze.Tests
             _options.ContentProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
             _options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
             _options.ContentProcessors.Add(new UrlFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
+            _options.ContentProcessors.Add(new CollectionsProcessor(IncludeRule.ParseRules("*.html")));
             _options.ContentProcessors.Add(new LiquidTemplateFileProcessor(IncludeRule.ParseRules("*.html", "*.json")));
             _options.ContentProcessors.Add(new LayoutFileProcessor(IncludeRule.ParseRules("*.html")));
             _options.ContentProcessors.Add(new CopyDocumentProcessor(IncludeRule.ParseRules("*.jpg", "*.gif", "*.png")));
@@ -122,6 +123,16 @@ namespace Douze.Tests
         }
 
         [Fact]
+        public async Task CustomFileNameShouldUseFolders()
+        {
+            await _sourceFs.CreateTemplateAsync("/articles/article.md", "Hello World");
+
+            await SiteHelper.BuildSiteAsync(_options);
+
+            Assert.True((await _outputFs.GetFileEntryAsync("/articles/article/index.html")).Exists);
+        }
+
+        [Fact]
         public async Task PermalinkShouldBeTemplated()
         {
             await _sourceFs.CreateTemplateAsync("/index.html", "Hello World", new { title = "My Blog Post", permalink = "posts//{{ title | slug }}/index.html" });
@@ -141,6 +152,25 @@ namespace Douze.Tests
 
             Assert.True((await _outputFs.GetFileEntryAsync("posts/api.json")).Exists);
             Assert.Equal("{ \"error\": false }", await _outputFs.ReadAllTextAsync("/posts/api.json"));
+        }
+
+        [Fact]
+        public async Task TagsShouldBeAvailableInCollections()
+        {
+            await _sourceFs.CreateTemplateAsync("/articles/article1.md", "Hello World", new { tags = new[] { "article", "science" } });
+            await _sourceFs.CreateTemplateAsync("/articles/article2.md", "Hello World", new { tags = new[] { "article", "music" } });
+            await _sourceFs.CreateTemplateAsync("/articles/article3.md", "Hello World", new { tags = new[] { "article", "music", "science" } });
+            await _sourceFs.CreateTemplateAsync("/articles/article4.md", "Hello World", new { tags = "article" });
+            await _sourceFs.CreateTemplateAsync("/blog/post1.md", "Hello World");
+
+            await SiteHelper.BuildSiteAsync(_options);
+
+            Assert.NotNull(_options.GlobalData["collections"]);
+
+            Assert.Equal(5, _options.GlobalData["collections"]?["all"]?.AsArray()?.Count);
+            Assert.Equal(4, _options.GlobalData["collections"]?["article"]?.AsArray()?.Count);
+            Assert.Equal(2, _options.GlobalData["collections"]?["music"]?.AsArray()?.Count);
+            Assert.Equal(2, _options.GlobalData["collections"]?["science"]?.AsArray()?.Count);
         }
     }
 }

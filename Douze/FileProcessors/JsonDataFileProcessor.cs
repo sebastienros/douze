@@ -12,7 +12,6 @@ internal sealed class JsonDataFileProcessor : IFileProcessor
 
         await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
         {
-
             if (document.Path.GetExtensionWithDot().ToLowerInvariant() != ".json")
             {
                 result.Add(new DocumentResult(document));
@@ -25,7 +24,7 @@ internal sealed class JsonDataFileProcessor : IFileProcessor
 
             if (json != null)
             {
-                JsonHelper.Merge(document.Data, json);
+                document.Data.Merge(JsonHelper.Convert(json)?.AsObject());
             }
 
             result.Add(new DocumentResult($"Reading json data file {document.Path}"));
