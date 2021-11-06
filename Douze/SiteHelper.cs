@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Text.Json.Nodes;
 using Douze.FileSystems;
+using Douze.Nodes;
 using Douze.Results;
 
 namespace Douze;
@@ -26,7 +26,7 @@ internal class SiteHelper
 
         // Process all data files and store the values per folder
 
-        var dataByPath = new ConcurrentDictionary<FPath, JsonObject>();
+        var dataByPath = new ConcurrentDictionary<FPath, NodeObject>();
 
         var filesByDirectory = documents.GroupBy(x => x.Path.GetDirectory()).ToDictionary(x => x.Key, x => x.ToArray());
 
@@ -46,7 +46,7 @@ internal class SiteHelper
 
                 if (!dataByPath.TryGetValue(directoryName, out var data))
                 {
-                    dataByPath[directoryName] = data = new JsonObject();
+                    dataByPath[directoryName] = data = new NodeObject();
                 }
 
                 var lsw = Stopwatch.StartNew();
@@ -63,7 +63,7 @@ internal class SiteHelper
 
                 foreach (var document in entry.Value)
                 {
-                    JsonHelper.Merge(data, document.Data);
+                    data.Merge(document.Data);
                 }
             }
         }
@@ -72,14 +72,12 @@ internal class SiteHelper
 
         if (!dataByPath.TryGetValue(options.DataFolder.ToAbsolute(), out var globalData))
         {
-            globalData = new JsonObject();
+            globalData = new NodeObject();
         }
 
         dataByPath[FPath.Root] = globalData;
 
         // 2- Map: Create all new documents
-
-        // TODO: cache data per folder
 
         // Create data for each document
 
@@ -89,9 +87,9 @@ internal class SiteHelper
 
             // Gather all data from each parent folder
 
-            var data = JsonHelper.Clone(globalData)?.AsObject() ?? new JsonObject();
+            var data = globalData.Clone()?.AsObject() ?? new NodeObject();
 
-            var folderDataObjects = new List<JsonObject>();
+            var folderDataObjects = new List<NodeObject>();
 
             while (dir != FPath.Root)
             {
@@ -105,11 +103,10 @@ internal class SiteHelper
 
             foreach (var folderData in folderDataObjects)
             {
-                JsonHelper.Merge(data, folderData);
+                data.Merge(folderData);
             }
 
-            JsonHelper.Merge(document.Data, data);
-
+            document.Data.Merge(data);
         }
 
         var semaphore = new SemaphoreSlim(1);

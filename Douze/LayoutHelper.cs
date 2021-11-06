@@ -1,16 +1,16 @@
-﻿using Douze.FileSystems;
+﻿using System.Text.Encodings.Web;
+using Douze.FileSystems;
+using Douze.Nodes;
 using Fluid;
 using Fluid.Values;
-using System.Text.Encodings.Web;
-using System.Text.Json.Nodes;
 
 namespace Douze;
 
 internal static class LayoutHelper
 {
-    public static async Task<string> ProcessLayoutAsync(Options options, string content, JsonObject data)
+    public static async Task<string> ProcessLayoutAsync(Options options, string content, NodeObject data)
     {
-        if (!data.TryGetPropertyValue("layout", out var layoutProperty) || layoutProperty == null)
+        if (!data.TryGetItem("layout", out var layoutProperty) || layoutProperty == null)
         {
             // No layout to apply
             return content;
@@ -33,20 +33,20 @@ internal static class LayoutHelper
 
             var template = options.FluidParser.Parse(result.Content);
 
-            var frontMatter = !String.IsNullOrEmpty(result.FrontMatter) ? YamlHelper.Parse(result.FrontMatter) : new JsonObject();
+            var frontMatter = !String.IsNullOrEmpty(result.FrontMatter) ? YamlHelper.Parse(result.FrontMatter)?.AsObject() : new NodeObject();
 
-            cachedLayout = new CachedLayout(frontMatter, template);
+            cachedLayout = new CachedLayout(frontMatter ?? new NodeObject(), template);
 
             options.PropertyBag[layoutFilePath.ToString()] = cachedLayout;
         }
 
         // Clone the cache data since it will be altered to remove the layout
-        var localData = JsonHelper.Clone(cachedLayout.Data) as JsonObject ?? new JsonObject();
+        var localData = cachedLayout.Data.Clone() as NodeObject ?? new NodeObject();
 
         // Remove layout property from markdown data to prevent loss of base layout (layout chaining)
         data.Remove("layout");
 
-        JsonHelper.Merge(localData, data);
+        localData.Merge(data);
 
         var context = new TemplateContext(localData, options.TemplateOptions);
 
@@ -68,13 +68,13 @@ internal static class LayoutHelper
 
     private class CachedLayout
     {
-        public CachedLayout(JsonObject data, IFluidTemplate template)
+        public CachedLayout(NodeObject data, IFluidTemplate template)
         {
             Data = data;
             Template = template;
         }
 
-        public JsonObject Data { get; set; }
+        public NodeObject Data { get; set; }
         public IFluidTemplate Template { get; set; }
     }
 

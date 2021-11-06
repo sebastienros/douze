@@ -234,4 +234,45 @@ internal partial class NodeValue
     /// <param name="value">The underlying value of the new <see cref="NodeValue"/> instance.</param>
     /// <returns>The new instance of the <see cref="NodeValue"/> class that contains the specified value.</returns>
     public static NodeValue? Create(ulong? value) => value.HasValue ? new NodeValue<ulong>(value.Value) : null;
+
+    /// <summary>
+    ///   Initializes a new instance of the <see cref="NodeValue"/> class that contains the specified value.
+    /// </summary>
+    /// <param name="value">The underlying value of the new <see cref="NodeValue"/> instance.</param>
+    /// <returns>The new instance of the <see cref="NodeValue"/> class that contains the specified value.</returns>
+    public static NodeValue? Create(object? value)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+
+        var typeCode = Type.GetTypeCode(value.GetType());
+
+        switch (typeCode)
+        {
+            case TypeCode.Boolean: return Create((bool)value);
+            case TypeCode.Char: return Create((char)value);
+            case TypeCode.SByte: return Create((sbyte)value);
+            case TypeCode.Byte: return Create((byte)value);
+            case TypeCode.Int16: return Create((short)value);
+            case TypeCode.UInt16: return Create((ushort)value);
+            case TypeCode.Int32: return Create((int)value);
+            case TypeCode.UInt32: return Create((uint)value);
+            case TypeCode.Int64: return Create((long)value);
+            case TypeCode.UInt64: return Create((ulong)value);
+            case TypeCode.Single: return Create((float)value);
+            case TypeCode.Double: return Create((double)value);
+            case TypeCode.Decimal: return Create((decimal)value);
+            case TypeCode.DateTime: return Create((DateTime)value);
+            case TypeCode.String: return Create((string)value);
+            default:
+                return value switch
+                {
+                    Guid => Create((Guid)value),
+                    DateTimeOffset => Create((DateTimeOffset)value),
+                    _ => throw new InvalidOperationException($"Can't convert a {value.GetType()} to a NodeValue"),
+                };
+        }
+    }
 }

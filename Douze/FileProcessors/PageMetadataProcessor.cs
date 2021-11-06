@@ -1,6 +1,6 @@
 ﻿using System.Collections.Concurrent;
-using System.Text.Json.Nodes;
 using Douze.FileSystems;
+using Douze.Nodes;
 using Douze.Results;
 
 namespace Douze.FileProcessors;
@@ -23,11 +23,11 @@ internal class PageMetadataProcessor : IFileProcessor
             {
                 var metadata = await sourceDocument.FileSystem.GetFileMetadaAsync(document.Path);
 
-                var page = document.Data["page"] as JsonObject;
+                var page = document.Data["page"] as NodeObject;
 
                 if (page == null)
                 {
-                    document.Data["page"] = page = new JsonObject();
+                    document.Data["page"] = page = new NodeObject();
                 }
 
                 page.Add("date", metadata.LastWriteTimeUtc);

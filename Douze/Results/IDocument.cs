@@ -1,11 +1,16 @@
-﻿using System.Text.Json.Nodes;
-using Douze.FileSystems;
+﻿using Douze.FileSystems;
+using Douze.Nodes;
 
 namespace Douze.Results;
 
 internal interface IDocument
 {
-    JsonObject Data { get; }
+    NodeObject Data { get; }
+
+    /// <summary>
+    /// Gets whether the document is a content document.
+    /// </summary>
+    public bool IsContent { get; }
 
     /// <summary>
     /// Gets the relative path of the file.

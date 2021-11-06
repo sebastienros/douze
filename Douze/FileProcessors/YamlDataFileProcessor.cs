@@ -18,11 +18,12 @@ internal sealed class YamlDataFileProcessor : IFileProcessor
                 return;
             }
 
-
             using var stream = await document.OpenAsync();
             using var reader = new StreamReader(stream);
 
-            YamlHelper.MergeData(document.Data, reader);
+            var yaml = YamlHelper.Parse(reader);
+
+            document.Data.Merge(yaml?.AsObject());
 
             result.Add(new DocumentResult($"Reading yaml data file {document.Path}"));
         });

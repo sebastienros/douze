@@ -1,12 +1,12 @@
 ﻿using System.Text;
-using System.Text.Json.Nodes;
 using Douze.FileSystems;
+using Douze.Nodes;
 
 namespace Douze.Results;
 
 internal sealed class TextDocument : IDocument
 {
-    public TextDocument(IFileSystem fileSystem, FPath filePath, string content, JsonObject data, string? contentType)
+    public TextDocument(IFileSystem fileSystem, FPath filePath, string content, NodeObject data, string? contentType)
     {
         FileSystem = fileSystem;
         Path = filePath;
@@ -14,7 +14,8 @@ internal sealed class TextDocument : IDocument
         ContentType = contentType;
         Data = data;
     }
-    public JsonObject Data { get; set; }
+    public bool IsContent => true;
+    public NodeObject Data { get; set; }
     public IFileSystem FileSystem { get; }
     public FPath Path { get; }
     public string Content { get; }
@@ -22,7 +23,7 @@ internal sealed class TextDocument : IDocument
 
     public ValueTask<Stream> OpenAsync()
     {
-        return new (new MemoryStream(Encoding.UTF8.GetBytes(Content)));
+        return new(new MemoryStream(Encoding.UTF8.GetBytes(Content)));
     }
 
     public async Task SaveFileAsync()

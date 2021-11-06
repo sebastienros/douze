@@ -1,5 +1,5 @@
-﻿using System.Text.Json.Nodes;
-using Douze.FileSystems;
+﻿using Douze.FileSystems;
+using Douze.Nodes;
 
 namespace Douze.Results;
 
@@ -26,7 +26,8 @@ internal class CopyDocument : IDocument
         Data = document.Data;
     }
 
-    public JsonObject Data { get; set; }
+    public bool IsContent => Document.IsContent;
+    public NodeObject Data { get; set; }
 
     public FPath Path { get; set; }
     public IDocument Document { get; }

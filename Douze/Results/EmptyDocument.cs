@@ -1,5 +1,5 @@
-﻿using System.Text.Json.Nodes;
-using Douze.FileSystems;
+﻿using Douze.FileSystems;
+using Douze.Nodes;
 
 namespace Douze.Results;
 
@@ -7,13 +7,14 @@ internal sealed class EmptyDocument : IDocument
 {
     public EmptyDocument()
     {
-        Data = new JsonObject();
+        Data = new NodeObject();
     }
 
+    public bool IsContent => false;
     public FPath Path => FPath.Empty;
     public string? ContentType => null;
 
-    public JsonObject Data { get; set; }
+    public NodeObject Data { get; set; }
 
     public ValueTask<Stream> OpenAsync()
     {

@@ -5,7 +5,7 @@
 /// </summary>
 internal class MergeSettings
 {
-    public static MergeSettings Default = new MergeSettings { MergeArrayHandling = MergeArrayHandling.Union };
+    public static MergeSettings Default = new() { MergeArrayHandling = MergeArrayHandling.Union };
 
     public MergeArrayHandling MergeArrayHandling { get; set; }
 }

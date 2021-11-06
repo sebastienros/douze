@@ -1,50 +1,21 @@
-﻿using SharpYaml.Model;
-using System.Text.Json.Nodes;
+﻿using Douze.Nodes;
+using SharpYaml.Model;
 
 namespace Douze;
 
 internal sealed class YamlHelper
 {
-    public static JsonObject Parse(string content)
+    public static Node? Parse(string content)
     {
         using var reader = new StringReader(content);
-        var data = new JsonObject();
-
-        MergeData(data, reader);
-
-        return data;
+        return Parse(reader);
     }
 
-    public static void MergeData(JsonObject data, TextReader reader)
+    public static Node? Parse(TextReader reader)
     {
         var stream = YamlStream.Load(reader);
 
-        MergeNode(data, "", stream[0].Contents);
-    }
-
-    /// <summary>
-    /// Process the nodes recursively
-    /// </summary>
-    /// <param name="data"></param>
-    /// <param name="name"></param>
-    /// <param name="node"></param>
-    private static void MergeNode(JsonObject data, string name, YamlNode node)
-    {
-        if (node is YamlMapping yamlMapping)
-        {
-            foreach (var child in yamlMapping)
-            {
-                MergeNode(data, child.Key.ToString(), child.Value);
-            }
-        }
-        else if (node is YamlValue yamlValue)
-        {
-            data[name] = MaterializeNode(yamlValue);
-        }
-        else if (node is YamlSequence yamlSequence)
-        {
-            data[name] = MaterializeNode(yamlSequence);
-        }
+        return Convert(stream[0].Contents);
     }
 
     /// <summary>
@@ -52,15 +23,15 @@ internal sealed class YamlHelper
     /// </summary>
     /// <param name="node"></param>
     /// <returns></returns>
-    private static JsonNode? MaterializeNode(YamlNode node)
+    private static Node? Convert(YamlNode node)
     {
         if (node is YamlMapping yamlMapping)
         {
-            var dictionary = new JsonObject();
+            var dictionary = new NodeObject();
 
             foreach (var child in yamlMapping)
             {
-                dictionary[child.Key.ToString()] = MaterializeNode(child.Value);
+                dictionary[child.Key.ToString()] = Convert(child.Value);
             }
 
             return dictionary;
@@ -72,11 +43,11 @@ internal sealed class YamlHelper
         else if (node is YamlSequence yamlSequence)
         {
             var length = yamlSequence.Count;
-            var array = new JsonArray();
+            var array = new NodeArray();
 
             for (var i = 0; i < length; i++)
             {
-                array.Add(MaterializeNode(yamlSequence[i]));
+                array.Add(Convert(yamlSequence[i]));
             }
 
             return array;

@@ -22,6 +22,17 @@ internal partial class NodeObject : Node
         }
     }
 
+    internal bool TryGetItem(string propertyName, out Node? node)
+    {
+        if (_dictionary != null && _dictionary.TryGetValue(propertyName, out node))
+        {
+            return true;
+        }
+
+        node = null;
+        return false;
+    }
+
     internal Node? GetItem(string propertyName)
     {
         if (_dictionary != null && _dictionary.TryGetValue(propertyName, out var value))
@@ -62,20 +73,29 @@ internal partial class NodeObject : Node
         return obj;
     }
 
-    public void Merge(NodeObject node, MergeSettings? mergeSettings = null)
+    public void Merge(NodeObject? node, MergeSettings? mergeSettings = null)
     {
+        if (node == null)
+        {
+            return;
+        }
+
         mergeSettings ??= MergeSettings.Default;
 
         foreach (var property in node)
         {
-            var localNode = GetItem(property.Key);
+            // If there is no property with this name, assign it
+            if (!TryGetItem(property.Key, out var localNode))
+            {
+                SetItem(property.Key, property.Value);
+
+                continue;
+            }
 
             if (property.Value is NodeValue value)
             {
                 // If the current entry is an array and the merged node a value, use array merge
-                var localArray = localNode as NodeArray;
-
-                if (localArray != null)
+                if (localNode is NodeArray localArray)
                 {
                     localArray.Merge(new NodeArray(value), mergeSettings);
                 }
@@ -88,9 +108,7 @@ internal partial class NodeObject : Node
             else if (property.Value is NodeArray array)
             {
                 // If the current entry is a value and the merged node an array, use array merge
-                var localValue = localNode as NodeValue;
-
-                if (localValue != null)
+                if (localNode is NodeValue localValue)
                 {
                     var newArray = new NodeArray(localValue);
                     newArray.Merge(array, mergeSettings);
@@ -100,9 +118,7 @@ internal partial class NodeObject : Node
                 else
                 {
                     // If the current entry is an array value and the merged node an array, use array merge
-                    var localArray = localNode as NodeArray;
-
-                    if (localArray != null)
+                    if (localNode is NodeArray localArray)
                     {
                         localArray.Merge(array, mergeSettings);
                     }
