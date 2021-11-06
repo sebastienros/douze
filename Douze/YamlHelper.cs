@@ -38,6 +38,22 @@ internal sealed class YamlHelper
         }
         else if (node is YamlValue yamlValue)
         {
+            if (yamlValue.Style == SharpYaml.ScalarStyle.Plain)
+            {
+                if (int.TryParse(yamlValue.Value, out var intValue))
+                {
+                    return intValue;
+                }
+                else if (decimal.TryParse(yamlValue.Value, out var decimalValue))
+                {
+                    return decimalValue;
+                }
+                else if (bool.TryParse(yamlValue.Value, out var boolValue))
+                {
+                    return boolValue;
+                }
+            }
+
             return yamlValue.Value;
         }
         else if (node is YamlSequence yamlSequence)

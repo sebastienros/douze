@@ -1,14 +1,23 @@
 ﻿- Results should list which source files can alter its results to the rebuilds can be incremental.
 - The result's content type will drive post-processors (images can be compressed, html can be minified, ...)
-- Pagination
 - Shortcodes
 - Configuration
 - Server command
+- Pagination/Collections/Url generation seem to be related and should be computed in the same file processor
+    - collections can be paginated, permalinks can be defined in pagination, collections need the url (permalink)
+- Taxonomies? i.e. define multiple named list of tags, "tags" is a taxonomy
+- XML parsing
+- Sitemaps
+- RSS feeds
+- Robots.txt
+- Sass, css, image, js ?
+- Multi-language
+- Localization
 
 - Implemented
     - File created based on folder and source file name. blog/post-1.md => blog/post-1/index.html
     - Chained layouts, {{ content | raw }} to render the page
-    - Layout sections, {% capture %} from template
+    - Layout, sections, {% capture %} from template, named Templates is other SSGs
     - FrontMatter parsing
     - Json data source
     - Yaml data source
@@ -18,3 +27,7 @@
     - Copy files to destination
     - page.date represents the template's UTC last write time
     - Tags and collections
+    - Pagination
+
+- Build
+    - dotnet publish -c Release --self-contained -r win-x64 -p:PublishReadyToRun=true -p:PublishTrimmed=true -p:PublishSingleFile=true -o ./artifacts/win-x64
