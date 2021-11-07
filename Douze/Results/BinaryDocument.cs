@@ -5,15 +5,17 @@ namespace Douze.Results;
 
 internal sealed class BinaryDocument : IDocument
 {
-    public BinaryDocument(IFileSystem fileSystem, FPath filePath, byte[] content, string contentType)
+    public BinaryDocument(IFileSystem fileSystem, FPath filePath, byte[] content, string contentType, DocumentTypes documentType)
     {
         FileSystem = fileSystem;
         Path = filePath;
         Content = content;
         ContentType = contentType;
         Data = new NodeObject();
+        DocumentType = documentType;
     }
-    public bool IsContent => false;
+
+    public DocumentTypes DocumentType { get; set; }
     public NodeObject Data { get; set; }
     public IFileSystem FileSystem { get; }
     public FPath Path { get; }

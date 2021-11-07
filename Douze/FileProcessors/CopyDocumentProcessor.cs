@@ -22,11 +22,11 @@ internal class CopyDocumentProcessor : IFileProcessor
 
             if (!Match(document.Path))
             {
-                result.Add(new DocumentResult(document));
+                result.Add(new DocumentsResult(document));
                 return;
             }
 
-            result.Add(new DocumentResult($"Copying file {document.Path}", new CopyDocument(document, options.OutputFileSystem)));
+            result.Add(new DocumentsResult($"Copying file {document.Path}", new CopyDocument(document, options.OutputFileSystem)));
 
             await Task.Yield();
         });

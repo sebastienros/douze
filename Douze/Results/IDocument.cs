@@ -8,9 +8,9 @@ internal interface IDocument
     NodeObject Data { get; }
 
     /// <summary>
-    /// Gets whether the document is a content document.
+    /// Gets or sets the type of document.
     /// </summary>
-    public bool IsContent { get; }
+    public DocumentTypes DocumentType { get; set; }
 
     /// <summary>
     /// Gets the relative path of the file.

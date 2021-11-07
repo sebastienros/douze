@@ -14,7 +14,7 @@ internal sealed partial class Options
     public int MaxDegreeOfParallelism { get; set; } = -1;
 #endif
 
-    public NodeObject GlobalData { get; set; } = new NodeObject();
+    public NodeObject SiteData { get; set; } = new NodeObject();
 
     /// <summary>
     /// Gets or sets the data folder relative to <see cref="SourceFileSystem"/>

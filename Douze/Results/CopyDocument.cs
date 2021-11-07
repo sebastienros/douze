@@ -8,13 +8,9 @@ namespace Douze.Results;
 /// </summary>
 internal class CopyDocument : IDocument
 {
-    public CopyDocument(IDocument document, IFileSystem newFileSystem, FPath newPath)
+    public CopyDocument(IDocument document, IFileSystem newFileSystem, FPath newPath) : this(document, newFileSystem)
     {
-        FileSystem = newFileSystem;
-        Document = document;
         Path = newPath;
-        ContentType = document.ContentType;
-        Data = document.Data;
     }
 
     public CopyDocument(IDocument document, IFileSystem newFileSystem)
@@ -24,9 +20,10 @@ internal class CopyDocument : IDocument
         Path = document.Path;
         ContentType = document.ContentType;
         Data = document.Data;
+        DocumentType = document.DocumentType;
     }
 
-    public bool IsContent => Document.IsContent;
+    public DocumentTypes DocumentType { get; set; }
     public NodeObject Data { get; set; }
 
     public FPath Path { get; set; }

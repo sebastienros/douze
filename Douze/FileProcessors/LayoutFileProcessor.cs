@@ -20,9 +20,9 @@ internal class LayoutFileProcessor : IFileProcessor
         await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
         {
 
-            if (!Match(document.Path))
+            if (!Match(document.Path) || document.DocumentType != DocumentTypes.Content)
             {
-                result.Add(new DocumentResult(document));
+                result.Add(new DocumentsResult(document));
                 return;
             }
 
@@ -35,7 +35,7 @@ internal class LayoutFileProcessor : IFileProcessor
 
             var html = await LayoutHelper.ProcessLayoutAsync(options, content, document.Data);
 
-            result.Add(new DocumentResult($"Applying layout for {document.Path}", new TextDocument(options.OutputFileSystem, document.Path, html, document.Data, document.ContentType)));
+            result.Add(new DocumentsResult($"Applying layout for {document.Path}", new TextDocument(options.OutputFileSystem, document.Path, html, document.Data, document.ContentType, DocumentTypes.Content)));
         });
 
         return result;

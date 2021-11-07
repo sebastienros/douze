@@ -21,8 +21,6 @@ namespace Douze.Tests
 
             _options = new Options(_sourceFs, _outputFs);
 
-            _options.ContentProcessors.Add(new PageMetadataProcessor());
-            _options.ContentProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
             _options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
             _options.ContentProcessors.Add(new UrlFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
             _options.ContentProcessors.Add(new CollectionsProcessor(IncludeRule.ParseRules("*.html")));
@@ -32,6 +30,9 @@ namespace Douze.Tests
 
             _options.DataProcessors.Add(new YamlDataFileProcessor());
             _options.DataProcessors.Add(new JsonDataFileProcessor());
+            _options.DataProcessors.Add(new PageMetadataProcessor());
+            _options.DataProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
+
         }
 
         [Fact]
@@ -70,8 +71,8 @@ namespace Douze.Tests
         [Fact]
         public async Task ShouldRenderLayout()
         {
-            await _sourceFs.CreateTemplateAsync("/index.html", "Hello World", new { layout = "layout.html" });
-            await _sourceFs.CreateTemplateAsync("/_includes/layout.html", "BEFORE {{ content }} AFTER");
+            await _sourceFs.CreateTemplateAsync("/index.html", "Hello World", new { title = "article", layout = "layout.html" });
+            await _sourceFs.CreateTemplateAsync("/_includes/layout.html", "{{title}} BEFORE {{ content }} AFTER");
 
             await SiteHelper.BuildSiteAsync(_options);
 
@@ -79,7 +80,7 @@ namespace Douze.Tests
             Assert.Equal(2, (await _outputFs.EnumerateFileSystemEntriesAsync(FPath.Root, true, null)).Count());
 
             Assert.True((await _outputFs.GetFileEntryAsync("/index.html")).Exists);
-            Assert.Equal("BEFORE Hello World AFTER", await _outputFs.ReadAllTextAsync("/index.html"));
+            Assert.Equal("article BEFORE Hello World AFTER", await _outputFs.ReadAllTextAsync("/index.html"));
         }
 
         [Fact]
@@ -165,12 +166,12 @@ namespace Douze.Tests
 
             await SiteHelper.BuildSiteAsync(_options);
 
-            Assert.NotNull(_options.GlobalData["collections"]);
+            Assert.NotNull(_options.SiteData["collections"]);
 
-            Assert.Equal(5, _options.GlobalData["collections"]?["all"]?.AsArray()?.Count);
-            Assert.Equal(4, _options.GlobalData["collections"]?["article"]?.AsArray()?.Count);
-            Assert.Equal(2, _options.GlobalData["collections"]?["music"]?.AsArray()?.Count);
-            Assert.Equal(2, _options.GlobalData["collections"]?["science"]?.AsArray()?.Count);
+            Assert.Equal(5, _options.SiteData["collections"]?["all"]?.AsArray()?.Count);
+            Assert.Equal(4, _options.SiteData["collections"]?["article"]?.AsArray()?.Count);
+            Assert.Equal(2, _options.SiteData["collections"]?["music"]?.AsArray()?.Count);
+            Assert.Equal(2, _options.SiteData["collections"]?["science"]?.AsArray()?.Count);
         }
     }
 }

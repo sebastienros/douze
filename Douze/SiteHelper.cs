@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Douze.FileSystems;
 using Douze.Nodes;
 using Douze.Results;
@@ -24,44 +23,47 @@ internal class SiteHelper
 
         var documents = files.Select(x => new SourceDocument(options.SourceFileSystem, x.Path)).ToList<IDocument>();
 
-        // Process all data files and store the values per folder
+        // 1- Process data from all files
 
-        var dataByPath = new ConcurrentDictionary<FPath, NodeObject>();
+        foreach (var processor in options.DataProcessors)
+        {
+            var sw2 = Stopwatch.StartNew();
+
+            var results = await processor.ProcessFileAsync(documents, options);
+
+            documents.Clear();
+
+            foreach (var result in results)
+            {
+                await result.ExecuteAsync(documents);
+
+                if (!String.IsNullOrEmpty(result.Description))
+                {
+                    Console.WriteLine($"{result.Description} in {sw2.ElapsedMilliseconds} ms");
+                }
+            }
+        }
+
+        // 2- Group custom data by folder
+
+        var dataByPath = new Dictionary<FPath, NodeObject>();
+
+        // The site data cannot replace a property that is set at the page level
+
+        var siteDataMergeSettings = new MergeSettings { MergeObjectHandling = MergeObjectHandling.Union };
 
         var filesByDirectory = documents.GroupBy(x => x.Path.GetDirectory()).ToDictionary(x => x.Key, x => x.ToArray());
 
-        var dataProcessorsResult = new List<IDocument>();
-
         foreach (var entry in filesByDirectory)
         {
-            foreach (var processor in options.DataProcessors)
+            var directoryName = entry.Key;
+            var directoryFiels = entry.Value;
+
+            var data = dataByPath[directoryName] = new NodeObject();
+
+            foreach (var document in entry.Value)
             {
-                var directoryName = entry.Key;
-
-                // Don't process data files from the root folder, use the _data folder instead
-                if (directoryName == FPath.Root)
-                {
-                    continue;
-                }
-
-                if (!dataByPath.TryGetValue(directoryName, out var data))
-                {
-                    dataByPath[directoryName] = data = new NodeObject();
-                }
-
-                var lsw = Stopwatch.StartNew();
-
-                foreach (var result in await processor.ProcessFileAsync(entry.Value, options))
-                {
-                    await result.ExecuteAsync(dataProcessorsResult);
-
-                    if (!String.IsNullOrEmpty(result.Description))
-                    {
-                        Console.WriteLine($"{result.Description} in {lsw.ElapsedMilliseconds} ms");
-                    }
-                }
-
-                foreach (var document in entry.Value)
+                if (document.DocumentType == DocumentTypes.Data)
                 {
                     data.Merge(document.Data);
                 }
@@ -70,12 +72,15 @@ internal class SiteHelper
 
         // The data from the data folder is associated to the root folder by convention
 
-        if (!dataByPath.TryGetValue(options.DataFolder.ToAbsolute(), out var globalData))
+        if (!dataByPath.ContainsKey(FPath.Root))
         {
-            globalData = new NodeObject();
+            dataByPath[FPath.Root] = new NodeObject();
         }
 
-        dataByPath[FPath.Root] = globalData;
+        if (dataByPath.TryGetValue(options.DataFolder.ToAbsolute(), out var globalData))
+        {
+            dataByPath[FPath.Root].Merge(globalData);
+        }
 
         // 2- Map: Create all new documents
 
@@ -87,11 +92,9 @@ internal class SiteHelper
 
             // Gather all data from each parent folder
 
-            var data = globalData.Clone()?.AsObject() ?? new NodeObject();
-
             var folderDataObjects = new List<NodeObject>();
 
-            while (dir != FPath.Root)
+            while (dir != FPath.Empty)
             {
                 if (dataByPath.TryGetValue(dir, out var folderData))
                 {
@@ -103,13 +106,9 @@ internal class SiteHelper
 
             foreach (var folderData in folderDataObjects)
             {
-                data.Merge(folderData);
+                document.Data.Merge(folderData, siteDataMergeSettings);
             }
-
-            document.Data.Merge(data);
         }
-
-        var semaphore = new SemaphoreSlim(1);
 
         // Ignore templates in special folders
 

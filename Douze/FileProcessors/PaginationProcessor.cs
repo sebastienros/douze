@@ -37,7 +37,7 @@ internal class PaginationProcessor : IFileProcessor
             // No pagination property?
             if (!document.Data.TryGetItem(Pagination, out var paginationNode) || paginationNode == null || paginationNode is not NodeObject)
             {
-                result.Add(new DocumentResult(document));
+                result.Add(new DocumentsResult(document));
                 return;
             }
 
@@ -46,14 +46,14 @@ internal class PaginationProcessor : IFileProcessor
             // No existing pagination.data property?
             if (!document.Data.TryGetItem(paginationDataName, out var paginationData) || paginationData == null)
             {
-                result.Add(new DocumentResult(document));
+                result.Add(new DocumentsResult(document));
                 return;
             }
 
             // No existing pagination.size property?
             if (!paginationNode.AsObject().TryGetItem(Size, out var paginationSize) || paginationSize == null)
             {
-                result.Add(new DocumentResult(document));
+                result.Add(new DocumentsResult(document));
                 return;
             }
 
@@ -97,7 +97,7 @@ internal class PaginationProcessor : IFileProcessor
                         newDocument.Data[aliasName] = size == 1 ? items[0] : items;
                     }
 
-                    result.Add(new DocumentResult($"Generating file {path}", newDocument));
+                    result.Add(new DocumentsResult($"Generating file {path}", newDocument));
                 }
             }
             else if (paginationData is NodeArray nodeArray)
@@ -129,7 +129,7 @@ internal class PaginationProcessor : IFileProcessor
                         newDocument.Data[aliasName] = size == 1 ? items[0] : items;
                     }
 
-                    result.Add(new DocumentResult($"Generating file {path}", newDocument));
+                    result.Add(new DocumentsResult($"Generating file {path}", newDocument));
                 }
             }
         });

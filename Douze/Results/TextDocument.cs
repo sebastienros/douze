@@ -6,15 +6,17 @@ namespace Douze.Results;
 
 internal sealed class TextDocument : IDocument
 {
-    public TextDocument(IFileSystem fileSystem, FPath filePath, string content, NodeObject data, string? contentType)
+    public TextDocument(IFileSystem fileSystem, FPath filePath, string content, NodeObject data, string? contentType, DocumentTypes documentType)
     {
         FileSystem = fileSystem;
         Path = filePath;
         Content = content;
         ContentType = contentType;
         Data = data;
+        DocumentType = documentType;
     }
-    public bool IsContent => true;
+
+    public DocumentTypes DocumentType { get; set; }
     public NodeObject Data { get; set; }
     public IFileSystem FileSystem { get; }
     public FPath Path { get; }

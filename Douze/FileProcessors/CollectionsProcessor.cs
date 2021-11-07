@@ -35,7 +35,7 @@ internal class CollectionsProcessor : IFileProcessor
 
         Parallel.ForEach(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, (document, cancellationToken) =>
         {
-            result.Add(new DocumentResult(document));
+            result.Add(new DocumentsResult(document));
 
             if (!Match(document.Path))
             {
@@ -48,7 +48,7 @@ internal class CollectionsProcessor : IFileProcessor
             };
 
             // All documents that are content are added to the "all" collection
-            if (document.IsContent)
+            if (document.DocumentType == DocumentTypes.Content)
             {
                 collectionsAll.Add(page);
             }
@@ -78,21 +78,20 @@ internal class CollectionsProcessor : IFileProcessor
             }
         });
 
-        var collectionsObject = new NodeObject();
+        var collectionsNode = new NodeObject();
 
         foreach (var entry in collections)
         {
-            collectionsObject[entry.Key] = new NodeArray(entry.Value.ToArray());
+            collectionsNode[entry.Key] = new NodeArray(entry.Value.ToArray());
         }
 
-        // Update each document since global data has already been merged
+        options.SiteData[Collections] = collectionsNode;
+
+        // Update each document
         foreach (var document in documents)
         {
-            document.Data[Collections] = collectionsObject;
+            document.Data[Collections] = collectionsNode;
         }
-
-        // Mostly for unit testing since global data is already consumed by documents and altering its state doesn't impact them
-        options.GlobalData[Collections] = collectionsObject;
 
         return Task.FromResult<IEnumerable<IResult>>(result);
     }

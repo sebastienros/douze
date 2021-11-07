@@ -26,7 +26,10 @@
 
             path = _basePathWithoutTrailingSeparator.FullName + path.ToAbsolute();
 
-            Directory.CreateDirectory(path.FullName);
+            if (!Directory.Exists(path.FullName))
+            {
+                Directory.CreateDirectory(path.FullName);
+            }
 
             return ValueTask.CompletedTask;
 
@@ -49,10 +52,13 @@
 
             if (directoryName != null)
             {
-                Directory.CreateDirectory(directoryName);
+                if (!Directory.Exists(directoryName))
+                {
+                    Directory.CreateDirectory(directoryName);
+                }
             }
 
-            return new(File.Create(path.FullName));
+            return new(File.Create(path.FullName, 0, FileOptions.Asynchronous));
 
             static void ThrowArgumentException(FPath path)
             {

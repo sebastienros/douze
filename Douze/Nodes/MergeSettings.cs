@@ -5,9 +5,10 @@
 /// </summary>
 internal class MergeSettings
 {
-    public static MergeSettings Default = new() { MergeArrayHandling = MergeArrayHandling.Union };
+    public static MergeSettings Default = new() { MergeArrayHandling = MergeArrayHandling.Union, MergeObjectHandling = MergeObjectHandling.Recursive };
 
     public MergeArrayHandling MergeArrayHandling { get; set; }
+    public MergeObjectHandling MergeObjectHandling { get; set; }
 }
 
 /// <summary>
@@ -25,5 +26,17 @@ public enum MergeArrayHandling
     Replace = 2,
 
     /// <summary>Merge array items together, matched by index.</summary>
-    Merge = 3
+    Merge = 3,
+}
+
+/// <summary>
+/// Specifies how objects are merged together.
+/// </summary>
+public enum MergeObjectHandling
+{
+    /// <summary>Merge all object items recursively.</summary>
+    Recursive = 0,
+
+    /// <summary>Union object, skipping items that already exist.</summary>
+    Union = 1,
 }

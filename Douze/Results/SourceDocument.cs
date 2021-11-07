@@ -11,7 +11,8 @@ internal class SourceDocument : IDocument
         FileSystem = fileSystem;
     }
 
-    public bool IsContent => false;
+    public DocumentTypes DocumentType { get; set; } = DocumentTypes.Unknown;
+
     public NodeObject Data { get; set; } = new NodeObject();
 
     public FPath Path { get; set; }

@@ -1,8 +1,8 @@
-﻿using Douze;
+﻿using System.Diagnostics;
+using Douze;
 using Douze.Configuration;
 using Douze.FileProcessors;
 using Douze.FileSystems;
-using System.Diagnostics;
 
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Douze.Tests")]
 
@@ -21,8 +21,6 @@ Console.WriteLine($"Parsed options in {stopwatch.ElapsedMilliseconds} ms");
 
 // Configure files extensions mappings
 
-options.ContentProcessors.Add(new PageMetadataProcessor());
-options.ContentProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
 options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
 options.ContentProcessors.Add(new UrlFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
 options.ContentProcessors.Add(new PaginationProcessor(IncludeRule.ParseRules("*.html")));
@@ -33,10 +31,19 @@ options.ContentProcessors.Add(new CopyDocumentProcessor(IncludeRule.ParseRules("
 
 options.DataProcessors.Add(new YamlDataFileProcessor());
 options.DataProcessors.Add(new JsonDataFileProcessor());
+options.DataProcessors.Add(new PageMetadataProcessor());
+options.DataProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
 
 // Build site
 var result = await SiteHelper.BuildSiteAsync(options);
 
-Console.WriteLine($"Site generated at '{Path.GetFullPath(arguments.OutputPath)}' in {stopwatch.ElapsedMilliseconds} ms");
+if (result == 0)
+{
+    Console.WriteLine($"Site generated at '{Path.GetFullPath(arguments.OutputPath)}' in {stopwatch.ElapsedMilliseconds} ms");
+}
+else
+{
+    Console.WriteLine($"There were some errors while generating the site.");
+}
 
 return result;

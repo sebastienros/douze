@@ -28,7 +28,7 @@ internal class UrlFileProcessor : IFileProcessor
 
             if (!Match(document.Path))
             {
-                result.Add(new DocumentResult(document));
+                result.Add(new DocumentsResult(document));
                 return;
             }
 
@@ -70,7 +70,7 @@ internal class UrlFileProcessor : IFileProcessor
 
             document.Data.Add("url", localFilePath.FullName);
 
-            result.Add(new DocumentResult($"Generating file {localFilePath}", new CopyDocument(document, options.OutputFileSystem, localFilePath)));
+            result.Add(new DocumentsResult($"Generating file {localFilePath}", new CopyDocument(document, options.OutputFileSystem, localFilePath)));
         });
 
         return result;

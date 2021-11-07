@@ -20,7 +20,6 @@ internal sealed class MarkdownFileProcessor : IFileProcessor
     public MarkdownFileProcessor(Predicate<FPath> match)
     {
         _markdownPipeline = new MarkdownPipelineBuilder()
-            .UseYamlFrontMatter()
             .Build();
 
         Match = match;
@@ -35,7 +34,7 @@ internal sealed class MarkdownFileProcessor : IFileProcessor
 
             if (!Match(document.Path))
             {
-                result.Add(new DocumentResult(document));
+                result.Add(new DocumentsResult(document));
                 return;
             }
 
@@ -45,7 +44,7 @@ internal sealed class MarkdownFileProcessor : IFileProcessor
 
             var content = await ProcessContentAsync(fileContent);
 
-            result.Add(new DocumentResult($"Converting markdown of {document.Path}", new TextDocument(options.OutputFileSystem, document.Path, content, document.Data, "text/html")));
+            result.Add(new DocumentsResult($"Converting markdown of {document.Path}", new TextDocument(options.OutputFileSystem, document.Path, content, document.Data, "text/html", DocumentTypes.Content)));
         });
 
         return result;

@@ -4,6 +4,9 @@ using Douze.Results;
 
 namespace Douze.FileProcessors;
 
+/// <summary>
+/// Assigns the FrontMatter data of a document to its Data property, and removes the header.
+/// </summary>
 internal class FrontMatterProcessor : IFileProcessor
 {
     public Predicate<FPath> Match { get; set; } = _ => true;
@@ -15,33 +18,37 @@ internal class FrontMatterProcessor : IFileProcessor
 
     public async Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options)
     {
-        var result = new ConcurrentBag<IResult>();
+        var results = new ConcurrentBag<IResult>();
+        var matches = new List<IDocument>();
 
-        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
+        foreach (var document in documents)
         {
-            if (!Match(document.Path))
+            if (Match == null || Match(document.Path))
             {
-                result.Add(new DocumentResult(document));
-                return;
+                matches.Add(document);
             }
-
-            if (document is SourceDocument sourceDocument)
+            else
             {
-                using var stream = await document.OpenAsync();
+                results.Add(new DocumentsResult(document));
+            }
+        }
 
-                var filecontent = await FrontMatterHelper.MergeFrontMatterData(options, document.Data, stream);
+        await Parallel.ForEachAsync(matches, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
+        {
+            using var stream = await document.OpenAsync();
 
-                if (filecontent != null)
-                {
-                    result.Add(new DocumentResult(new TextDocument(options.OutputFileSystem, document.Path, filecontent, document.Data, document.ContentType)));
-                }
-                else
-                {
-                    result.Add(new DocumentResult(document));
-                }
+            var filecontent = await FrontMatterHelper.MergeFrontMatterData(options, document.Data, stream);
+
+            if (filecontent != null)
+            {
+                results.Add(new DocumentsResult(new TextDocument(options.OutputFileSystem, document.Path, filecontent, document.Data, document.ContentType, DocumentTypes.Content)));
+            }
+            else
+            {
+                results.Add(new DocumentsResult(document));
             }
         });
 
-        return result;
+        return results;
     }
 }

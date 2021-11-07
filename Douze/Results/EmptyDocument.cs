@@ -10,7 +10,7 @@ internal sealed class EmptyDocument : IDocument
         Data = new NodeObject();
     }
 
-    public bool IsContent => false;
+    public DocumentTypes DocumentType { get; set; }
     public FPath Path => FPath.Empty;
     public string? ContentType => null;
 

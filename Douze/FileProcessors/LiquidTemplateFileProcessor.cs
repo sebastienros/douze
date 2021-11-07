@@ -24,7 +24,7 @@ internal class LiquidTemplateFileProcessor : IFileProcessor
         {
             if (!Match(document.Path))
             {
-                result.Add(new DocumentResult(document));
+                result.Add(new DocumentsResult(document));
                 return;
             }
 
@@ -47,7 +47,7 @@ internal class LiquidTemplateFileProcessor : IFileProcessor
 
             var content = await template.RenderAsync(context, HtmlEncoder.Default);
 
-            result.Add(new DocumentResult($"Evaluating liquid for {document.Path}", new TextDocument(options.OutputFileSystem, document.Path, content, document.Data, document.ContentType)));
+            result.Add(new DocumentsResult($"Evaluating liquid for {document.Path}", new TextDocument(options.OutputFileSystem, document.Path, content, document.Data, document.ContentType, DocumentTypes.Content)));
         });
 
         return result;

@@ -1,39 +1,42 @@
-﻿using System.Collections.Concurrent;
-using Douze.FileSystems;
+﻿using Douze.FileSystems;
 using Douze.Nodes;
 using Douze.Results;
 
 namespace Douze.FileProcessors;
 
+/// <summary>
+/// Adds teh page data to each document
+/// </summary>
 internal class PageMetadataProcessor : IFileProcessor
 {
-    public Predicate<FPath> Match { get; set; } = _ => true;
+    public Predicate<FPath>? Match { get; set; } = null;
 
     public async Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options)
     {
-        var result = new ConcurrentBag<IResult>();
+        var filteredDocuments = new List<SourceDocument>();
 
-        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
+        foreach (var document in documents)
         {
-
-            // Pass-through
-            result.Add(new DocumentResult(document));
-
-            if (Match(document.Path) && document is SourceDocument sourceDocument)
+            if ((Match == null || Match(document.Path)) && document is SourceDocument sourceDocument)
             {
-                var metadata = await sourceDocument.FileSystem.GetFileMetadaAsync(document.Path);
-
-                var page = document.Data["page"] as NodeObject;
-
-                if (page == null)
-                {
-                    document.Data["page"] = page = new NodeObject();
-                }
-
-                page.Add("date", metadata.LastWriteTimeUtc);
+                filteredDocuments.Add(sourceDocument);
             }
+        }
+
+        await Parallel.ForEachAsync(filteredDocuments, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, static async (document, cancellationToken) =>
+        {
+            var metadata = await document.FileSystem.GetFileMetadaAsync(document.Path);
+
+            var page = document.Data["page"] as NodeObject;
+
+            if (page == null)
+            {
+                document.Data["page"] = page = new NodeObject();
+            }
+
+            page.Add("date", metadata.LastWriteTimeUtc);
         });
 
-        return result;
+        return documents.Select(x => new DocumentsResult(x)).ToArray();
     }
 }

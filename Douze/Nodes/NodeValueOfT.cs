@@ -4,7 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace Douze.Nodes;
 
 [DebuggerDisplay("{_value.ToString(),nq}")]
-internal partial class NodeValue<TValue> : NodeValue
+internal partial class NodeValue<TValue> : NodeValue, IFormattable
 {
     public readonly TValue _value; // keep as a field for direct access to avoid copies
 
@@ -83,5 +83,10 @@ internal partial class NodeValue<TValue> : NodeValue
         }
 
         return _value.GetHashCode();
+    }
+
+    public string ToString(string? format, IFormatProvider? formatProvider)
+    {
+        return _value?.ToString() ?? "";
     }
 }

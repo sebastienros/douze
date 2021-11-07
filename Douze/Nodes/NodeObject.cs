@@ -92,6 +92,13 @@ internal partial class NodeObject : Node
                 continue;
             }
 
+            if (mergeSettings.MergeObjectHandling == MergeObjectHandling.Union)
+            {
+                // Don't update the property in Union mode
+
+                continue;
+            }
+
             if (property.Value is NodeValue value)
             {
                 // If the current entry is an array and the merged node a value, use array merge
