@@ -17,9 +17,11 @@ namespace Douze.Tests
         [Fact]
         public void ShouldCreateNodeObjectFromKeyValuePairs()
         {
-            var dic = new Dictionary<string, Node?>();
-            dic.Add("a", NodeValue.Create(1));
-            dic.Add("b", NodeValue.Create("string"));
+            var dic = new Dictionary<string, Node?>
+            {
+                { "a", NodeValue.Create(1) },
+                { "b", NodeValue.Create("string") }
+            };
 
             var node = new NodeObject(dic);
 
@@ -33,10 +35,11 @@ namespace Douze.Tests
         [Fact]
         public void PropertieShouldBeAddedToNodeObject()
         {
-            var node = new NodeObject();
-
-            node.Add("a", 1);
-            node.Add("b", "string");
+            var node = new NodeObject
+            {
+                { "a", 1 },
+                { "b", "string" }
+            };
 
             Assert.True(node.Count == 2);
             Assert.True(node.ContainsKey("a"));
@@ -84,9 +87,11 @@ namespace Douze.Tests
         [Fact]
         public void PrimitiveTypesShouldBeConvertedToNodeValues()
         {
-            var n = new NodeObject();
-            n.Add("a", 1);
-            n.Add("b", true);
+            var n = new NodeObject
+            {
+                { "a", 1 },
+                { "b", true }
+            };
 
             Assert.True(n.Count == 2);
             Assert.Equal(1, n["a"]?.GetValue<int>());

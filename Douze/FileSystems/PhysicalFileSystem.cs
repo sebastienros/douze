@@ -84,7 +84,7 @@
                 yield break;
             }
 
-            var localPath = path.Substring(_basePathWithoutTrailingSeparator.FullName.Length);
+            var localPath = path[_basePathWithoutTrailingSeparator.FullName.Length..];
 
             if (filter == null || filter(localPath))
             {

@@ -23,9 +23,10 @@ internal class UrlFileProcessor : IFileProcessor
     {
         var result = new ConcurrentBag<IResult>();
 
+        var hasCustomContentFolder = options.ContentFolders.Any(x => x != FPath.Root);
+
         await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
         {
-
             if (!Match(document.Path))
             {
                 result.Add(new DocumentsResult(document));
@@ -66,6 +67,29 @@ internal class UrlFileProcessor : IFileProcessor
                     localFilePath = FPath.Combine(localFilePath.GetDirectory().ToAbsolute(), "index.html");
                 }
 
+            }
+
+            // Remove the custom content folder from the destination, e.g. /_content/
+
+            if (hasCustomContentFolder)
+            {
+                var contentFolders = options.ContentFolders;
+                var length = contentFolders.Length;
+
+                for (var i = 0; i < length; i++)
+                {
+                    var folder = contentFolders[i];
+
+                    if (folder == FPath.Root)
+                    {
+                        continue;
+                    }
+
+                    if (localFilePath.FullName.StartsWith(folder.FullName))
+                    {
+                        localFilePath = new FPath(localFilePath.FullName[folder.FullName.Length..]);
+                    }
+                }
             }
 
             document.Data.Add("url", localFilePath.FullName);

@@ -4,6 +4,9 @@ internal partial class Arguments
 {
     public string SourcePath { get; set; } = ".";
     public string OutputPath { get; set; } = "_site";
+    public List<string> DataFolders { get; set; } = new List<string>();
+    public List<string> IncludesFolders { get; set; } = new List<string>();
+    public List<string> ContentFolders { get; set; } = new List<string>();
 
     public static Arguments ParseArguments(string[] args)
     {
@@ -13,16 +16,37 @@ internal partial class Arguments
         {
             var arg = args[i];
 
-            if (arg == "-o" || arg == "--output")
+            switch (arg)
             {
-                i++;
-                arguments.OutputPath = args[i];
-            }
+                case "-o":
+                case "--output":
+                    i++;
+                    arguments.OutputPath = args[i];
+                    break;
 
-            if (arg == "-s" || arg == "--source")
-            {
-                i++;
-                arguments.SourcePath = args[i];
+                case "-s":
+                case "--source":
+                    i++;
+                    arguments.SourcePath = args[i];
+                    break;
+
+                case "-d":
+                case "--data":
+                    i++;
+                    arguments.DataFolders.Add(args[i]);
+                    break;
+
+                case "-c":
+                case "--content":
+                    i++;
+                    arguments.ContentFolders.Add(args[i]);
+                    break;
+
+                case "-i":
+                case "--includes":
+                    i++;
+                    arguments.IncludesFolders.Add(args[i]);
+                    break;
             }
         }
 

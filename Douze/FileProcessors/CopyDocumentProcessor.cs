@@ -17,18 +17,18 @@ internal class CopyDocumentProcessor : IFileProcessor
     {
         var result = new ConcurrentBag<IResult>();
 
-        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, async (document, cancellationToken) =>
+        await Parallel.ForEachAsync(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, (document, cancellationToken) =>
         {
 
             if (!Match(document.Path))
             {
                 result.Add(new DocumentsResult(document));
-                return;
+                return ValueTask.CompletedTask;
             }
 
             result.Add(new DocumentsResult($"Copying file {document.Path}", new CopyDocument(document, options.OutputFileSystem)));
 
-            await Task.Yield();
+            return ValueTask.CompletedTask;
         });
 
         return result;

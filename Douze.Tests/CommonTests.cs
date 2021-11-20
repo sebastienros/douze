@@ -1,26 +1,30 @@
-﻿using Douze.Configuration;
+﻿using System.Linq;
+using System.Threading.Tasks;
+using Douze.Configuration;
 using Douze.FileProcessors;
 using Douze.FileSystems;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
 using Xunit;
 
 namespace Douze.Tests
 {
     public class CommonTests
     {
-        readonly MemoryFileSystem _sourceFs;
-        readonly MemoryFileSystem _outputFs;
-        readonly Options _options;
+        MemoryFileSystem _sourceFs;
+        MemoryFileSystem _outputFs;
+        Options _options;
 
         public CommonTests()
         {
             _sourceFs = new MemoryFileSystem();
             _outputFs = new MemoryFileSystem();
 
-            _options = new Options(_sourceFs, _outputFs);
+            _options = new Options(_sourceFs, _outputFs, null, null, null);
 
+            ConfigureProcessors();
+        }
+
+        private void ConfigureProcessors()
+        {
             _options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
             _options.ContentProcessors.Add(new UrlFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
             _options.ContentProcessors.Add(new CollectionsProcessor(IncludeRule.ParseRules("*.html")));
@@ -32,7 +36,6 @@ namespace Douze.Tests
             _options.DataProcessors.Add(new JsonDataFileProcessor());
             _options.DataProcessors.Add(new PageMetadataProcessor());
             _options.DataProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
-
         }
 
         [Fact]
@@ -172,6 +175,30 @@ namespace Douze.Tests
             Assert.Equal(4, _options.SiteData["collections"]?["article"]?.AsArray()?.Count);
             Assert.Equal(2, _options.SiteData["collections"]?["music"]?.AsArray()?.Count);
             Assert.Equal(2, _options.SiteData["collections"]?["science"]?.AsArray()?.Count);
+        }
+
+        [Fact]
+        public async Task ShouldProcessFilesInCustomFolders()
+        {
+            _sourceFs = new MemoryFileSystem();
+            _outputFs = new MemoryFileSystem();
+
+            _options = new Options(_sourceFs, _outputFs, new[] { "myData" }, new[] { "myContent" }, new[] { "myIncludes" });
+
+            ConfigureProcessors();
+
+            await _sourceFs.CreateTemplateAsync("/myContent/index.html", "Hello World");
+            await _sourceFs.WriteTextFileAsync("/myData/theme.yml", "layout: layout.html");
+            await _sourceFs.CreateTemplateAsync("/myIncludes/layout.html", "BEFORE {{ content }} AFTER");
+
+            await SiteHelper.BuildSiteAsync(_options);
+
+            // 1 File and 1 Directory entries
+            Assert.Equal(2, (await _outputFs.EnumerateFileSystemEntriesAsync(FPath.Root, true, null)).Count());
+
+            Assert.True((await _outputFs.GetFileEntryAsync("/index.html")).Exists);
+            Assert.Equal("BEFORE Hello World AFTER", await _outputFs.ReadAllTextAsync("/index.html"));
+
         }
     }
 }

@@ -2,7 +2,7 @@
 {
     public sealed class FileEntry : FileSystemEntry
     {
-        public static FileEntry NotFound = new (FPath.Empty, NullFileSystem.Instance);
+        public static readonly FileEntry NotFound = new(FPath.Empty, NullFileSystem.Instance);
 
         public override bool IsDirectory => false;
 
