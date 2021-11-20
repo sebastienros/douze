@@ -9,14 +9,15 @@ internal class SiteHelper
 {
     internal static async Task<int> BuildSiteAsync(Options options)
     {
-        if (!options.IncludesFolder.IsDirectory)
+        foreach (var folders in new[] { options.IncludesFolders, options.DataFolders, options.ContentFolders })
         {
-            throw new ArgumentException($"Not a directory path: {options.IncludesFolder}");
-        }
-
-        if (!options.DataFolder.IsDirectory)
-        {
-            throw new ArgumentException($"Not a directory path: {options.DataFolder}");
+            foreach (var folder in folders)
+            {
+                if (!folder.IsDirectory)
+                {
+                    throw new ArgumentException($"Not a directory path: {folder}");
+                }
+            }
         }
 
         var files = (await options.SourceFileSystem.EnumerateFileSystemEntriesAsync(FPath.Root, true, null)).Where(x => !x.IsDirectory).OrderBy(x => x.Path).ToArray();
@@ -77,9 +78,12 @@ internal class SiteHelper
             dataByPath[FPath.Root] = new NodeObject();
         }
 
-        if (dataByPath.TryGetValue(options.DataFolder.ToAbsolute(), out var globalData))
+        foreach (var dataFolder in options.DataFolders)
         {
-            dataByPath[FPath.Root].Merge(globalData);
+            if (dataByPath.TryGetValue(dataFolder.ToAbsolute(), out var globalData))
+            {
+                dataByPath[FPath.Root].Merge(globalData);
+            }
         }
 
         // 2- Map: Create all new documents
@@ -113,8 +117,8 @@ internal class SiteHelper
         // Ignore templates in special folders
 
         documents = documents.Where(document =>
-            !document.Path.IsInDirectory(options.IncludesFolder.ToAbsolute())
-            && !document.Path.IsInDirectory(options.DataFolder.ToAbsolute())).ToList();
+            !options.IncludesFolders.Any(includefolder => document.Path.IsInDirectory(includefolder.ToAbsolute()))
+            && !options.DataFolders.Any(dataFolder => document.Path.IsInDirectory(dataFolder.ToAbsolute()))).ToList();
 
         foreach (var processor in options.ContentProcessors)
         {

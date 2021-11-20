@@ -13,7 +13,7 @@
 - Sass, css, image, js ?
 - Multi-language
 - Localization
-- Add a content folder option (defaults to _content) that behaves like it's at the root folder, such that _content/foo.md creates a /foo/index.html
+
 - Implemented
     - File created based on folder and source file name. blog/post-1.md => blog/post-1/index.html
     - Chained layouts, {{ content | raw }} to render the page
@@ -28,6 +28,8 @@
     - page.date represents the template's UTC last write time
     - Tags and collections
     - Pagination
+    - Content folder options (defaults to _content) that behaves like it's at the root folder, such that _content/foo.md creates a /foo/index.html
+    - if _content, _includes or _data don't exist, "/" is assumed for these files
 
 - Build
     - dotnet publish -c Release --self-contained -r win-x64 -p:PublishReadyToRun=true -p:PublishTrimmed=true -p:PublishSingleFile=true -o ./artifacts/win-x64

@@ -12,9 +12,38 @@ var stopwatch = Stopwatch.StartNew();
 
 var arguments = Arguments.ParseArguments(args);
 
+var sourceFs = new PhysicalFileSystem(Path.GetFullPath(arguments.SourcePath));
+var outputFs = new PhysicalFileSystem(Path.GetFullPath(arguments.OutputPath));
+
+// if a content folder is provided, use it
+// otherwise if "/_content/" exists use it
+// otherwise use "/"
+// same for _data and _includes
+
+if (!arguments.ContentFolders.Any())
+{
+    if (!(await sourceFs.GetDirectoryEntryAsync(Options.DefaultContentFolder)).Exists)
+    {
+        arguments.ContentFolders.Add(FPath.Root.FullName);
+    }
+
+    if (!(await sourceFs.GetDirectoryEntryAsync(Options.DefaultDataFolder)).Exists)
+    {
+        arguments.DataFolders.Add(FPath.Root.FullName);
+    }
+
+    if (!(await sourceFs.GetDirectoryEntryAsync(Options.DefaultIncludesFolder)).Exists)
+    {
+        arguments.IncludesFolders.Add(FPath.Root.FullName);
+    }
+}
+
 var options = new Options(
-    new PhysicalFileSystem(Path.GetFullPath(arguments.SourcePath)),
-    new PhysicalFileSystem(Path.GetFullPath(arguments.OutputPath))
+    sourceFs,
+    outputFs,
+    arguments.DataFolders,
+    arguments.ContentFolders,
+    arguments.IncludesFolders
     );
 
 Console.WriteLine($"Parsed options in {stopwatch.ElapsedMilliseconds} ms");
