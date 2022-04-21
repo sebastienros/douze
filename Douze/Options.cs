@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using Douze.Configuration;
 using Douze.FileProcessors;
 using Douze.FileSystems;
 using Douze.Nodes;
@@ -80,6 +81,23 @@ internal sealed partial class Options
         {
             IncludesFolders = includesFolders.Select(x => new FPath(x + FPath.DirectorySeparator, true).ToAbsolute()).ToArray();
         }
+    }
+
+    public void BuildDefaultPipeline()
+    {
+        ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
+        ContentProcessors.Add(new UrlFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
+        ContentProcessors.Add(new PaginationProcessor(IncludeRule.ParseRules("*.html")));
+        ContentProcessors.Add(new CollectionsProcessor(IncludeRule.ParseRules("*.html")));
+        ContentProcessors.Add(new LiquidTemplateFileProcessor(IncludeRule.ParseRules("*.html", "*.json")));
+        ContentProcessors.Add(new LayoutFileProcessor(IncludeRule.ParseRules("*.html")));
+        ContentProcessors.Add(new CopyDocumentProcessor(IncludeRule.ParseRules("*.jpg", "*.gif", "*.png")));
+
+        DataProcessors.Add(new XmlDataFileProcessor());
+        DataProcessors.Add(new YamlDataFileProcessor());
+        DataProcessors.Add(new JsonDataFileProcessor());
+        DataProcessors.Add(new PageMetadataProcessor());
+        DataProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
     }
 
     public readonly record struct PropertyBagKey(string Category, string Key);

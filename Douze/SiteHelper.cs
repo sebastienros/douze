@@ -38,7 +38,7 @@ internal class SiteHelper
             {
                 await result.ExecuteAsync(documents);
 
-                if (!String.IsNullOrEmpty(result.Description))
+                if (!string.IsNullOrEmpty(result.Description))
                 {
                     Console.WriteLine($"{result.Description} in {sw2.ElapsedMilliseconds} ms");
                 }
@@ -58,7 +58,7 @@ internal class SiteHelper
         foreach (var entry in filesByDirectory)
         {
             var directoryName = entry.Key;
-            var directoryFiels = entry.Value;
+            var directoryFiles = entry.Value;
 
             var data = dataByPath[directoryName] = new NodeObject();
 
@@ -117,7 +117,7 @@ internal class SiteHelper
         // Ignore templates in special folders
 
         documents = documents.Where(document =>
-            !options.IncludesFolders.Any(includefolder => document.Path.IsInDirectory(includefolder.ToAbsolute()))
+            !options.IncludesFolders.Any(includeFolder => document.Path.IsInDirectory(includeFolder.ToAbsolute()))
             && !options.DataFolders.Any(dataFolder => document.Path.IsInDirectory(dataFolder.ToAbsolute()))).ToList();
 
         foreach (var processor in options.ContentProcessors)
@@ -132,7 +132,7 @@ internal class SiteHelper
             {
                 await result.ExecuteAsync(documents);
 
-                if (!String.IsNullOrEmpty(result.Description))
+                if (!string.IsNullOrEmpty(result.Description))
                 {
                     Console.WriteLine($"{result.Description} in {sw2.ElapsedMilliseconds} ms");
                 }

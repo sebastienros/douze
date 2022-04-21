@@ -26,5 +26,15 @@
         {
             return Path.FullName;
         }
+
+        public override bool Equals(object? obj)
+        {
+            return Equals(obj as FileSystemEntry);
+        }
+
+        public override int GetHashCode()
+        {
+            return Path.GetHashCode();
+        }
     }
 }

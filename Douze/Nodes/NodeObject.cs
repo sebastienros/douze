@@ -13,10 +13,9 @@ internal partial class NodeObject : Node
     ///   Initializes a new instance of the <see cref="NodeObject"/> class that contains the specified <paramref name="properties"/>.
     /// </summary>
     /// <param name="properties">The properties to be added.</param>
-    /// <param name="options">Options to control the behavior.</param>
     public NodeObject(IEnumerable<KeyValuePair<string, Node?>> properties)
     {
-        foreach (KeyValuePair<string, Node?> node in properties)
+        foreach (var node in properties)
         {
             Add(node.Key, node.Value);
         }

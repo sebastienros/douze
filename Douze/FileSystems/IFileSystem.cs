@@ -17,7 +17,7 @@
 
         ValueTask CreateDirectoryAsync(FPath path);
 
-        ValueTask<FileMetadata> GetFileMetadaAsync(FPath path);
+        ValueTask<FileMetadata> GetFileMetadataAsync(FPath path);
 
     }
 

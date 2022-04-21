@@ -28,11 +28,11 @@ internal partial class NodeArray : Node
     }
 
     /// <summary>
-    ///   Adds an object to the end of the <see cref="JsonArray"/>.
+    ///   Adds an object to the end of the <see cref="NodeArray"/>.
     /// </summary>
     /// <typeparam name="T">The type of object to be added.</typeparam>
     /// <param name="value">
-    ///   The object to be added to the end of the <see cref="JsonArray"/>.
+    ///   The object to be added to the end of the <see cref="NodeArray"/>.
     /// </param>
     public void Add<T>(T? value)
     {
@@ -42,8 +42,7 @@ internal partial class NodeArray : Node
         }
         else
         {
-            var jNode = value as Node;
-            if (jNode == null)
+            if (value is not Node jNode)
             {
                 jNode = new NodeValue<T>(value);
             }

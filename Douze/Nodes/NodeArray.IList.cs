@@ -5,15 +5,15 @@ namespace Douze.Nodes;
 internal sealed partial class NodeArray : Node, IList<Node?>
 {
     /// <summary>
-    ///   Gets the number of elements contained in the <see cref="JsonArray"/>.
+    ///   Gets the number of elements contained in the <see cref="NodeArray"/>.
     /// </summary>
     public int Count => List.Count;
 
     /// <summary>
-    ///   Adds a <see cref="Node"/> to the end of the <see cref="JsonArray"/>.
+    ///   Adds a <see cref="Node"/> to the end of the <see cref="NodeArray"/>.
     /// </summary>
     /// <param name="item">
-    ///   The <see cref="Node"/> to be added to the end of the <see cref="JsonArray"/>.
+    ///   The <see cref="Node"/> to be added to the end of the <see cref="NodeArray"/>.
     /// </param>
     public void Add(Node? item)
     {
@@ -21,7 +21,7 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     }
 
     /// <summary>
-    ///   Removes all elements from the <see cref="JsonArray"/>.
+    ///   Removes all elements from the <see cref="NodeArray"/>.
     /// </summary>
     public void Clear()
     {
@@ -29,25 +29,25 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     }
 
     /// <summary>
-    ///   Determines whether an element is in the <see cref="JsonArray"/>.
+    ///   Determines whether an element is in the <see cref="NodeArray"/>.
     /// </summary>
-    /// <param name="item">The object to locate in the <see cref="JsonArray"/>.</param>
+    /// <param name="item">The object to locate in the <see cref="NodeArray"/>.</param>
     /// <returns>
-    ///   <see langword="true"/> if <paramref name="item"/> is found in the <see cref="JsonArray"/>; otherwise, <see langword="false"/>.
+    ///   <see langword="true"/> if <paramref name="item"/> is found in the <see cref="NodeArray"/>; otherwise, <see langword="false"/>.
     /// </returns>
     public bool Contains(Node? item) => List.Contains(item);
 
     /// <summary>
-    ///   The object to locate in the <see cref="JsonArray"/>.
+    ///   The object to locate in the <see cref="NodeArray"/>.
     /// </summary>
-    /// <param name="item">The <see cref="Node"/> to locate in the <see cref="JsonArray"/>.</param>
+    /// <param name="item">The <see cref="Node"/> to locate in the <see cref="NodeArray"/>.</param>
     /// <returns>
     ///  The index of item if found in the list; otherwise, -1.
     /// </returns>
     public int IndexOf(Node? item) => List.IndexOf(item);
 
     /// <summary>
-    ///   Inserts an element into the <see cref="JsonArray"/> at the specified index.
+    ///   Inserts an element into the <see cref="NodeArray"/> at the specified index.
     /// </summary>
     /// <param name="index">The zero-based index at which <paramref name="item"/> should be inserted.</param>
     /// <param name="item">The <see cref="Node"/> to insert.</param>
@@ -60,10 +60,10 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     }
 
     /// <summary>
-    ///   Removes the first occurrence of a specific <see cref="Node"/> from the <see cref="JsonArray"/>.
+    ///   Removes the first occurrence of a specific <see cref="Node"/> from the <see cref="NodeArray"/>.
     /// </summary>
     /// <param name="item">
-    ///   The <see cref="Node"/> to remove from the <see cref="JsonArray"/>.
+    ///   The <see cref="Node"/> to remove from the <see cref="NodeArray"/>.
     /// </param>
     /// <returns>
     ///   <see langword="true"/> if <paramref name="item"/> is successfully removed; otherwise, <see langword="false"/>.
@@ -79,7 +79,7 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     }
 
     /// <summary>
-    ///   Removes the element at the specified index of the <see cref="JsonArray"/>.
+    ///   Removes the element at the specified index of the <see cref="NodeArray"/>.
     /// </summary>
     /// <param name="index">The zero-based index of the element to remove.</param>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -87,7 +87,6 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     /// </exception>
     public void RemoveAt(int index)
     {
-        Node? item = List[index];
         List.RemoveAt(index);
     }
 
@@ -99,7 +98,7 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     /// </summary>
     /// <param name="array">
     ///   The one-dimensional <see cref="Array"/> that is the destination of the elements copied
-    ///   from <see cref="JsonArray"/>. The Array must have zero-based indexing.</param>
+    ///   from <see cref="NodeArray"/>. The Array must have zero-based indexing.</param>
     /// <param name="index">
     ///   The zero-based index in <paramref name="array"/> at which copying begins.
     /// </param>
@@ -116,16 +115,16 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     void ICollection<Node?>.CopyTo(Node?[] array, int index) => List.CopyTo(array, index);
 
     /// <summary>
-    ///   Returns an enumerator that iterates through the <see cref="JsonArray"/>.
+    ///   Returns an enumerator that iterates through the <see cref="NodeArray"/>.
     /// </summary>
     /// <returns>A <see cref="IEnumerator{Node}"/> for the <see cref="Node"/>.</returns>
     public IEnumerator<Node?> GetEnumerator() => List.GetEnumerator();
 
     /// <summary>
-    ///   Returns an enumerator that iterates through the <see cref="JsonArray"/>.
+    ///   Returns an enumerator that iterates through the <see cref="NodeArray"/>.
     /// </summary>
     /// <returns>
-    ///   A <see cref="IEnumerator"/> for the <see cref="JsonArray"/>.
+    ///   A <see cref="IEnumerator"/> for the <see cref="NodeArray"/>.
     /// </returns>
     IEnumerator IEnumerable.GetEnumerator() => ((IEnumerable)List).GetEnumerator();
 

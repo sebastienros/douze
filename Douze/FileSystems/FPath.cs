@@ -7,14 +7,14 @@
     /// </summary>
     public readonly struct FPath : IEquatable<FPath>, IComparable<FPath>
     {
-        public static readonly FPath Empty = new FPath(string.Empty, true);
+        public static readonly FPath Empty = new(string.Empty, true);
 
-        public static readonly FPath Root = new FPath("/", true);
+        public static readonly FPath Root = new("/", true);
 
         public const char DirectorySeparator = '/';
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="UPath"/> struct.
+        /// Initializes a new instance of the <see cref="FPath"/> struct.
         /// </summary>
         /// <param name="path">The path that will be normalized.</param>
         public FPath(string path) : this(path, true)
@@ -189,7 +189,7 @@
 
             if (path.Contains('\\'))
             {
-                return String.Create(path.Length, path, (c, path) =>
+                return string.Create(path.Length, path, (c, path) =>
                 {
                     var length = c.Length;
 
@@ -208,12 +208,12 @@
 
             if (path.Contains(".."))
             {
-                ThrowInvalidaPath();
+                ThrowInvalidPath();
             }
 
             return path;
 
-            static void ThrowInvalidaPath()
+            static void ThrowInvalidPath()
             {
                 throw new ArgumentException("Paths can't contain '..'");
             }
@@ -248,7 +248,7 @@
                 return FPath.Root;
             }
 
-            return new FPath(FullName.Substring(0, index) + DirectorySeparator, false);
+            return new FPath(FullName[..index] + DirectorySeparator, false);
         }
 
 
@@ -270,7 +270,7 @@
                 return FPath.Root;
             }
 
-            return new FPath(FullName.Substring(0, index) + DirectorySeparator, false);
+            return new FPath(FullName[..index] + DirectorySeparator, false);
         }
 
         /// <summary>

@@ -1,7 +1,5 @@
 ﻿using System.Linq;
 using System.Threading.Tasks;
-using Douze.Configuration;
-using Douze.FileProcessors;
 using Douze.FileSystems;
 using Xunit;
 
@@ -25,17 +23,7 @@ namespace Douze.Tests
 
         private void ConfigureProcessors()
         {
-            _options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
-            _options.ContentProcessors.Add(new UrlFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
-            _options.ContentProcessors.Add(new CollectionsProcessor(IncludeRule.ParseRules("*.html")));
-            _options.ContentProcessors.Add(new LiquidTemplateFileProcessor(IncludeRule.ParseRules("*.html", "*.json")));
-            _options.ContentProcessors.Add(new LayoutFileProcessor(IncludeRule.ParseRules("*.html")));
-            _options.ContentProcessors.Add(new CopyDocumentProcessor(IncludeRule.ParseRules("*.jpg", "*.gif", "*.png")));
-
-            _options.DataProcessors.Add(new YamlDataFileProcessor());
-            _options.DataProcessors.Add(new JsonDataFileProcessor());
-            _options.DataProcessors.Add(new PageMetadataProcessor());
-            _options.DataProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
+            _options.BuildDefaultPipeline();
         }
 
         [Fact]

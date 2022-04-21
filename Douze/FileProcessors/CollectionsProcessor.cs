@@ -68,7 +68,7 @@ internal class CollectionsProcessor : IFileProcessor
 
                 foreach (var tag in tags)
                 {
-                    if (!String.IsNullOrWhiteSpace(tag))
+                    if (!string.IsNullOrWhiteSpace(tag))
                     {
                         var collection = collections.GetOrAdd(tag, t => new ConcurrentBag<NodeObject>());
 

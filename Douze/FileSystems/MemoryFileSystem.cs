@@ -27,7 +27,7 @@ namespace Douze.FileSystems
 
             if (parent != FPath.Empty)
             {
-                CreateDirectoryAsync(parent);
+                return CreateDirectoryAsync(parent);
             }
 
             return ValueTask.CompletedTask;
@@ -121,7 +121,7 @@ namespace Douze.FileSystems
             return new(stream);
         }
 
-        public ValueTask<FileMetadata> GetFileMetadaAsync(FPath path)
+        public ValueTask<FileMetadata> GetFileMetadataAsync(FPath path)
         {
             path = path.ToAbsolute();
 

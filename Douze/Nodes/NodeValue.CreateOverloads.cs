@@ -249,30 +249,29 @@ internal partial class NodeValue
 
         var typeCode = Type.GetTypeCode(value.GetType());
 
-        switch (typeCode)
+        return typeCode switch
         {
-            case TypeCode.Boolean: return Create((bool)value);
-            case TypeCode.Char: return Create((char)value);
-            case TypeCode.SByte: return Create((sbyte)value);
-            case TypeCode.Byte: return Create((byte)value);
-            case TypeCode.Int16: return Create((short)value);
-            case TypeCode.UInt16: return Create((ushort)value);
-            case TypeCode.Int32: return Create((int)value);
-            case TypeCode.UInt32: return Create((uint)value);
-            case TypeCode.Int64: return Create((long)value);
-            case TypeCode.UInt64: return Create((ulong)value);
-            case TypeCode.Single: return Create((float)value);
-            case TypeCode.Double: return Create((double)value);
-            case TypeCode.Decimal: return Create((decimal)value);
-            case TypeCode.DateTime: return Create((DateTime)value);
-            case TypeCode.String: return Create((string)value);
-            default:
-                return value switch
-                {
-                    Guid => Create((Guid)value),
-                    DateTimeOffset => Create((DateTimeOffset)value),
-                    _ => throw new InvalidOperationException($"Can't convert a {value.GetType()} to a NodeValue"),
-                };
-        }
+            TypeCode.Boolean => Create((bool)value),
+            TypeCode.Char => Create((char)value),
+            TypeCode.SByte => Create((sbyte)value),
+            TypeCode.Byte => Create((byte)value),
+            TypeCode.Int16 => Create((short)value),
+            TypeCode.UInt16 => Create((ushort)value),
+            TypeCode.Int32 => Create((int)value),
+            TypeCode.UInt32 => Create((uint)value),
+            TypeCode.Int64 => Create((long)value),
+            TypeCode.UInt64 => Create((ulong)value),
+            TypeCode.Single => Create((float)value),
+            TypeCode.Double => Create((double)value),
+            TypeCode.Decimal => Create((decimal)value),
+            TypeCode.DateTime => Create((DateTime)value),
+            TypeCode.String => Create((string)value),
+            _ => value switch
+            {
+                Guid => Create((Guid)value),
+                DateTimeOffset => Create((DateTimeOffset)value),
+                _ => throw new InvalidOperationException($"Can't convert a {value.GetType()} to a NodeValue"),
+            },
+        };
     }
 }

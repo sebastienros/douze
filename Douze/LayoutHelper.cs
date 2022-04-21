@@ -1,4 +1,5 @@
-﻿using System.Text.Encodings.Web;
+﻿using System.Runtime.CompilerServices;
+using System.Text.Encodings.Web;
 using Douze.FileSystems;
 using Douze.Nodes;
 using Fluid;
@@ -33,53 +34,47 @@ internal static class LayoutHelper
 
         if (!options.PropertyBag.TryGetValue(cacheKey, out var cache))
         {
-            cachedLayout = cache as CachedLayout;
-
             // Prevent multiple threads from parsing the same layout
 
             await _lock.WaitAsync();
 
-            cachedLayout = null;
-
-            if (!options.PropertyBag.TryGetValue(cacheKey, out cache))
+            try
             {
-                try
+                foreach (var includeFolder in options.IncludesFolders)
                 {
-                    foreach (var includeFolder in options.IncludesFolders)
+                    var layoutFilePath = FPath.Combine(includeFolder, new FPath(layout, true).ToRelative());
+
+                    if (!(await options.SourceFileSystem.GetFileEntryAsync(layoutFilePath)).Exists)
                     {
-                        var layoutFilePath = FPath.Combine(includeFolder, new FPath(layout, true).ToRelative());
-
-                        if (!(await options.SourceFileSystem.GetFileEntryAsync(layoutFilePath)).Exists)
-                        {
-                            continue;
-                        }
-
-                        using var stream = await options.SourceFileSystem.OpenFileAsync(layoutFilePath);
-                        using var streamReader = new StreamReader(stream);
-                        var result = await FrontMatterHelper.ParseFrontMatterAsync(streamReader, options);
-
-                        var template = options.FluidParser.Parse(result.Content);
-
-                        var frontMatter = !String.IsNullOrEmpty(result.FrontMatter) ? YamlHelper.Parse(result.FrontMatter)?.AsObject() : new NodeObject();
-
-                        options.PropertyBag[cacheKey] = cachedLayout = new CachedLayout(frontMatter ?? new NodeObject(), template);
+                        continue;
                     }
-                }
-                finally
-                {
-                    _lock.Release();
+
+                    using var stream = await options.SourceFileSystem.OpenFileAsync(layoutFilePath);
+                    using var streamReader = new StreamReader(stream);
+                    var result = await FrontMatterHelper.ParseFrontMatterAsync(streamReader, options);
+
+                    var template = options.FluidParser.Parse(result.Content);
+
+                    var frontMatter = !string.IsNullOrEmpty(result.FrontMatter) ? YamlHelper.Parse(result.FrontMatter)?.AsObject() : new NodeObject();
+
+                    options.PropertyBag[cacheKey] = cachedLayout = new CachedLayout(frontMatter ?? new NodeObject(), template);
                 }
             }
-            else
+            finally
             {
-                cachedLayout = cache as CachedLayout;
+                _lock.Release();
             }
+        }
+        else
+        {
+            cachedLayout = cache as CachedLayout;
         }
 
         if (cachedLayout == null)
         {
-            throw new ApplicationException($"Layout not found: {layout}");
+            throw new DouzeException($"Layout not found: '{layout}' in file ''");
         }
+
 
         // Clone the cache data since it will be altered to remove the layout
         var localData = cachedLayout.Data.Clone() as NodeObject ?? new NodeObject();
