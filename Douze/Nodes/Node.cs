@@ -25,7 +25,7 @@ internal abstract partial class Node : IEquatable<Node>
     ///   Casts to the derived <see cref="NodeObject"/> type.
     /// </summary>
     /// <returns>
-    ///   A <see cref="JsonObject"/>.
+    ///   A <see cref="NodeObject"/>.
     /// </returns>
     /// <exception cref="InvalidOperationException">
     ///   The node is not a <see cref="NodeObject"/>.
@@ -90,7 +90,7 @@ internal abstract partial class Node : IEquatable<Node>
     ///   <paramref name="propertyName"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    ///   The current <see cref="Node"/> is not a <see cref="JsonObject"/>.
+    ///   The current <see cref="Node"/> is not a <see cref="NodeObject"/>.
     /// </exception>
     public Node? this[string propertyName]
     {
@@ -109,4 +109,14 @@ internal abstract partial class Node : IEquatable<Node>
     public abstract Node Clone();
 
     public abstract bool Equals(Node? other);
+
+    public override bool Equals(object? obj)
+    {
+        return Equals(obj as Node);
+    }
+
+    public override int GetHashCode()
+    {
+        return base.GetHashCode();
+    }
 }

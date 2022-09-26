@@ -88,7 +88,7 @@
 
             if (filter == null || filter(localPath))
             {
-                // localPath is normalized since it can containt backslashes
+                // localPath is normalized since it can contain backslashes
                 yield return new DirectoryEntry(new FPath(localPath, true), this);
             }
 
@@ -96,7 +96,7 @@
             {
                 if (filter == null || filter(file))
                 {
-                    yield return new FileEntry(new FPath(file.Substring(_basePathWithoutTrailingSeparator.FullName.Length), true), this);
+                    yield return new FileEntry(new FPath(file[_basePathWithoutTrailingSeparator.FullName.Length..], true), this);
                 }
             }
 
@@ -170,7 +170,7 @@
             return new(new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true));
         }
 
-        public ValueTask<FileMetadata> GetFileMetadaAsync(FPath path)
+        public ValueTask<FileMetadata> GetFileMetadataAsync(FPath path)
         {
             var fullPath = _basePathWithoutTrailingSeparator.FullName + path.ToAbsolute();
 

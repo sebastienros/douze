@@ -105,7 +105,7 @@ internal partial class NodeObject : IDictionary<string, Node?>
         InitializeIfRequired();
         Debug.Assert(_dictionary != null);
 
-        bool success = _dictionary.Remove(propertyName);
+        var success = _dictionary.Remove(propertyName);
 
         return success;
     }
@@ -151,7 +151,7 @@ internal partial class NodeObject : IDictionary<string, Node?>
             throw new ArgumentOutOfRangeException(nameof(index));
         }
 
-        foreach (KeyValuePair<string, Node?> item in _dictionary)
+        foreach (var item in _dictionary)
         {
             if (index >= array.Length)
             {

@@ -9,7 +9,7 @@ internal class IncludeRule
     private bool _matchDir = true;
     private string _pattern = "";
     private Regex? _regex;
-    public bool Negate = false;
+    private bool _negate = false;
 
     public bool Match(FPath path)
     {
@@ -49,7 +49,7 @@ internal class IncludeRule
             }
 
             // A blank line matches no files, so it can serve as a separator for readability.
-            if (String.IsNullOrWhiteSpace(pattern))
+            if (string.IsNullOrWhiteSpace(pattern))
             {
                 continue;
             }
@@ -75,7 +75,7 @@ internal class IncludeRule
                 {
                     ignore = true;
 
-                    if (rule.Negate)
+                    if (rule._negate)
                     {
                         ignore = false;
                     }
@@ -110,11 +110,11 @@ internal class IncludeRule
 
         if (firstChar == '!')
         {
-            rule.Negate = true;
+            rule._negate = true;
 
             if (pattern.Length > 1)
             {
-                pattern = pattern.Substring(1);
+                pattern = pattern[1..];
             }
             else
             {
@@ -144,7 +144,7 @@ internal class IncludeRule
         {
             // match the whole word, either before / or the end of the string
             // i.e., "foo" matches "/foo", "bar/foo" but not "foobar"
-            pattern = pattern + "(/|$)";
+            pattern += "(/|$)";
         }
 
         // A trailing "/**" matches everything inside. For example, "abc/**" matches all files inside directory "abc", with infinite depth.
@@ -155,8 +155,8 @@ internal class IncludeRule
 
         // A double asterisk matches zero or more directories. 
         // The pattern is to look for any chars, including /
-        const string doubleStartPlaceHolder = "$$DSPH$$";
-        pattern = pattern.Replace("**", doubleStartPlaceHolder);
+        const string DoubleStartPlaceHolder = "$$DSPH$$";
+        pattern = pattern.Replace("**", DoubleStartPlaceHolder);
 
         // "*" matches anything except "/"
         pattern = pattern.Replace("*", @"[^/]*");
@@ -164,7 +164,7 @@ internal class IncludeRule
         // "?" matches any one character except "/"
         pattern = pattern.Replace("?", @"[^/]");
 
-        pattern = pattern.Replace(doubleStartPlaceHolder, ".*");
+        pattern = pattern.Replace(DoubleStartPlaceHolder, ".*");
 
         rule._pattern = pattern;
 

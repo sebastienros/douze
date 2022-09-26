@@ -154,7 +154,7 @@ internal class PaginationProcessor : IFileProcessor
         return Task.FromResult<IEnumerable<IResult>>(result);
     }
 
-    private FPath GeneratePagedPath(FPath path, int page)
+    private static FPath GeneratePagedPath(FPath path, int page)
     {
         // paged/index.html
         // paged/1/index.html

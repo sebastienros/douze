@@ -1,10 +1,6 @@
 ﻿using System.Diagnostics;
 using Douze;
-using Douze.Configuration;
-using Douze.FileProcessors;
 using Douze.FileSystems;
-
-[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Douze.Tests")]
 
 var stopwatch = Stopwatch.StartNew();
 
@@ -22,20 +18,23 @@ var outputFs = new PhysicalFileSystem(Path.GetFullPath(arguments.OutputPath));
 
 if (!arguments.ContentFolders.Any())
 {
-    if (!(await sourceFs.GetDirectoryEntryAsync(Options.DefaultContentFolder)).Exists)
-    {
-        arguments.ContentFolders.Add(FPath.Root.FullName);
-    }
+    arguments.ContentFolders.Add((await sourceFs.GetDirectoryEntryAsync(Options.DefaultContentFolder)).Exists
+        ? Options.DefaultContentFolder.FullName
+        : FPath.Root.FullName);
+}
 
-    if (!(await sourceFs.GetDirectoryEntryAsync(Options.DefaultDataFolder)).Exists)
-    {
-        arguments.DataFolders.Add(FPath.Root.FullName);
-    }
+if (!arguments.DataFolders.Any())
+{
+    arguments.ContentFolders.Add((await sourceFs.GetDirectoryEntryAsync(Options.DefaultDataFolder)).Exists
+        ? Options.DefaultDataFolder.FullName
+        : FPath.Root.FullName);
+}
 
-    if (!(await sourceFs.GetDirectoryEntryAsync(Options.DefaultIncludesFolder)).Exists)
-    {
-        arguments.IncludesFolders.Add(FPath.Root.FullName);
-    }
+if (!arguments.IncludesFolders.Any())
+{
+    arguments.ContentFolders.Add((await sourceFs.GetDirectoryEntryAsync(Options.DefaultIncludesFolder)).Exists
+        ? Options.DefaultIncludesFolder.FullName
+        : FPath.Root.FullName);
 }
 
 var options = new Options(
@@ -50,18 +49,7 @@ Console.WriteLine($"Parsed options in {stopwatch.ElapsedMilliseconds} ms");
 
 // Configure files extensions mappings
 
-options.ContentProcessors.Add(new MarkdownFileProcessor(IncludeRule.ParseRules("*.md")));
-options.ContentProcessors.Add(new UrlFileProcessor(IncludeRule.ParseRules("*.md", "*.html")));
-options.ContentProcessors.Add(new PaginationProcessor(IncludeRule.ParseRules("*.html")));
-options.ContentProcessors.Add(new CollectionsProcessor(IncludeRule.ParseRules("*.html")));
-options.ContentProcessors.Add(new LiquidTemplateFileProcessor(IncludeRule.ParseRules("*.html", "*.json")));
-options.ContentProcessors.Add(new LayoutFileProcessor(IncludeRule.ParseRules("*.html")));
-options.ContentProcessors.Add(new CopyDocumentProcessor(IncludeRule.ParseRules("*.jpg", "*.gif", "*.png")));
-
-options.DataProcessors.Add(new YamlDataFileProcessor());
-options.DataProcessors.Add(new JsonDataFileProcessor());
-options.DataProcessors.Add(new PageMetadataProcessor());
-options.DataProcessors.Add(new FrontMatterProcessor(IncludeRule.ParseRules("*.md", "*.html", "*.liquid")));
+options.BuildDefaultPipeline();
 
 // Build site
 var result = await SiteHelper.BuildSiteAsync(options);

@@ -2,7 +2,7 @@
 {
     internal class NullFileSystem : IFileSystem
     {
-        public static readonly NullFileSystem Instance = new NullFileSystem();
+        public static readonly NullFileSystem Instance = new();
 
         public ValueTask CreateDirectoryAsync(FPath path)
         {
@@ -34,7 +34,7 @@
             throw new NotImplementedException();
         }
 
-        public ValueTask<FileMetadata> GetFileMetadaAsync(FPath path)
+        public ValueTask<FileMetadata> GetFileMetadataAsync(FPath path)
         {
             throw new NotImplementedException();
         }

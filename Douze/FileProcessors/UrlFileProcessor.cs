@@ -47,7 +47,7 @@ internal class UrlFileProcessor : IFileProcessor
                 var extension = Path.GetExtension(localFilePath.FullName);
 
                 // If the file has no extension, we use the filename as a new folder
-                if (String.IsNullOrEmpty(extension))
+                if (string.IsNullOrEmpty(extension))
                 {
                     localFilePath = FPath.Combine("/", localFilePath, "index.html");
                 }

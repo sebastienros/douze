@@ -2,7 +2,7 @@
 {
     internal class MemoryFileStream : Stream
     {
-        private readonly MemoryStream _stream = new MemoryStream();
+        private readonly MemoryStream _stream = new();
 
         public FileMetadata Metadata { get; }
 

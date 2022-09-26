@@ -70,7 +70,7 @@ internal static class SlugFilter
 
         if (slug.Length > 1000)
         {
-            slug = slug.Substring(0, 1000);
+            slug = slug[..1000];
         }
 
         slug = slug.Trim('-', '_', '.');

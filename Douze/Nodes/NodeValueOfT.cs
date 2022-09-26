@@ -6,7 +6,7 @@ namespace Douze.Nodes;
 [DebuggerDisplay("{_value.ToString(),nq}")]
 internal partial class NodeValue<TValue> : NodeValue, IFormattable
 {
-    public readonly TValue _value; // keep as a field for direct access to avoid copies
+    private readonly TValue _value; // keep as a field for direct access to avoid copies
 
     public NodeValue(TValue value)
     {

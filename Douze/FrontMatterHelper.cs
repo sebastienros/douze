@@ -4,7 +4,7 @@ namespace Douze;
 
 internal static class FrontMatterHelper
 {
-    public static async Task<(string FrontMatter, string Content)> ParseFrontMatterAsync(TextReader reader, Options options)
+    public static async Task<(string FrontMatter, string Content)> ParseFrontMatterAsync(TextReader reader, Options _)
     {
         var content = await reader.ReadToEndAsync();
 
@@ -29,8 +29,8 @@ internal static class FrontMatterHelper
             var docStart = content.IndexOf('\n', fmEnd + 1) + 1;
             fmStart = content.IndexOf('\n', fmStart + 1) + 1;
 
-            var fm = content.Substring(fmStart, fmEnd - fmStart).Trim();
-            var doc = content.Substring(docStart);
+            var fm = content[fmStart..fmEnd].Trim();
+            var doc = content[docStart..];
 
             return (fm, doc);
         }
@@ -43,7 +43,7 @@ internal static class FrontMatterHelper
     /// </summary>
     /// <param name="options"></param>
     /// <param name="data"></param>
-    /// <param name="filePath"></param>
+    /// <param name="stream"></param>
     /// <returns></returns>
     public static async Task<string> MergeFrontMatterData(Options options, NodeObject data, Stream stream)
     {

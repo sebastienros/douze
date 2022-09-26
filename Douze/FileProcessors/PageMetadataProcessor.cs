@@ -5,7 +5,7 @@ using Douze.Results;
 namespace Douze.FileProcessors;
 
 /// <summary>
-/// Adds teh page data to each document
+/// Adds the page data to each document
 /// </summary>
 internal class PageMetadataProcessor : IFileProcessor
 {
@@ -25,11 +25,9 @@ internal class PageMetadataProcessor : IFileProcessor
 
         await Parallel.ForEachAsync(filteredDocuments, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, static async (document, cancellationToken) =>
         {
-            var metadata = await document.FileSystem.GetFileMetadaAsync(document.Path);
+            var metadata = await document.FileSystem.GetFileMetadataAsync(document.Path);
 
-            var page = document.Data["page"] as NodeObject;
-
-            if (page == null)
+            if (document.Data["page"] is not NodeObject page)
             {
                 document.Data["page"] = page = new NodeObject();
             }
