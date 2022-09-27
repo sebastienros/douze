@@ -3,7 +3,7 @@
 /// <summary>
 /// Specifies how nodes are merged together.
 /// </summary>
-internal class MergeSettings
+internal sealed class MergeSettings
 {
     public static MergeSettings Default = new() { MergeArrayHandling = MergeArrayHandling.Union, MergeObjectHandling = MergeObjectHandling.Recursive };
 

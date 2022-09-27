@@ -5,7 +5,7 @@ using Douze.Results;
 
 namespace Douze;
 
-internal class SiteHelper
+internal sealed class SiteHelper
 {
     internal static async Task<int> BuildSiteAsync(Options options)
     {

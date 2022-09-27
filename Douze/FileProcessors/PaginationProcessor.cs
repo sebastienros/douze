@@ -8,7 +8,7 @@ namespace Douze.FileProcessors;
 /// <summary>
 /// Applies the 'pagination' properties.
 /// </summary>
-internal class PaginationProcessor : IFileProcessor
+internal sealed class PaginationProcessor : IFileProcessor
 {
     internal static readonly string Pagination = "pagination";
     internal static readonly string Data = "data";

@@ -1,11 +1,10 @@
 ﻿using Douze.FileSystems;
 
-namespace Douze.Tests
+namespace Douze.Tests;
+
+public class MemoryFileSystemTest : FilesystemBaseTest
 {
-    public class MemoryFileSystemTest : FilesystemBaseTest
+    public MemoryFileSystemTest() : base(new MemoryFileSystem())
     {
-        public MemoryFileSystemTest() : base(new MemoryFileSystem())
-        {
-        }
     }
 }

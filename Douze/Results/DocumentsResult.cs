@@ -1,6 +1,6 @@
 ﻿namespace Douze.Results;
 
-internal class DocumentsResult : IResult
+internal sealed class DocumentsResult : IResult
 {
     public DocumentsResult(params IDocument[] documents)
     {

@@ -8,7 +8,7 @@ namespace Douze.FileProcessors;
 /// <summary>
 /// Creates the 'collections' properties.
 /// </summary>
-internal class CollectionsProcessor : IFileProcessor
+internal sealed class CollectionsProcessor : IFileProcessor
 {
     internal static readonly string Collections = "collections";
     internal static readonly string All = "all";

@@ -2,29 +2,28 @@
 using System.IO;
 using Douze.FileSystems;
 
-namespace Douze.Tests
+namespace Douze.Tests;
+
+public class PhysicalFileSystemTest : FilesystemBaseTest, IDisposable
 {
-    public class PhysicalFileSystemTest : FilesystemBaseTest, IDisposable
+    private readonly string _folder;
+
+    public PhysicalFileSystemTest() : base()
     {
-        private readonly string _folder;
+        _folder = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(_folder);
+        _fs = new PhysicalFileSystem(_folder);
+    }
 
-        public PhysicalFileSystemTest() : base()
+    public override void Dispose()
+    {
+        try
         {
-            _folder = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-            Directory.CreateDirectory(_folder);
-            _fs = new PhysicalFileSystem(_folder);
+            Directory.Delete(_folder, true);
         }
-
-        public override void Dispose()
+        finally
         {
-            try
-            {
-                Directory.Delete(_folder, true);
-            }
-            finally
-            {
-                base.Dispose();
-            }
+            base.Dispose();
         }
     }
 }

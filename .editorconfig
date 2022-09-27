@@ -241,6 +241,9 @@ csharp_preserve_single_line_statements = true
 # https://github.com/dotnet/roslyn/pull/54259 has been published.
 dotnet_style_allow_statement_immediately_after_block_experimental = false
 
+csharp_style_namespace_declarations = file_scoped
+dotnet_diagnostic.IDE0161.severity = error
+
 [src/CodeStyle/**.{cs,vb}]
 # warning RS0005: Do not use generic CodeAction.Create to create CodeAction
 dotnet_diagnostic.RS0005.severity = none
