@@ -1,42 +1,41 @@
-﻿namespace Douze.FileSystems
+﻿namespace Douze.FileSystems;
+
+internal sealed class NullFileSystem : IFileSystem
 {
-    internal class NullFileSystem : IFileSystem
+    public static readonly NullFileSystem Instance = new();
+
+    public ValueTask CreateDirectoryAsync(FPath path)
     {
-        public static readonly NullFileSystem Instance = new();
+        throw new NotImplementedException();
+    }
 
-        public ValueTask CreateDirectoryAsync(FPath path)
-        {
-            throw new NotImplementedException();
-        }
+    public ValueTask<Stream> CreateFileAsync(FPath path)
+    {
+        throw new NotImplementedException();
+    }
 
-        public ValueTask<Stream> CreateFileAsync(FPath path)
-        {
-            throw new NotImplementedException();
-        }
+    public ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath basePath, bool recursive, Predicate<string>? filter)
+    {
+        throw new NotImplementedException();
+    }
 
-        public ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath basePath, bool recursive, Predicate<string>? filter)
-        {
-            throw new NotImplementedException();
-        }
+    public ValueTask<FileEntry> GetFileEntryAsync(FPath path)
+    {
+        throw new NotImplementedException();
+    }
 
-        public ValueTask<FileEntry> GetFileEntryAsync(FPath path)
-        {
-            throw new NotImplementedException();
-        }
+    public ValueTask<DirectoryEntry> GetDirectoryEntryAsync(FPath path)
+    {
+        throw new NotImplementedException();
+    }
 
-        public ValueTask<DirectoryEntry> GetDirectoryEntryAsync(FPath path)
-        {
-            throw new NotImplementedException();
-        }
+    public ValueTask<Stream> OpenFileAsync(FPath path)
+    {
+        throw new NotImplementedException();
+    }
 
-        public ValueTask<Stream> OpenFileAsync(FPath path)
-        {
-            throw new NotImplementedException();
-        }
-
-        public ValueTask<FileMetadata> GetFileMetadataAsync(FPath path)
-        {
-            throw new NotImplementedException();
-        }
+    public ValueTask<FileMetadata> GetFileMetadataAsync(FPath path)
+    {
+        throw new NotImplementedException();
     }
 }

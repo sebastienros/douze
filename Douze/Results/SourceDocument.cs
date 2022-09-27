@@ -3,7 +3,7 @@ using Douze.Nodes;
 
 namespace Douze.Results;
 
-internal class SourceDocument : IDocument
+internal sealed class SourceDocument : IDocument
 {
     public SourceDocument(IFileSystem fileSystem, FPath path)
     {

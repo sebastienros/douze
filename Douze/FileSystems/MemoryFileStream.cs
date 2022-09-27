@@ -1,63 +1,62 @@
-﻿namespace Douze.FileSystems
+﻿namespace Douze.FileSystems;
+
+internal sealed class MemoryFileStream : Stream
 {
-    internal class MemoryFileStream : Stream
+    private readonly MemoryStream _stream = new();
+
+    public FileMetadata Metadata { get; }
+
+    public override bool CanRead => _stream.CanRead;
+
+    public override bool CanSeek => _stream.CanSeek;
+
+    public override bool CanWrite => _stream.CanWrite;
+
+    public override long Length => _stream.Length;
+
+    public override long Position { get => _stream.Position; set => _stream.Position = value; }
+
+    public MemoryFileStream()
     {
-        private readonly MemoryStream _stream = new();
+        Metadata = new FileMetadata(0, DateTime.UtcNow, DateTime.UtcNow, DateTime.UtcNow);
+    }
 
-        public FileMetadata Metadata { get; }
+    public override void Flush()
+    {
+        _stream.Flush();
+    }
 
-        public override bool CanRead => _stream.CanRead;
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        Metadata.LastAccessTimeUtc = DateTime.UtcNow;
 
-        public override bool CanSeek => _stream.CanSeek;
+        return _stream.Read(buffer, offset, count);
+    }
 
-        public override bool CanWrite => _stream.CanWrite;
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        return _stream.Seek(offset, origin);
+    }
 
-        public override long Length => _stream.Length;
+    public override void SetLength(long value)
+    {
+        Metadata.Length = value;
 
-        public override long Position { get => _stream.Position; set => _stream.Position = value; }
+        _stream.SetLength(value);
+    }
 
-        public MemoryFileStream()
-        {
-            Metadata = new FileMetadata(0, DateTime.UtcNow, DateTime.UtcNow, DateTime.UtcNow);
-        }
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        Metadata.LastWriteTimeUtc = DateTime.UtcNow;
 
-        public override void Flush()
-        {
-            _stream.Flush();
-        }
+        _stream.Write(buffer, offset, count);
+    }
 
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            Metadata.LastAccessTimeUtc = DateTime.UtcNow;
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
 
-            return _stream.Read(buffer, offset, count);
-        }
-
-        public override long Seek(long offset, SeekOrigin origin)
-        {
-            return _stream.Seek(offset, origin);
-        }
-
-        public override void SetLength(long value)
-        {
-            Metadata.Length = value;
-
-            _stream.SetLength(value);
-        }
-
-        public override void Write(byte[] buffer, int offset, int count)
-        {
-            Metadata.LastWriteTimeUtc = DateTime.UtcNow;
-
-            _stream.Write(buffer, offset, count);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            base.Dispose(disposing);
-
-            Metadata.Length = _stream.Length;
-            _stream.Seek(0, SeekOrigin.Begin);
-        }
+        Metadata.Length = _stream.Length;
+        _stream.Seek(0, SeekOrigin.Begin);
     }
 }

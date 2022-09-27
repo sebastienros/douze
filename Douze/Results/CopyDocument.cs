@@ -6,7 +6,7 @@ namespace Douze.Results;
 /// <summary>
 /// Creates a copy of an existing document and an optional new file name.
 /// </summary>
-internal class CopyDocument : IDocument
+internal sealed class CopyDocument : IDocument
 {
     public CopyDocument(IDocument document, IFileSystem newFileSystem, FPath newPath) : this(document, newFileSystem)
     {

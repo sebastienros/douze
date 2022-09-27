@@ -4,7 +4,7 @@ using Douze.Results;
 
 namespace Douze.FileProcessors;
 
-internal class LayoutFileProcessor : IFileProcessor
+internal sealed class LayoutFileProcessor : IFileProcessor
 {
     public Predicate<FPath> Match { get; set; } = _ => true;
 

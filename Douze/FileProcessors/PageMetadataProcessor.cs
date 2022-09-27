@@ -7,7 +7,7 @@ namespace Douze.FileProcessors;
 /// <summary>
 /// Adds the page data to each document
 /// </summary>
-internal class PageMetadataProcessor : IFileProcessor
+internal sealed class PageMetadataProcessor : IFileProcessor
 {
     public Predicate<FPath>? Match { get; set; } = null;
 

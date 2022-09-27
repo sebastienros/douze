@@ -10,7 +10,7 @@ namespace Douze.FileProcessors;
 /// If the permalink contains a filename with extension it is preserved.
 /// If the permalink doesn't contain and extension it is assumed as the final endpoint and uses index.html.
 /// </summary>
-internal class UrlFileProcessor : IFileProcessor
+internal sealed class UrlFileProcessor : IFileProcessor
 {
     public Predicate<FPath> Match { get; set; } = _ => true;
 

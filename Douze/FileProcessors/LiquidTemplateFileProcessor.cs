@@ -7,7 +7,7 @@ using Fluid.Values;
 
 namespace Douze.FileProcessors;
 
-internal class LiquidTemplateFileProcessor : IFileProcessor
+internal sealed class LiquidTemplateFileProcessor : IFileProcessor
 {
     public Predicate<FPath> Match { get; set; } = _ => true;
 

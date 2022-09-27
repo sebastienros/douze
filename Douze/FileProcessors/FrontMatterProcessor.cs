@@ -7,7 +7,7 @@ namespace Douze.FileProcessors;
 /// <summary>
 /// Assigns the FrontMatter data of a document to its Data property, and removes the header.
 /// </summary>
-internal class FrontMatterProcessor : IFileProcessor
+internal sealed class FrontMatterProcessor : IFileProcessor
 {
     public Predicate<FPath> Match { get; set; } = _ => true;
 

@@ -3,7 +3,7 @@ using Douze.FileSystems;
 
 namespace Douze.Configuration;
 
-internal class IncludeRule
+internal sealed class IncludeRule
 {
     private bool _matchFile = true;
     private bool _matchDir = true;
