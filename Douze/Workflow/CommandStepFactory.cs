@@ -1,3 +1,5 @@
+using Douze.Workflow.Commands;
+
 namespace Douze.Workflow;
 
 /// <summary>
@@ -6,8 +8,15 @@ namespace Douze.Workflow;
 /// </summary>
 internal static class CommandStepFactory
 {
+    /// <exception cref="WorkflowValidationException">The definition is invalid for its mode.</exception>
     public static Step Create(StepDefinition definition)
     {
-        throw new WorkflowValidationException("command steps are not available yet", definition.Location);
+        return definition.Mode switch
+        {
+            CommandMode.Filter => new FilterCommandStep(definition),
+            CommandMode.Batch => new BatchCommandStep(definition),
+            CommandMode.Worker => new WorkerCommandStep(definition),
+            _ => throw new ArgumentOutOfRangeException(nameof(definition), definition.Mode, "unknown command mode"),
+        };
     }
 }
