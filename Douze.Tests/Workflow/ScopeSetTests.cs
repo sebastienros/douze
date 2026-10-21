@@ -90,6 +90,7 @@ public class ScopeSetTests
     [Fact]
     public void RecordsDependenciesForDataKeysStepScopesAndMisses()
     {
+        // Resolution order for a file in /blog/: own, the /blog/ folder scope, then "step:collections", then "data".
         var scopes = ScopeSet.Empty
             .WithSite(new SiteScope("data", new NodeObject { ["colors"] = new NodeArray(), ["characters"] = new NodeArray() },
                 new Dictionary<string, string> { ["colors"] = "/_data/colors.json", ["characters"] = "/_data/characters.yml" }))
@@ -98,21 +99,30 @@ public class ScopeSetTests
 
         var meta = new Metadata(new NodeObject(), "/blog/");
 
+        // A hit in the data scope records its data file, plus the scopes consulted before it: they could define the
+        // key later and shadow it.
         var dataKey = new DependencyTracker();
         Assert.True(scopes.TryResolve(meta, "colors", null, dataKey, out _, out var hit));
         Assert.Equal(new ScopeHit(ScopeKind.Site, "/_data/colors.json"), hit);
-        Assert.Equal(["/_data/colors.json"], dataKey.ToSet().DataFiles.Select(x => x.FullName));
-        Assert.Empty(dataKey.ToSet().Scopes);
+        Assert.Equal(["/_data/colors.json", "/blog/blog.yml"], dataKey.ToSet().DataFiles.Select(x => x.FullName));
+        Assert.Equal(["step:collections"], dataKey.ToSet().Scopes);
 
         var stepScope = new DependencyTracker();
         Assert.True(scopes.TryResolve(meta, "collections", null, stepScope, out _, out hit));
         Assert.Equal(new ScopeHit(ScopeKind.Site, "step:collections"), hit);
         Assert.Equal(["step:collections"], stepScope.ToSet().Scopes);
-        Assert.Empty(stepScope.ToSet().DataFiles);
+        Assert.Equal(["/blog/blog.yml"], stepScope.ToSet().DataFiles.Select(x => x.FullName));
 
+        // A folder hit stops before the site scopes.
         var folder = new DependencyTracker();
         Assert.True(scopes.TryResolve(meta, "layout", null, folder, out _, out _));
         Assert.Equal(["/blog/blog.yml"], folder.ToSet().DataFiles.Select(x => x.FullName));
+        Assert.Empty(folder.ToSet().Scopes);
+
+        // A file outside /blog/ never consults the folder scope.
+        var elsewhere = new DependencyTracker();
+        Assert.True(scopes.TryResolve(new Metadata(new NodeObject(), "/docs/"), "collections", null, elsewhere, out _, out _));
+        Assert.Empty(elsewhere.ToSet().DataFiles);
 
         // A miss depends on every scope that could define the key.
         var miss = new DependencyTracker();

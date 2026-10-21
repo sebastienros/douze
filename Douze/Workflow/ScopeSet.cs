@@ -149,6 +149,8 @@ internal sealed class ScopeSet
     /// <summary>
     /// Resolves a top-level key: own metadata, then folder scopes from <c>meta.Directory</c> up to the root,
     /// then site scopes in order, then <paramref name="fallback"/>. The first scope that contains the key wins.
+    /// Every scope consulted is recorded in <paramref name="deps"/>, hit or miss: a scope that does not define the
+    /// key could define it later and shadow the hit, so the result depends on it too.
     /// </summary>
     public bool TryResolve(Metadata meta, string key, NodeObject? fallback, DependencyTracker? deps, out Node? value, out ScopeHit hit)
     {
@@ -164,13 +166,18 @@ internal sealed class ScopeSet
         {
             for (var directory = meta.Directory; !directory.IsEmpty; directory = directory.GetParentDirectory())
             {
-                if (_folders.TryGetValue(directory, out var folder) && folder.Values.TryGetItem(key, out value))
+                if (!_folders.TryGetValue(directory, out var folder))
                 {
-                    foreach (var source in folder.Sources)
-                    {
-                        deps.RecordDataFile(source);
-                    }
+                    continue;
+                }
 
+                foreach (var source in folder.Sources)
+                {
+                    deps.RecordDataFile(source);
+                }
+
+                if (folder.Values.TryGetItem(key, out value))
+                {
                     hit = new ScopeHit(ScopeKind.Folder, directory.FullName);
                     return true;
                 }
@@ -179,25 +186,25 @@ internal sealed class ScopeSet
 
         foreach (var scope in _site)
         {
-            if (scope.Values.TryGetItem(key, out value))
+            if (!scope.Values.TryGetItem(key, out value))
             {
-                if (scope.KeySources != null && scope.KeySources.TryGetValue(key, out var dataFile))
-                {
-                    deps.RecordDataFile(dataFile);
-                    hit = new ScopeHit(ScopeKind.Site, dataFile);
-                }
-                else
-                {
-                    deps.RecordScope(scope.Source);
-                    hit = new ScopeHit(ScopeKind.Site, scope.Source);
-                }
-
-                return true;
+                deps.RecordScope(scope.Source);
+                continue;
             }
-        }
 
-        // A miss depends on every scope that could define the key later.
-        RecordMiss(meta, deps);
+            if (scope.KeySources != null && scope.KeySources.TryGetValue(key, out var dataFile))
+            {
+                deps.RecordDataFile(dataFile);
+                hit = new ScopeHit(ScopeKind.Site, dataFile);
+            }
+            else
+            {
+                deps.RecordScope(scope.Source);
+                hit = new ScopeHit(ScopeKind.Site, scope.Source);
+            }
+
+            return true;
+        }
 
         if (fallback != null && fallback.TryGetItem(key, out value))
         {
@@ -208,30 +215,6 @@ internal sealed class ScopeSet
         value = null;
         hit = new ScopeHit(ScopeKind.None, "");
         return false;
-    }
-
-    private void RecordMiss(Metadata meta, DependencyTracker deps)
-    {
-        if (deps == DependencyTracker.Null)
-        {
-            return;
-        }
-
-        for (var directory = meta.Directory; !directory.IsEmpty; directory = directory.GetParentDirectory())
-        {
-            if (_folders.TryGetValue(directory, out var folder))
-            {
-                foreach (var source in folder.Sources)
-                {
-                    deps.RecordDataFile(source);
-                }
-            }
-        }
-
-        foreach (var scope in _site)
-        {
-            deps.RecordScope(scope.Source);
-        }
     }
 
     private Hash128 ComputeHash()
