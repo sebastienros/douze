@@ -1,4 +1,3 @@
-using Douze.FileSystems;
 using Douze.Progress;
 using Douze.Workflow;
 
@@ -12,7 +11,6 @@ internal static class BuildCommand
     public static async Task<int> RunAsync(CommandLine commandLine)
     {
         var sourceDirectory = Path.GetFullPath(commandLine.Source);
-        var outputDirectory = Path.GetFullPath(commandLine.Output);
 
         if (!Directory.Exists(sourceDirectory))
         {
@@ -20,14 +18,13 @@ internal static class BuildCommand
             return ExitCodes.Usage;
         }
 
-        var site = await SiteOptions.DetectAsync(new PhysicalFileSystem(sourceDirectory), new PhysicalFileSystem(outputDirectory), sourceDirectory, outputDirectory);
-
         WorkflowGraph graph;
+        SiteOptions site;
 
         try
         {
-            var definition = await WorkflowSource.LoadAsync(commandLine.Workflow, site);
-            graph = WorkflowGraph.Build(definition);
+            (var workflow, site) = await WorkflowSource.LoadAsync(commandLine, sourceDirectory);
+            graph = WorkflowGraph.Build(workflow);
         }
         catch (WorkflowValidationException e)
         {
@@ -68,7 +65,7 @@ internal static class BuildCommand
 
             var options = new BuildOptions
             {
-                MaxDegreeOfParallelism = commandLine.Parallelism ?? Environment.ProcessorCount,
+                MaxDegreeOfParallelism = commandLine.Parallelism ?? site.Parallelism ?? Environment.ProcessorCount,
                 Failure = commandLine.Failure,
                 Verbose = commandLine.Verbose,
                 TraceUnits = commandLine.TraceUnits,

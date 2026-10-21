@@ -72,6 +72,9 @@ Douze/
   Program.cs                     CLI entry (rewritten)
   Cli/CommandLine.cs             argument parsing (replaces Arguments.cs)
   Cli/BuildCommand.cs            douze build
+  Cli/WorkflowSource.cs          site options and workflow of a build (2.10)
+  Cli/ViewSelector.cs            progress view selection (6.2)
+  Cli/WorkerHelperCommand.cs     douze worker-helper (phase 3)
   Cli/WatchCommand.cs            douze watch / serve (phase 6)
   SiteOptions.cs                 folders and file systems (replaces Options.cs)
   DouzeException.cs              kept
@@ -911,6 +914,13 @@ Options:
 
 `-c`, `-d` and `-i` are removed: the folders come from `douze.yml` (`site:` section, phase 2) or
 from the detection rule. `README.md` is updated in phase 1 and again in phase 2.
+
+`Douze/Cli/WorkflowSource.cs` turns the command line into the site and the workflow of a build:
+`LoadAsync(CommandLine, sourceDirectory)` detects the folders, resolves the output folder
+(`CommandLine.Output`, else `site.output` from phase 2, else `_site`), and returns the
+`WorkflowDefinition` of `--workflow`, of `douze.yml`, or of `DefaultWorkflow`, with the
+`SiteOptions`. `SiteOptions.Parallelism` (from `site.parallelism`) applies when `-p` is absent.
+`BuildCommand` only builds the graph and runs it.
 
 ### 2.11 The built-in steps
 
@@ -1826,16 +1836,33 @@ missing (manual check documented in the PR), and `git grep -l "IFileProcessor\|I
 - `NodeValuesTests.DateTimeRendersLikeTheProcessorPipeline` keeps the processor pipeline's renderings as literals.
 - `IncludeRuleTests` is deleted: `GlobTests` (phase 1a) covers its cases with standard semantics.
 
+**Review pass** (what it changed, so phases 2, 3, 4 and B start from it):
+- The diamond rule of 2.6 also accepts another instance with the same ref (`SchedulerTests.EqualFileThroughTwoNeedsEntersOnce`).
+- `WorkflowSource.LoadAsync(CommandLine, sourceDirectory)` builds the `SiteOptions` (detection, output folder) and
+  returns them with the workflow; `CommandLine.Output` is null when `-o` is absent; `SiteOptions.Parallelism` is used
+  when `-p` is absent. Phase 2 applies `site:` inside `WorkflowSource` only (`WorkflowSourceTests`).
+- `Douze.Tests.FakeTool/` exists as a stub, referenced from `Douze.Tests.csproj`, which also copies `Fixtures/**`.
+  The README has placeholder sections "workflow", "commands" and "progress and tracing". With these, the files each
+  of phases 2, 3, 4 and B edits are disjoint (see their "Owns" lists).
+- Left as follow-ups: error positions point into processed content under the output path (`todo.txt`); `pagination.hrefs`
+  and the pages' `href` are empty while a page's `permalink` renders, since they come from it (2.11); a `pagination.data`
+  that resolves to nothing passes the file through unchanged, as the processor pipeline did; the default workflow cannot
+  paginate `collections.<tag>` (open question 19); `PlainProgressView` prints `1 files` (phase 4 owns the views).
+
 ### Phase 2: YAML workflow loading (Medium)
 
 **Goal.** `douze.yml` with `site` and `steps`, validation with file and line, `--print-workflow`.
 
 **Owns.** `Douze/Workflow/Yaml/WorkflowLoader.cs`, `YamlSource.cs` (reads SharpYaml model nodes
 with their parsing event marks and exposes `Location(node)`), `WorkflowSchema.cs` (field table of
-4.3 as data, used by the loader and by `WorkflowGraph.ToYaml`), `Douze/Cli/WorkflowSource.cs`
-(real implementation), `Douze/SiteOptions.cs` (apply `site:`), `README.md` section "Workflow",
+4.3 as data, used by the loader and by `WorkflowGraph.ToYaml`), `Douze/Workflow/WorkflowGraph.cs`
+(`ToYaml` over the schema), `Douze/Cli/WorkflowSource.cs` (real implementation: it already builds the
+`SiteOptions`, so `site:` is applied there and `BuildCommand.cs` is not touched; `site.output` applies
+when `CommandLine.Output` is null, `site.parallelism` goes to `SiteOptions.Parallelism`),
+`Douze/SiteOptions.cs` (apply `site:`), the README section "workflow" (a placeholder exists),
 `Sample/douze.yml` is **not** added (the Sample stays a no-configuration site), a new
-`Douze.Tests/Fixtures/workflows/*.yml` set.
+`Douze.Tests/Fixtures/workflows/*.yml` set (`Douze.Tests.csproj` already copies `Fixtures/**` to the
+output, so the project file is not touched).
 
 **Tests.** `WorkflowLoaderTests`: one test per message of 4.5 asserting the message and the line
 and column (about 20 tests), the aspire example of 4.7 loads, `site` values apply, `steps` absent
@@ -1851,11 +1878,14 @@ in a test.
 **Goal.** `run:` steps in the three modes with the worker protocol and the Node helper.
 
 **Owns.** `Douze/Workflow/Commands/*` (all files, including the real `douze-worker.mjs`),
-`Douze/Workflow/CommandStepFactory.cs`, `Douze/Cli/WorkerHelperCommand.cs`, README section
-"Commands", a new test helper project `Douze.Tests.FakeTool/` (console app with modes
-`filter-upper`, `batch-copy`, `batch-manifest`, `worker-echo`, `worker-slow`, `fail`, `stderr`,
-`hang`), referenced from `Douze.Tests` with `ReferenceOutputAssembly=false` and launched with
-`dotnet <path to FakeTool.dll>`, which works on every CI runner without Node.
+`Douze/Workflow/CommandStepFactory.cs`, `Douze/Cli/WorkerHelperCommand.cs`, the README section
+"commands" (a placeholder exists), the test helper project `Douze.Tests.FakeTool/` (a stub console
+app exists, already referenced from `Douze.Tests.csproj` with `ReferenceOutputAssembly=false`, so
+neither the test project file nor `Douze.slnx` is touched; phase 3 fills in the modes `filter-upper`,
+`batch-copy`, `batch-manifest`, `worker-echo`, `worker-slow`, `fail`, `stderr`, `hang`). The tests
+launch it with `dotnet <path to Douze.Tests.FakeTool.dll>`, found from the test assembly's folder
+(`../../../../Douze.Tests.FakeTool/bin/<Configuration>/net10.0/`), which works on every CI runner
+without Node.
 
 Sub-steps, each a commit: 3a `CommandTemplate`, `ProcessRunner`, `FilterCommandStep`,
 `BatchCommandStep`; 3b `WorkerProtocol`, `WorkerProcess`, `WorkerCommandStep`, the helper.
@@ -1879,9 +1909,10 @@ documents the protocol with the examples of 5.3.
 
 **Owns.** `Douze/Progress/SpectreProgressView.cs`, `Douze/Cli/ViewSelector.cs` (real selection),
 `Douze/Tracing/ChromeTraceWriter.cs`, `TimelineHtmlWriter.cs`, `timeline.html`,
-`Douze/Cli/BuildCommand.cs` (write the trace files when requested), `Directory.Packages.props`
-and `Douze/Douze.csproj` (`Spectre.Console`; test project gets `Spectre.Console.Testing`),
-README section "Progress and tracing".
+`Douze/Cli/BuildCommand.cs` (write the trace files when requested), `Directory.Packages.props`,
+`Douze/Douze.csproj` and `Douze.Tests/Douze.Tests.csproj` (`Spectre.Console` and
+`Spectre.Console.Testing`; phase 4 is the only phase of the four that edits these three files), the
+README section "progress and tracing" (a placeholder exists).
 
 **Tests.** `ChromeTraceWriterTests` (4: valid JSON through `System.Text.Json` with the source
 generated context, lanes do not overlap, microsecond units, args), `TimelineHtmlWriterTests` (3:
@@ -1897,8 +1928,8 @@ in a terminal shows the live table (screenshot in the PR); `--trace out.json` op
 
 **Goal.** Section 9's harness and the first numbers for the engine of phase 1b.
 
-**Owns.** `bench/` (everything under it), `Douze.slnx` (adds `bench/Douze.Bench`), `.gitignore`
-(`bench/**/data/`, `bench/**/out/`).
+**Owns.** `bench/` (everything under it), `Douze.slnx` (adds `bench/Douze.Bench`; the only phase of
+the four that edits it), `.gitignore` (`bench/**/data/`, `bench/**/out/`).
 
 **Acceptance.** `bench/README.md` has the commands, the first results table is filled in for the
 synthetic site on the implementer's machine, and the aspire data harness runs when the data is

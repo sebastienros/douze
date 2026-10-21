@@ -45,7 +45,7 @@ internal sealed class CommandLine
 
     public Command Command { get; private set; } = Command.Build;
     public string Source { get; private set; } = ".";
-    public string Output { get; private set; } = "_site";
+    public string? Output { get; private set; }        // null: WorkflowSource.DefaultOutput (the workflow file's site.output in phase 2)
     public string? Workflow { get; private set; }
     public int? Parallelism { get; private set; }
     public FailurePolicy Failure { get; private set; } = FailurePolicy.Default;

@@ -12,6 +12,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Douze\Douze.csproj" />
+    <!-- Built before the tests, launched by the command step tests with 'dotnet <path to its dll>'; not referenced. -->
+    <ProjectReference Include="..\Douze.Tests.FakeTool\Douze.Tests.FakeTool.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Fixture sites and workflow files, copied next to the tests. -->
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

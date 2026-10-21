@@ -18,7 +18,7 @@ During the workflow engine refactor (`docs/workflow-engine-plan.md`), earlier de
 
 Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the design): a graph of steps that virtual files (path, content, metadata) flow through.
 
-- `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`), `WorkflowSource` (finds the workflow), `ViewSelector`.
+- `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`), `WorkflowSource` (finds the site options and the workflow), `ViewSelector`.
 - `Douze/Workflow/`: the engine. `WorkflowGraph` validates a `WorkflowDefinition` and instantiates its steps; `SiteBuilder` runs it with the `Scheduling/Scheduler`, which streams files between steps by shape (`map`, `group`, `reduce`). `DefaultWorkflow` is the workflow of a site without a workflow file.
 - `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write`).
 - `Douze/Liquid/`: the Fluid bridge. `TemplateLoader` parses templates once per content hash and serves includes; `MetadataValue` is the model of every render.

@@ -19,6 +19,7 @@ internal sealed class SiteOptions
     public FPath DataFolder { get; init; } = DefaultDataFolder;
     public FPath IncludesFolder { get; init; } = DefaultIncludesFolder;
     public string? Url { get; init; }                   // site.url, exposed to templates (phase 2)
+    public int? Parallelism { get; init; }              // site.parallelism, used when -p is not given (phase 2)
 
     /// <summary>
     /// Uses <c>/_content/</c>, <c>/_data/</c> and <c>/_includes/</c> when they exist in <paramref name="source"/>, the root otherwise.

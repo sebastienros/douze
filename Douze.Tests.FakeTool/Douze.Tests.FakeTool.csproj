@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The fake external tool of the command step tests (plan, phase 3): launched with 'dotnet Douze.Tests.FakeTool.dll <mode>'. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

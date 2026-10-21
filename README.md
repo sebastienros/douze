@@ -98,3 +98,15 @@ pages are written to `products/index.html`, `products/1/index.html`...
 
 `layout` names a file of the includes folder. The layout is rendered with the page's data and `content`, and can
 itself have a `layout` in its front matter.
+
+# workflow
+
+Not available yet: `douze.yml` describes a site's own workflow (`site` settings and `steps`).
+
+# commands
+
+Not available yet: `run:` steps call external tools (filter, batch and worker modes).
+
+# progress and tracing
+
+Not available yet: a live console view, `--trace <file.json>` (Chrome trace events) and `--timeline <file.html>`.
