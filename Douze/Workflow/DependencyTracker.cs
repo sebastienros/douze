@@ -109,37 +109,14 @@ internal sealed class DependencyTracker
     }
 }
 
+/// <summary>
+/// What a unit read besides its inputs, sorted and deduplicated. Templates carry the content hash they had; data
+/// files and scopes are identified by path and source, and a replay compares their current hashes with the ones of
+/// the run that recorded them.
+/// </summary>
 internal sealed record DependencySet(ImmutableArray<(FPath Path, Hash128 Hash)> Templates, ImmutableArray<FPath> DataFiles, ImmutableArray<string> Scopes)
 {
     public static readonly DependencySet Empty = new([], [], []);
 
-    private Hash128? _hash;
-
-    // 'with' expressions must not copy the cached hash.
-    private DependencySet(DependencySet original)
-    {
-        Templates = original.Templates;
-        DataFiles = original.DataFiles;
-        Scopes = original.Scopes;
-    }
-
     public bool IsEmpty => Templates.IsEmpty && DataFiles.IsEmpty && Scopes.IsEmpty;
-
-    public Hash128 Hash => _hash ??= ComputeHash();
-
-    private Hash128 ComputeHash()
-    {
-        var hashes = new List<Hash128>(Templates.Length * 2 + 3);
-
-        foreach (var (path, hash) in Templates)
-        {
-            hashes.Add(Hash128.OfText(path.FullName));
-            hashes.Add(hash);
-        }
-
-        hashes.Add(Hash128.OfStrings(DataFiles.Select(x => x.FullName)));
-        hashes.Add(Hash128.OfStrings(Scopes));
-
-        return Hash128.Combine([.. hashes]);
-    }
 }

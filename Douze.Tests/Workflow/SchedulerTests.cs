@@ -460,11 +460,14 @@ public class SchedulerTests
         Assert.Equal(await firstSite.Output.ReadAllTextAsync("/groups/b.txt"), await secondSite.Output.ReadAllTextAsync("/groups/b.txt"));
 
         Assert.Equal(Keys(first), Keys(second));
+        Assert.Equal(Dependencies(first), Dependencies(second));
         Assert.Equal(first.Scopes.Hash, second.Scopes.Hash);
 
         static string[] Keys(BuildResult result) => result.Steps
-            .SelectMany(run => run.Results.Select(unit => ResultKey.Compute(run.Node.Definition, unit.Inputs, run.Scopes.Hash, unit.Dependencies, Hash128.Empty).ToString()))
+            .SelectMany(run => run.Results.Select(unit => ResultKey.Compute(run.Node.Definition, unit.Inputs, Hash128.Empty).ToString()))
             .ToArray();
+
+        static DependencySet[] Dependencies(BuildResult result) => result.Steps.SelectMany(run => run.Results.Select(unit => unit.Dependencies)).ToArray();
     }
 
     [Fact]
