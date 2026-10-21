@@ -21,8 +21,9 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     private readonly IReadOnlyList<FPath> _includesFolders;
     private readonly FluidParser _parser;
 
-    // Parsed templates by content hash: identical templates (paginated pages, layouts) are parsed once.
-    private readonly ConcurrentDictionary<Hash128, Lazy<ParsedTemplate>> _parsed = new();
+    // Parsed templates by content hash: identical templates (paginated pages, layouts) are parsed once. A failed parse
+    // is kept too, so the error is reported for every file with that content, each with its own path.
+    private readonly ConcurrentDictionary<Hash128, Lazy<(ParsedTemplate? Template, ParseException? Error)>> _parsed = new();
 
     // Files of the includes folders by relative path, read once.
     private readonly ConcurrentDictionary<FPath, Lazy<Task<IncludeFile?>>> _files = new();
@@ -47,11 +48,29 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     /// <exception cref="DouzeException"><c>&lt;displayPath&gt;(&lt;line&gt;,&lt;col&gt;): &lt;message&gt;</c> when the template is invalid.</exception>
     public ParsedTemplate GetOrParse(Hash128 contentHash, string text, string displayPath)
     {
-        var lazy = _parsed.GetOrAdd(contentHash, static (hash, state) => new Lazy<ParsedTemplate>(
-            () => new ParsedTemplate(state.Loader.Parse(state.Text, state.DisplayPath), hash),
-            LazyThreadSafetyMode.ExecutionAndPublication), (Loader: this, Text: text, DisplayPath: displayPath));
+        var lazy = _parsed.GetOrAdd(contentHash, static (hash, state) => new Lazy<(ParsedTemplate?, ParseException?)>(
+            () =>
+            {
+                try
+                {
+                    return (new ParsedTemplate(state.Parser.Parse(state.Text), hash), null);
+                }
+                catch (ParseException e)
+                {
+                    return (null, e);
+                }
+            },
+            LazyThreadSafetyMode.ExecutionAndPublication), (Parser: _parser, Text: text));
 
-        return lazy.Value;
+        var (parsed, error) = lazy.Value;
+
+        if (parsed == null)
+        {
+            var position = error!.Position is { } p ? $"({p.Line},{p.Column})" : "";
+            throw new DouzeException($"{displayPath}{position}: {error.Message}");
+        }
+
+        return parsed;
     }
 
     /// <summary>
@@ -172,19 +191,6 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
         }
 
         return null;
-    }
-
-    private IFluidTemplate Parse(string text, string displayPath)
-    {
-        try
-        {
-            return _parser.Parse(text);
-        }
-        catch (ParseException e)
-        {
-            var position = e.Position is { } p ? $"({p.Line},{p.Column})" : "";
-            throw new DouzeException($"{displayPath}{position}: {e.Message}");
-        }
     }
 
     private sealed class IncludeFile
