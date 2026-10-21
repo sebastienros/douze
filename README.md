@@ -11,13 +11,18 @@ dotnet tool install -g douze --prerelease
 
 ```
 douze [build] [options]          build once (default command)
+douze worker-helper              print douze-worker.mjs to stdout
 
 Options:
   -s, --source <dir>             source folder (default: .)
   -o, --output <dir>             output folder (default: _site)
+  -w, --workflow <file>          workflow file (default: <source>/douze.yml when it exists)
   -p, --parallelism <n>          max parallel units (default: processor count)
       --keep-going               report every error instead of stopping the failing step
       --fail-fast                stop everything on the first error
+      --trace <file>             write a Chrome trace event file
+      --timeline <file>          write a self-contained timeline.html
+      --trace-units              include one span per file or group in the trace
       --plain                    one line per step, no live view
   -q, --quiet                    errors only
   -v, --verbose                  one line per file, stack traces
@@ -26,8 +31,8 @@ Options:
       --version                  show the version
 ```
 
-`douze --help` lists the options of features that are not available yet (workflow files, watch mode, dev server,
-trace files, cache).
+`douze --help` also lists the commands and options of features that are not available yet (watch mode, dev server,
+cache).
 
 The exit code is 0 on success, 1 when the build has errors (each one is printed as
 `error: <step>: <file>(<line>,<col>): <message>`), 2 for an invalid command line or workflow, and 130 when the

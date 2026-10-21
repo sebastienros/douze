@@ -20,7 +20,7 @@ internal sealed class CommandLine
           douze [build] [options]          build once (default command)
           douze watch [options]            rebuild on changes (not available yet)
           douze serve [options]            watch + dev server with live reload (not available yet)
-          douze worker-helper              print douze-worker.mjs to stdout (not available yet)
+          douze worker-helper              print douze-worker.mjs to stdout
 
         Options:
           -s, --source <dir>             source folder (default: .)
@@ -29,8 +29,8 @@ internal sealed class CommandLine
           -p, --parallelism <n>          max parallel units (default: processor count)
               --keep-going               report every error instead of stopping the failing step
               --fail-fast                stop everything on the first error
-              --trace <file>             write a Chrome trace event file (not available yet)
-              --timeline <file>          write a self-contained timeline.html (not available yet)
+              --trace <file>             write a Chrome trace event file
+              --timeline <file>          write a self-contained timeline.html
               --trace-units              include one span per file or group in the trace
               --plain                    one line per step, no live view
           -q, --quiet                    errors only
