@@ -1,0 +1,8 @@
+# A command step in each mode: a filter, a worker and a batch step. 'tools/' holds the fake tool of the tests
+# (Douze.Tests.FakeTool), copied there by CommandWorkflowTests.
+steps:
+  pages: { inputs: ["notes/**", "docs/**"], uses: frontmatter }
+  upper: { needs: pages, run: "dotnet tools/Douze.Tests.FakeTool.dll filter-upper", mode: filter, match: "**/*.txt" }
+  work:  { needs: upper, run: "dotnet tools/Douze.Tests.FakeTool.dll worker-echo 2", mode: worker, match: "**/*.md" }
+  index: { needs: work, run: "dotnet tools/Douze.Tests.FakeTool.dll batch-manifest {{ inputs }} {{ outputs }}", match: "**/*.md" }
+  write: { needs: [work, index], uses: write }

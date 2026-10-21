@@ -2008,6 +2008,8 @@ in a test.
   the branches are merged: a `SiteScope("site", { site: { url } })` as the base of every unit's scopes, and decide
   how it combines with a `_data/site.json` (a contribution replaces the whole `site` key).
 - `--print-workflow` builds the graph first, so a workflow with `run:` steps prints only once phase 3 lands.
+  *Integration:* it does; `CommandWorkflowTests.PrintedWorkflowLoadsBackTheSame` prints the `douze.yml` of the
+  command fixture site and loads it back.
 - Tests: `WorkflowLoaderTests` (91 cases: every message of 4.5 with its line and column, the 4.7 example, typed
   `with`, round trips, scalars, durations), `WorkflowSourceTests` (site section, `-o` over `site.output`, `--workflow`,
   missing file, error location, the two-pipeline fixture site). Fixtures: `Douze.Tests/Fixtures/workflows/`
@@ -2061,6 +2063,8 @@ documents the protocol with the examples of 5.3.
   runs alone); `NodeHelperTests` also checks what `douze worker-helper` prints;
   `CommandWorkflowTests` builds `Douze.Tests/Fixtures/commands` from and to disk through a filter, a
   worker and a batch step. The workflow is built in code; phase 2 can give the fixture a `douze.yml`.
+  *Integration:* the fixture has a `douze.yml` (`dotnet tools/Douze.Tests.FakeTool.dll <mode>`; the test copies
+  the fake tool into `tools/`), loaded through `WorkflowSource`.
 - `BuildContext.TempRoot` is removed by the command steps when they leave it empty; `BuildContext`
   owning it (deleting it on dispose unless `--verbose`) would be cleaner, left for the integration.
   *Integration:* `BuildContext.DisposeAsync` deletes the temp root with everything in it, or only when

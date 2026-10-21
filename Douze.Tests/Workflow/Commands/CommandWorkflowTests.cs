@@ -1,5 +1,6 @@
-using Douze.FileSystems;
+using Douze.Cli;
 using Douze.Workflow;
+using Douze.Workflow.Yaml;
 using Xunit;
 
 namespace Douze.Tests.Workflow.Commands;
@@ -7,24 +8,17 @@ namespace Douze.Tests.Workflow.Commands;
 public class CommandWorkflowTests : CommandTestBase
 {
     /// <summary>
-    /// The site of <c>Fixtures/commands</c> through a filter, a worker and a batch step, built from and to disk.
+    /// The site of <c>Fixtures/commands</c> through its <c>douze.yml</c>: a filter, a worker and a batch step, built from
+    /// and to disk.
     /// </summary>
     [Fact]
     public async Task AllThreeModes()
     {
-        var source = Path.Combine(TempFolder, "site");
-        var output = Path.Combine(TempFolder, "out");
-        CopyDirectory(Path.Combine(AppContext.BaseDirectory, "Fixtures", "commands"), source);
-        Directory.CreateDirectory(output);
+        var (source, output) = CopyFixture();
+        var (workflow, site) = await WorkflowSource.LoadAsync(CommandLine.Parse(["-s", source, "-o", output]), source);
+        Site = site;
 
-        Site = await SiteOptions.DetectAsync(new PhysicalFileSystem(source), new PhysicalFileSystem(output), source, output);
-
-        var result = await RunSuccessfullyAsync(Workflow(
-            Step("pages", "frontmatter", inputs: ["notes/**", "docs/**"]),
-            Command("upper", Tool("filter-upper"), CommandMode.Filter, needs: ["pages"], match: ["**/*.txt"]),
-            Command("work", Tool("worker-echo", "2"), CommandMode.Worker, needs: ["upper"], match: ["**/*.md"]),
-            Command("index", Tool("batch-manifest", "{{ inputs }}", "{{ outputs }}"), CommandMode.Batch, needs: ["work"], match: ["**/*.md"]),
-            Step("write", "write", needs: ["work", "index"])));
+        var result = await RunSuccessfullyAsync(workflow);
 
         Assert.Equal(
             ["/docs/guide.md", "/docs/intro.md", "/notes/a.txt", "/notes/b.txt", "/titles.txt"],
@@ -38,6 +32,49 @@ public class CommandWorkflowTests : CommandTestBase
 
         // The temporary folders of the batch step are gone.
         Assert.Empty(Directory.GetFileSystemEntries(Path.Combine(TempFolder, "cache", "tmp")));
+    }
+
+    [Fact]
+    public async Task PrintedWorkflowLoadsBackTheSame()
+    {
+        var (source, _) = CopyFixture();
+        var (workflow, _) = await WorkflowSource.LoadAsync(CommandLine.Parse(["-s", source]), source);
+
+        var yaml = WorkflowGraph.Build(workflow).ToYaml();
+
+        Assert.Equal("""
+            steps:
+              pages: { inputs: ["notes/**", "docs/**"], uses: frontmatter }
+              upper: { needs: pages, match: "**/*.txt", run: dotnet tools/Douze.Tests.FakeTool.dll filter-upper, mode: filter }
+              work:  { needs: upper, match: "**/*.md", run: dotnet tools/Douze.Tests.FakeTool.dll worker-echo 2, mode: worker }
+              index: { needs: work, match: "**/*.md", run: "dotnet tools/Douze.Tests.FakeTool.dll batch-manifest {{ inputs }} {{ outputs }}" }
+              write: { needs: [work, index], uses: write }
+
+            """.ReplaceLineEndings("\n"), yaml.ReplaceLineEndings("\n"));
+
+        var printed = WorkflowLoader.Load(yaml, "printed.yml").Workflow!;
+        Assert.Equal(workflow.Steps.Select(x => (x.Name, x.ConfigHash)), printed.Steps.Select(x => (x.Name, x.ConfigHash)));
+    }
+
+    /// <summary>
+    /// Copies the fixture site and the fake tool (its dll and runtime configuration) into <c>tools/</c>.
+    /// </summary>
+    private (string Source, string Output) CopyFixture()
+    {
+        var source = Path.Combine(TempFolder, "site");
+        var output = Path.Combine(TempFolder, "out");
+        CopyDirectory(Path.Combine(AppContext.BaseDirectory, "Fixtures", "commands"), source);
+        Directory.CreateDirectory(output);
+
+        var tools = Path.Combine(source, "tools");
+        Directory.CreateDirectory(tools);
+
+        foreach (var file in new[] { FakeToolPath, Path.ChangeExtension(FakeToolPath, ".runtimeconfig.json") })
+        {
+            File.Copy(file, Path.Combine(tools, Path.GetFileName(file)));
+        }
+
+        return (source, output);
     }
 
     private static void CopyDirectory(string from, string to)
