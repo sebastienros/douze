@@ -43,7 +43,7 @@ internal sealed class Scheduler
         var errors = runs.SelectMany(x => x.Errors).ToArray();
 
         // Nearest contributions first: descending topological index.
-        var finalScopes = ScopeSet.Merge(runs.Reverse().Select(x => x.Contributions).ToArray(), ScopeSet.Empty);
+        var finalScopes = ScopeSet.Merge(runs.Reverse().Select(x => x.Contributions).ToArray(), _context.BaseScopes);
 
         return new SchedulerResult(runs, errors, finalScopes, ct.IsCancellationRequested);
     }
@@ -166,7 +166,7 @@ internal sealed class Scheduler
                 // A step sees the contributions of every ancestor, nearest first (descending topological index).
                 var ancestors = _scheduler._graph.Ancestors(Name).Select(x => _runners[_scheduler._graph[x].Index]).OrderByDescending(x => x.Node.Index).ToArray();
                 await Task.WhenAll(ancestors.Select(x => x.ContributionReady.Task)).WaitAsync(token);
-                Run.Scopes = ScopeSet.Merge(ancestors.Select(x => x.Run.Contributions).ToArray(), ScopeSet.Empty);
+                Run.Scopes = ScopeSet.Merge(ancestors.Select(x => x.Run.Contributions).ToArray(), Context.BaseScopes);
 
                 Run.State = StepState.Running;
 

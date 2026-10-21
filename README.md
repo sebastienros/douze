@@ -78,8 +78,10 @@ The top-level keys of the data files of a content folder (`articles/articles.yml
 and its subfolders.
 
 A name in a template resolves to the first of: the page's own data (front matter, `page.date`, `url`, captured
-variables), the data of its folder, then of the parent folders, the site data, and the front matter of its layouts.
-For instance a page can set `layout`, or inherit it from its folder or from `_data/layout.yml`.
+variables), the data of its folder, then of the parent folders, the site data, the `site` section of `douze.yml`
+(`site.url`), and the front matter of its layouts. For instance a page can set `layout`, or inherit it from its
+folder or from `_data/layout.yml`. `site.url` is merged with a `_data/site.json`: `{{ site.title }}` can come from
+the data file and `{{ site.url }}` from `douze.yml`, unless the data file defines `url` too.
 
 ## pagination
 
@@ -117,7 +119,7 @@ site:
   data: data             # default: _data if it exists, else none
   includes: templates    # default: _includes if it exists, else the source folder
   output: public         # relative to the source folder; -o wins
-  url: https://example.com
+  url: https://example.com  # site.url in templates
   parallelism: 8         # -p wins
 
 steps:

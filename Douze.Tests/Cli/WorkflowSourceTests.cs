@@ -153,7 +153,8 @@ public class WorkflowSourceTests : IDisposable
             ["/blog/post/index.html", "/index.html", "/packages/postgres/index.html", "/packages/redis/index.html"],
             result.Outputs.Select(x => x.Path.FullName));
 
-        Assert.Equal("<title>Home - Two pipelines</title><h1>Hello</h1>\n\n", await File.ReadAllTextAsync(Path.Combine(output, "index.html"), TestContext.Current.CancellationToken));
+        // site.title comes from data/site.json, site.url from the workflow file's site section.
+        Assert.Equal("<title>Home - Two pipelines</title><link rel=\"canonical\" href=\"https://example.com/index.html\"><h1>Hello</h1>\n\n", await File.ReadAllTextAsync(Path.Combine(output, "index.html"), TestContext.Current.CancellationToken));
         Assert.Equal("<h1>redis 1.0</h1><p>Two pipelines</p>\n", await File.ReadAllTextAsync(Path.Combine(output, "packages", "redis", "index.html"), TestContext.Current.CancellationToken));
     }
 

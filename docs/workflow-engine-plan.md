@@ -605,8 +605,9 @@ with `file` (`path`, `dir`, `name`, `ext`) and `data` (the file's `MetadataValue
 Outputs of all groups go to the channel as they finish.
 
 **Scopes.** Before a node starts, its `StepContext.Scopes` is
-`ScopeSet.Merge(contributions of every ancestor in descending topological index, ScopeSet.Empty)`;
-the `data` step's contribution is one of them when it is an ancestor. Descending index means the
+`ScopeSet.Merge(contributions of every ancestor in descending topological index, BuildContext.BaseScopes)`;
+the base is `ScopeSet.FromSettings` of the values of `site:` that templates see (`site.url`, 4.2), or
+`ScopeSet.Empty` when there are none; the `data` step's contribution is one of them when it is an ancestor. Descending index means the
 nearest contributions take precedence. A node starts once every ancestor has published its
 contribution: only reduce nodes delay that (they publish after their unit ran, before completing
 their channel), map and group nodes publish an empty contribution before they run. So a map node
@@ -1151,6 +1152,15 @@ Every path is relative to the source root. Paths are normalized to `FPath` direc
 `docs/` are `/docs/`; `.` and `/` are the root); a folder containing `..` is an error. A folder set here is used
 whether or not it exists. `site.output` may be absolute. The loader returns the section as `SiteSettings`
 (`Douze/Workflow/Yaml/WorkflowFile.cs`), which `SiteOptions.DetectAsync` applies.
+
+Templates see `site.url` (the only setting they see: the others configure the build) through the base
+scope of every step (`BuildContext.BaseScopes`, `ScopeSet.FromSettings`), below every contribution.
+Unlike other scopes, it does not hide behind a hit of the same key: when a site data file
+`_data/site.json` (or any scope) defines `site` as an object, its properties are layered over the
+settings' `site` object (a shallow clone, built once per object and scope set), so `site.title` comes
+from the data file and `site.url` from `douze.yml` unless the data file defines `url` too. A `site`
+that is not an object (a string in front matter) hides the setting, as usual. A resolution of an
+object records the settings scope (`settings`) as a dependency.
 
 ### 4.3 `steps`
 

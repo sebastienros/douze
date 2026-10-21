@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using Douze.FileSystems;
 using Douze.Nodes;
 
@@ -54,17 +55,41 @@ internal readonly record struct ScopeHit(ScopeKind Kind, string Source);
 /// </summary>
 internal sealed class ScopeSet
 {
-    public static readonly ScopeSet Empty = new(ImmutableDictionary<FPath, FolderScope>.Empty, []);
+    public static readonly ScopeSet Empty = new(ImmutableDictionary<FPath, FolderScope>.Empty, [], null);
+
+    /// <summary>
+    /// The source of the settings scope (<see cref="FromSettings"/>).
+    /// </summary>
+    public const string SettingsSource = "settings";
 
     private readonly ImmutableDictionary<FPath, FolderScope> _folders;
     private readonly ImmutableArray<SiteScope> _site;
+    private readonly SiteScope? _settings;
     private readonly Lazy<Hash128> _hash;
 
-    private ScopeSet(ImmutableDictionary<FPath, FolderScope> folders, ImmutableArray<SiteScope> site)
+    // An object found for a key the settings also define, completed with the settings' properties. Built once per
+    // object, since the same folder or site object is resolved for many files.
+    private readonly ConditionalWeakTable<NodeObject, NodeObject>? _completed;
+
+    private ScopeSet(ImmutableDictionary<FPath, FolderScope> folders, ImmutableArray<SiteScope> site, SiteScope? settings)
     {
         _folders = folders;
         _site = site;
+        _settings = settings;
+        _completed = settings == null ? null : new();
         _hash = new Lazy<Hash128>(ComputeHash, LazyThreadSafetyMode.ExecutionAndPublication);
+    }
+
+    /// <summary>
+    /// The base scopes of a build: the values of the workflow file's <c>site</c> section that templates see
+    /// (<c>site.url</c>), below every contribution. Unlike other scopes, the settings do not hide behind a hit: when a
+    /// scope defines the same key as an object (a <c>_data/site.json</c>), its properties are layered over the
+    /// settings' object, so <c>site.title</c> comes from the data file and <c>site.url</c> from the settings unless the
+    /// data file defines <c>url</c> too.
+    /// </summary>
+    public static ScopeSet FromSettings(NodeObject values)
+    {
+        return values.Count == 0 ? Empty : new ScopeSet(Empty._folders, [], new SiteScope(SettingsSource, values));
     }
 
     public IReadOnlyDictionary<FPath, FolderScope> Folders => _folders;
@@ -87,7 +112,7 @@ internal sealed class ScopeSet
     public ScopeSet WithSite(SiteScope scope)
     {
         ArgumentNullException.ThrowIfNull(scope);
-        return new ScopeSet(_folders, _site.Insert(0, scope));
+        return new ScopeSet(_folders, _site.Insert(0, scope), _settings);
     }
 
     /// <summary>
@@ -117,7 +142,7 @@ internal sealed class ScopeSet
             }
         }
 
-        return new ScopeSet(builder.ToImmutable(), _site);
+        return new ScopeSet(builder.ToImmutable(), _site, _settings);
     }
 
     /// <summary>
@@ -149,14 +174,68 @@ internal sealed class ScopeSet
 
     /// <summary>
     /// Resolves a top-level key: own metadata, then folder scopes from <c>meta.Directory</c> up to the root,
-    /// then site scopes in order, then <paramref name="fallback"/>. The first scope that contains the key wins.
-    /// Every scope consulted is recorded in <paramref name="deps"/>, hit or miss: a scope that does not define the
-    /// key could define it later and shadow the hit, so the result depends on it too.
+    /// then site scopes in order, then the settings, then <paramref name="fallback"/>. The first scope that contains
+    /// the key wins, except that an object hit is completed with the settings' object of the same key
+    /// (<see cref="FromSettings"/>). Every scope consulted is recorded in <paramref name="deps"/>, hit or miss: a scope
+    /// that does not define the key could define it later and shadow the hit, so the result depends on it too.
     /// </summary>
     public bool TryResolve(Metadata meta, string key, NodeObject? fallback, DependencyTracker? deps, out Node? value, out ScopeHit hit)
     {
         deps ??= DependencyTracker.Null;
 
+        if (TryResolveContributed(meta, key, deps, out value, out hit))
+        {
+            // An object hit depends on the settings: they could complete it.
+            if (_settings != null && value is NodeObject found)
+            {
+                deps.RecordScope(_settings.Source);
+
+                if (_settings.Values.TryGetItem(key, out var setting) && setting is NodeObject defaults)
+                {
+                    value = _completed!.GetValue(found, x => Complete(x, defaults));
+                }
+            }
+
+            return true;
+        }
+
+        if (_settings != null)
+        {
+            if (_settings.Values.TryGetItem(key, out value))
+            {
+                deps.RecordScope(_settings.Source);
+                hit = new ScopeHit(ScopeKind.Site, _settings.Source);
+                return true;
+            }
+
+            deps.RecordScope(_settings.Source);
+        }
+
+        if (fallback != null && fallback.TryGetItem(key, out value))
+        {
+            hit = new ScopeHit(ScopeKind.Fallback, "");
+            return true;
+        }
+
+        value = null;
+        hit = new ScopeHit(ScopeKind.None, "");
+        return false;
+    }
+
+    private static NodeObject Complete(NodeObject found, NodeObject defaults)
+    {
+        var result = defaults.ShallowClone();
+
+        foreach (var property in found)
+        {
+            result[property.Key] = property.Value;
+        }
+
+        return result;
+    }
+
+    private bool TryResolveContributed(Metadata meta, string key, DependencyTracker deps, out Node? value, out ScopeHit hit)
+    {
         if (meta.Own.TryGetItem(key, out value))
         {
             hit = new ScopeHit(ScopeKind.Own, "");
@@ -207,12 +286,6 @@ internal sealed class ScopeSet
             return true;
         }
 
-        if (fallback != null && fallback.TryGetItem(key, out value))
-        {
-            hit = new ScopeHit(ScopeKind.Fallback, "");
-            return true;
-        }
-
         value = null;
         hit = new ScopeHit(ScopeKind.None, "");
         return false;
@@ -220,12 +293,17 @@ internal sealed class ScopeSet
 
     private Hash128 ComputeHash()
     {
-        if (IsEmpty)
+        if (IsEmpty && _settings == null)
         {
             return Hash128.Empty;
         }
 
-        var hashes = new List<Hash128>(_site.Length + _folders.Count);
+        var hashes = new List<Hash128>(_site.Length + _folders.Count + 1);
+
+        if (_settings != null)
+        {
+            hashes.Add(_settings.Hash);
+        }
 
         foreach (var scope in _site)
         {

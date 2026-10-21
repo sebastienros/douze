@@ -88,6 +88,49 @@ public class ScopeSetTests
     }
 
     [Fact]
+    public void SettingsAreBelowEveryScopeAndCompleteObjects()
+    {
+        var settings = ScopeSet.FromSettings(new NodeObject
+        {
+            ["site"] = new NodeObject { ["url"] = NodeValue.Create("https://example.com"), ["title"] = NodeValue.Create("settings") },
+            ["layout"] = NodeValue.Create("settings.html"),
+        });
+
+        var data = ScopeSet.Empty.WithSite(new SiteScope("step:site-data", new NodeObject
+        {
+            ["site"] = new NodeObject { ["title"] = NodeValue.Create("data"), ["author"] = NodeValue.Create("me") },
+        }));
+
+        var meta = new Metadata(new NodeObject(), "/");
+
+        // Alone, the settings resolve like a site scope.
+        Assert.True(settings.TryResolve(meta, "site", null, null, out var site, out var hit));
+        Assert.Equal(new ScopeHit(ScopeKind.Site, ScopeSet.SettingsSource), hit);
+        Assert.Equal("https://example.com", site!["url"]!.GetValue<string>());
+
+        // Under a contribution, an object of the same key is completed: the contribution's properties win.
+        var merged = ScopeSet.Merge([data], settings);
+        var deps = new DependencyTracker();
+        Assert.True(merged.TryResolve(meta, "site", null, deps, out site, out hit));
+        Assert.Equal(new ScopeHit(ScopeKind.Site, "step:site-data"), hit);
+        Assert.Equal(("https://example.com", "data", "me"), (site!["url"]!.GetValue<string>(), site["title"]!.GetValue<string>(), site["author"]!.GetValue<string>()));
+        Assert.Equal([ScopeSet.SettingsSource, "step:site-data"], deps.ToSet().Scopes.Order(StringComparer.Ordinal));
+
+        // The completed object is built once and shared; the data's own object is not modified.
+        Assert.True(merged.TryResolve(meta, "site", null, null, out var again, out _));
+        Assert.Same(site, again);
+        Assert.False(((NodeObject)data.Site[0].Values["site"]!).TryGetItem("url", out _));
+
+        // A value that is not an object hides the setting, as in any other scope.
+        Assert.Equal("own.html", Resolve(merged, new Metadata(Values("layout", "own.html"), "/"), "layout"));
+        Assert.Equal("settings.html", Resolve(merged, meta, "layout"));
+
+        // Settings are part of the hash.
+        Assert.NotEqual(ScopeSet.Empty.Hash, settings.Hash);
+        Assert.NotEqual(data.Hash, merged.Hash);
+    }
+
+    [Fact]
     public void RecordsDependenciesForDataKeysStepScopesAndMisses()
     {
         // Resolution order for a file in /blog/: own, the /blog/ folder scope, then "step:collections", then "data".

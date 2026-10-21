@@ -2,6 +2,7 @@ using Douze.Progress;
 using Douze.Liquid;
 using Douze.Tracing;
 using Douze.FileSystems;
+using Douze.Nodes;
 using Fluid;
 
 namespace Douze.Workflow;
@@ -30,6 +31,22 @@ internal sealed class BuildContext : IAsyncDisposable
         var cacheDirectory = options.CacheDirectory
             ?? Path.Combine(site.SourceDirectory ?? Path.GetTempPath(), ".douze");
         TempRoot = Path.Combine(cacheDirectory, "tmp", Guid.NewGuid().ToString("N")) + Path.DirectorySeparatorChar;
+
+        BaseScopes = ScopeSet.FromSettings(SiteValues(site));
+    }
+
+    /// <summary>
+    /// What templates see of the site settings, under <c>site</c>: <c>url</c> when it is set. The other settings
+    /// (folders, output, parallelism) configure the build and are not exposed.
+    /// </summary>
+    private static NodeObject SiteValues(SiteOptions site)
+    {
+        if (site.Url == null)
+        {
+            return new NodeObject();
+        }
+
+        return new NodeObject { ["site"] = new NodeObject { ["url"] = NodeValue.Create(site.Url) } };
     }
 
     public SiteOptions Site { get; }
@@ -45,6 +62,7 @@ internal sealed class BuildContext : IAsyncDisposable
     public SemaphoreSlim ProcessSlots { get; }      // slots for external processes (command steps)
     public CancellationToken Cancellation { get; }  // user cancellation (Ctrl+C)
     public string TempRoot { get; }                 // <cache dir>/tmp/<build id>/ for batch commands, created on demand
+    public ScopeSet BaseScopes { get; }             // the site settings templates see (site.url), below every contribution
 
     public ValueTask DisposeAsync()
     {
