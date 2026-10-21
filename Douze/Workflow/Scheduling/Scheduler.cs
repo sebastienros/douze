@@ -258,10 +258,10 @@ internal sealed class Scheduler
         }
 
         /// <summary>
-        /// Makes the run final, then reports it; <see cref="RunAsync"/> then completes the channel. The needs of the node are reported first:
-        /// a node that stopped early (a failure, a cancellation) waits for them, so that for every edge A -> B the view,
-        /// the trace and the result see A complete before B. Waiting is safe: needs never wait on their dependents,
-        /// and writes to the channels of a node that stopped never block.
+        /// Makes the run final, then reports it; <see cref="RunAsync"/> then completes the channel. The needs of the node
+        /// are reported first: a node that stopped early (a failure, a cancellation) waits for them, so that for every
+        /// edge A -> B the view, the trace and the result see A complete before B. Waiting is safe: needs never wait on
+        /// their dependents, and writes to the channels of a node that stopped never block.
         /// </summary>
         private async Task CompleteAsync(CancellationToken token)
         {
