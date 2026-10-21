@@ -1,4 +1,5 @@
 using Douze.FileSystems;
+using Douze.Workflow.Yaml;
 
 namespace Douze;
 
@@ -18,23 +19,29 @@ internal sealed class SiteOptions
     public FPath ContentFolder { get; init; } = DefaultContentFolder;   // FPath.Root when the folder does not exist
     public FPath DataFolder { get; init; } = DefaultDataFolder;
     public FPath IncludesFolder { get; init; } = DefaultIncludesFolder;
-    public string? Url { get; init; }                   // site.url, exposed to templates (phase 2)
-    public int? Parallelism { get; init; }              // site.parallelism, used when -p is not given (phase 2)
+    public string? Url { get; init; }                   // site.url
+    public int? Parallelism { get; init; }              // site.parallelism, used when -p is not given
 
     /// <summary>
-    /// Uses <c>/_content/</c>, <c>/_data/</c> and <c>/_includes/</c> when they exist in <paramref name="source"/>, the root otherwise.
+    /// Uses the folders of <paramref name="settings"/> (the <c>site</c> section of the workflow file), and for the ones
+    /// it does not set, <c>/_content/</c>, <c>/_data/</c> and <c>/_includes/</c> when they exist in <paramref name="source"/>,
+    /// the root otherwise.
     /// </summary>
-    public static async Task<SiteOptions> DetectAsync(IFileSystem source, IFileSystem output, string? sourceDir, string? outputDir)
+    public static async Task<SiteOptions> DetectAsync(IFileSystem source, IFileSystem output, string? sourceDir, string? outputDir, SiteSettings? settings = null)
     {
+        settings ??= SiteSettings.None;
+
         return new SiteOptions
         {
             Source = source,
             Output = output,
             SourceDirectory = sourceDir,
             OutputDirectory = outputDir,
-            ContentFolder = await DetectAsync(source, DefaultContentFolder),
-            DataFolder = await DetectAsync(source, DefaultDataFolder),
-            IncludesFolder = await DetectAsync(source, DefaultIncludesFolder),
+            ContentFolder = settings.ContentFolder ?? await DetectAsync(source, DefaultContentFolder),
+            DataFolder = settings.DataFolder ?? await DetectAsync(source, DefaultDataFolder),
+            IncludesFolder = settings.IncludesFolder ?? await DetectAsync(source, DefaultIncludesFolder),
+            Url = settings.Url,
+            Parallelism = settings.Parallelism,
         };
 
         static async Task<FPath> DetectAsync(IFileSystem source, FPath folder)

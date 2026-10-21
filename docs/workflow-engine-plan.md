@@ -106,7 +106,7 @@ Douze/
     Commands/CommandStep.cs  FilterCommandStep.cs  BatchCommandStep.cs  WorkerCommandStep.cs
              WorkerProtocol.cs  WorkerProcess.cs  ProcessRunner.cs  CommandTemplate.cs
              douze-worker.mjs (embedded resource)
-    Yaml/WorkflowLoader.cs  YamlSource.cs  WorkflowSchema.cs
+    Yaml/WorkflowLoader.cs  YamlSource.cs  WorkflowSchema.cs  WorkflowFile.cs
     Cache/BuildCache.cs  CacheIndex.cs  ResultKey.cs  (phase 5)
     Watch/FileWatcher.cs  IncrementalBuilder.cs  DevServer.cs  LiveReload.cs  (phase 6)
   Progress/IProgressView.cs  PlainProgressView.cs  SilentProgressView.cs  SpectreProgressView.cs
@@ -916,10 +916,12 @@ Options:
 from the detection rule. `README.md` is updated in phase 1 and again in phase 2.
 
 `Douze/Cli/WorkflowSource.cs` turns the command line into the site and the workflow of a build:
-`LoadAsync(CommandLine, sourceDirectory)` detects the folders, resolves the output folder
-(`CommandLine.Output`, else `site.output` from phase 2, else `_site`), and returns the
-`WorkflowDefinition` of `--workflow`, of `douze.yml`, or of `DefaultWorkflow`, with the
-`SiteOptions`. `SiteOptions.Parallelism` (from `site.parallelism`) applies when `-p` is absent.
+`LoadAsync(CommandLine, sourceDirectory)` loads `--workflow` (relative to the current folder; a missing file is an
+error) or `douze.yml` at the source root when it exists, resolves the output folder (`CommandLine.Output` relative
+to the current folder, else `site.output` relative to the source folder, else `_site`), builds the `SiteOptions`
+with `SiteOptions.DetectAsync(..., SiteSettings)` (folders from `site:`, detection for the others), and returns the
+file's `steps`, or `DefaultWorkflow.Create(site)` when the file has no `steps`. Error locations name the file
+relative to the current folder (`Sample/douze.yml(3,5)`), or by its full path when it is outside. `SiteOptions.Parallelism` (from `site.parallelism`) applies when `-p` is absent.
 `BuildCommand` only builds the graph and runs it.
 
 ### 2.11 The built-in steps
@@ -1140,7 +1142,10 @@ site:
   parallelism: 8         # overridden by -p
 ```
 
-Every path is relative to the source root. Paths are normalized to `FPath` directories.
+Every path is relative to the source root. Paths are normalized to `FPath` directories (`docs`, `/docs/` and
+`docs/` are `/docs/`; `.` and `/` are the root); a folder containing `..` is an error. A folder set here is used
+whether or not it exists. `site.output` may be absolute. The loader returns the section as `SiteSettings`
+(`Douze/Workflow/Yaml/WorkflowFile.cs`), which `SiteOptions.DetectAsync` applies.
 
 ### 4.3 `steps`
 
@@ -1158,12 +1163,12 @@ characters. Each step has these fields:
 | `mode` | `filter`, `batch`, `worker` | `batch` | Command mode (section 5); only with `run` |
 | `group-by` | `file`, `dir`, or a Liquid template | | Partitions consumed files into parallel groups |
 | `outputs` | glob or list | `[]` | Batch mode: files read back from the outputs folder; empty means every file |
-| `incremental` | bool | `true` | `false` forces the step to re-run on every build (phase 5) |
+| `incremental` | bool | `true` | `false` forces the step to re-run on every build (phase 5); valid on any step |
 | `version` | string | `""` | Free text that participates in the command's cache key |
 | `sources` | glob or list | `[]` | Source files whose hashes participate in the command's cache key (the script the command runs) |
 | `env` | mapping | `{}` | Environment variables for the command; values accept the same expressions as `run` |
 | `cwd` | string | source root | Working directory of the command, relative to the source root |
-| `timeout` | duration | none | `30s`, `5m`, `1h`; the command is killed and the step fails |
+| `timeout` | duration | none | `500ms`, `30s`, `5m`, `1h` (a positive integer and a unit); the command is killed and the step fails |
 | `stderr` | `fail`, `warn`, `ignore` | `fail` | What stderr output from the command means |
 | `shell` | bool | `true` | Run through `/bin/sh -c` (or `cmd.exe /d /s /c` on Windows); `false` splits the line with quote rules and executes directly |
 
@@ -1202,7 +1207,10 @@ YAML files. Patterns compile to `Regex` with `RegexOptions.CultureInvariant` (in
 Validation happens in `WorkflowLoader` (YAML shape) and `WorkflowGraph.Build` (semantics). Every
 error is a `WorkflowValidationException` with `Location` (file, line, column of the offending node,
 from SharpYaml's parsing event marks) and is printed as `douze.yml(12,5): error: <message>`. All
-errors are collected and printed together before the build stops with exit code 2.
+errors are collected and printed together before the build stops with exit code 2. Loader errors point at the
+offending node (the key for an unknown key or a field that is not allowed, the value for a wrong type, the list
+item for a bad glob) and are sorted by position. Graph errors, and the option errors raised by the steps, point at
+the step's name (`StepDefinition.Location`), since the definition keeps one location per step.
 
 Loader rules:
 - Unknown top-level key: `unknown key 'jobs'; expected 'site' or 'steps'`.
@@ -1218,6 +1226,14 @@ Loader rules:
 - Invalid glob: `invalid pattern 'content/[': unterminated character class`.
 - Invalid duration: `invalid timeout '5 minutes'; use 30s, 5m or 1h`.
 - Reserved name: `'source' is a reserved step name`.
+- Also: `a workflow file must be a mapping with 'site' and 'steps'`, `duplicate key 'x'`, `keys must be strings`,
+  `step 'x' must be a mapping of fields`, `step name '...' is longer than 64 characters`, `'mode' must be 'filter',
+  'batch' or 'worker'` (and the same for `stderr`), `'uses' must be a string`, `'with' must be a mapping`,
+  `'incremental' must be true or false`, `'env' must be a mapping of names to strings`, `unknown key 'x' in 'site';
+  expected 'content', 'data', 'includes', 'output', 'url' or 'parallelism'`, `'parallelism' must be a positive
+  integer`, `'content' must be a folder inside the source folder`, `a workflow file has a single YAML document`,
+  and SharpYaml's syntax errors with their position (`while parsing a flow sequence, did not find expected ',' or ']'`).
+- A field set to `null` (or left empty) is absent; `steps:` with no value is the same as no `steps`.
 
 Graph rules:
 - Unknown `needs`: `step 'render' needs unknown step 'markdwn'` (plus `did you mean 'markdown'?` when
@@ -1276,7 +1292,7 @@ steps:
   csharp-md:  { needs: [packages, site-data], uses: liquid, group-by: file,
                 with: { template: api/csharp-package.md.liquid, permalink: "reference/api/csharp/{{ group.files[0].data.package.slug }}/index.md", encode: none } }
   pages:      { inputs: ["content/**", "!content/**/*.{yml,json}"], needs: site-data, uses: frontmatter }
-  render:     { needs: pages, uses: liquid, with: { match: "**/*.md" } }   # Liquid before Markdown for this site
+  render:     { needs: pages, uses: liquid, match: "**/*.md" }   # Liquid before Markdown for this site
   markdown:   { needs: render, uses: markdown, with: { extensions: advanced } }
   permalink:  { needs: markdown, uses: permalink, with: { root: content } }
   collections:{ needs: permalink, uses: collect }
@@ -1883,6 +1899,26 @@ definitions), a duration table test.
 **Acceptance.** Shared criteria; `douze build --print-workflow` on the Sample prints the YAML of
 4.6; a fixture site with a two-pipeline workflow (pages and a `group-by: file` data pipeline) builds
 in a test.
+
+**As implemented:**
+- `Douze/Workflow/Yaml/WorkflowFile.cs` is added: `WorkflowFile(SiteSettings Site, WorkflowDefinition? Workflow)`
+  (null without `steps`) and `SiteSettings` (folders as `FPath`, output, url, parallelism).
+  `WorkflowLoader.Load(text, fileName, sourceFile?)` and `LoadAsync(path, fileName)`; `SourceFile` is the full path.
+- `WorkflowSchema.StepFields` is the field table of 4.3 as data (name, whether it needs `run`, the expected type,
+  a reader and a writer). `WorkflowSchema.ToYaml(definition)` writes it and `WorkflowGraph.ToYaml()` delegates to it.
+  Fields with their default value are left out (so `mode: batch` is no longer printed), scalars are quoted when they
+  would not read back as the same string (numbers, booleans, null, indicators, `\n`), and an empty workflow is
+  `steps: {}`. Load, print and load again gives the same names, needs and `ConfigHash` (`PrintedWorkflowLoadsBackTheSame`).
+- `with` values are typed like data files (integers, decimals, booleans, null), with the invariant culture.
+- `site.url` reaches `SiteOptions.Url` but is not exposed to templates yet: that needs a base scope in the
+  scheduler (`ScopeSet.Empty` today in `Scheduler.cs` and `SiteBuilder.cs`, which phase 2 does not own). To do when
+  the branches are merged: a `SiteScope("site", { site: { url } })` as the base of every unit's scopes, and decide
+  how it combines with a `_data/site.json` (a contribution replaces the whole `site` key).
+- `--print-workflow` builds the graph first, so a workflow with `run:` steps prints only once phase 3 lands.
+- Tests: `WorkflowLoaderTests` (91 cases: every message of 4.5 with its line and column, the 4.7 example, typed
+  `with`, round trips, scalars, durations), `WorkflowSourceTests` (site section, `-o` over `site.output`, `--workflow`,
+  missing file, error location, the two-pipeline fixture site). Fixtures: `Douze.Tests/Fixtures/workflows/`
+  (`aspire.yml`, `all-fields.yml`, `two-pipelines/`).
 
 ### Phase 3: command steps (Medium)
 

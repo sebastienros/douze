@@ -1,0 +1,22 @@
+# The aspire.dev API pages (section 4.7 of the workflow engine plan).
+site:
+  content: content
+  includes: templates
+  data: data
+
+steps:
+  site-data:  { inputs: "data/*.{yml,json}", uses: data, with: { scope: site } }   # xref.json, api-pages.json
+  packages:   { inputs: "data/pkgs/*.json", uses: parse, with: { as: package } }
+  csharp:     { needs: [packages, site-data], uses: liquid, group-by: file,
+                with: { template: api/csharp-package.liquid, permalink: "reference/api/csharp/{{ group.files[0].data.package.slug }}/" } }
+  csharp-md:  { needs: [packages, site-data], uses: liquid, group-by: file,
+                with: { template: api/csharp-package.md.liquid, permalink: "reference/api/csharp/{{ group.files[0].data.package.slug }}/index.md", encode: none } }
+  pages:      { inputs: ["content/**", "!content/**/*.{yml,json}"], needs: site-data, uses: frontmatter }
+  render:     { needs: pages, uses: liquid, match: "**/*.md" }   # Liquid before Markdown for this site
+  markdown:   { needs: render, uses: markdown, with: { extensions: advanced } }
+  permalink:  { needs: markdown, uses: permalink, with: { root: content } }
+  collections: { needs: permalink, uses: collect }
+  layout:     { needs: [permalink, collections], uses: layout }
+  og-images:  { needs: pages, run: "node scripts/og.mjs --in {{ inputs }} --out {{ outputs }}", mode: batch, outputs: "og/*.png", sources: scripts/og.mjs }
+  write:      { needs: [layout, csharp, csharp-md, og-images], uses: write }
+  search:     { needs: write, run: "npx pagefind --site {{ site }}" }

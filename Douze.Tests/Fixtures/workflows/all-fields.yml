@@ -1,0 +1,36 @@
+# Every step field with a value that is not its default, for the round trip of --print-workflow.
+steps:
+  pages:
+    inputs: ["content/**", "!content/**/*.yml"]
+    uses: frontmatter
+    match: "**/*.md"
+    incremental: false
+  api:
+    needs: pages
+    uses: liquid
+    group-by: "{{ data.package.group }}"
+    with:
+      template: api.liquid
+      permalink: "api/{{ group.key }}/"
+      data: { title: "API: reference", count: 3, ratio: 1.5, draft: false, tags: [a, "true", "12"], none: null }
+  convert:
+    needs: [pages, api]
+    run: |
+      node convert.mjs --in {{ inputs }}
+      echo "done"
+    mode: worker
+    with: { concurrency: 4 }
+    version: "2"
+    sources: scripts/convert.mjs
+    env: { NODE_NO_WARNINGS: "1", TARGET: "{{ site }}" }
+    cwd: tools
+    timeout: 90s
+    stderr: warn
+    shell: false
+  images:
+    needs: pages
+    run: optimize {{ inputs }} {{ outputs }}
+    outputs: ["img/**/*.png", "img/**/*.webp"]
+    timeout: 500ms
+    stderr: ignore
+  write: { needs: [convert, images], uses: write }

@@ -1,0 +1,28 @@
+# Two pipelines that meet at 'write': pages, and one page per package from data files.
+site:
+  content: content
+  data: data
+  includes: templates
+  output: out
+  url: https://example.com
+  parallelism: 2
+
+steps:
+  site-data: { inputs: "data/*.json", uses: data, with: { scope: site } }
+
+  pages:     { inputs: "content/**", needs: site-data, uses: frontmatter }
+  markdown:  { needs: pages, uses: markdown }
+  permalink: { needs: markdown, uses: permalink, with: { root: content } }
+  render:    { needs: permalink, uses: liquid }
+  layout:    { needs: render, uses: layout }
+
+  packages:  { inputs: "data/packages/*.json", uses: parse, with: { as: package } }
+  package-pages:
+    needs: [packages, site-data]
+    uses: liquid
+    group-by: file
+    with:
+      template: package.liquid
+      permalink: "packages/{{ group.files[0].data.package.name }}/"
+
+  write:     { needs: [layout, package-pages], uses: write }
