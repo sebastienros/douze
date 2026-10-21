@@ -33,10 +33,8 @@ internal sealed class WriteStep : Step, IMapStep
             throw new DouzeException($"output '{file.Path}' is produced by both {first} and {second}");
         }
 
-        var output = context.Build.Output;
-        await output.CreateDirectoryAsync(file.Path.GetDirectory());
-
-        await using (var stream = await output.CreateFileAsync(file.Path))
+        // Creates the directory too.
+        await using (var stream = await context.Build.Output.CreateFileAsync(file.Path))
         {
             await file.Content.CopyToAsync(stream, ct);
         }

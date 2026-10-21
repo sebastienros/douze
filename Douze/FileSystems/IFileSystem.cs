@@ -13,6 +13,9 @@ public interface IFileSystem
 
     ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath basePath, bool recursive, Predicate<string>? filter);
 
+    /// <summary>
+    /// Creates or truncates a file, and its directory when it does not exist.
+    /// </summary>
     ValueTask<Stream> CreateFileAsync(FPath path);
 
     ValueTask CreateDirectoryAsync(FPath path);
@@ -25,8 +28,6 @@ public static class FileSystemExtensions
 {
     public static async ValueTask WriteTextFileAsync(this IFileSystem fs, FPath path, string content)
     {
-        await fs.CreateDirectoryAsync(path.GetDirectory());
-
         using var stream = await fs.CreateFileAsync(path);
         using var sw = new StreamWriter(stream);
         await sw.WriteAsync(content);
@@ -34,8 +35,6 @@ public static class FileSystemExtensions
 
     public static async ValueTask WriteBinaryFileAsync(this IFileSystem fs, FPath path, byte[] content)
     {
-        await fs.CreateDirectoryAsync(path.GetDirectory());
-
         using var stream = await fs.CreateFileAsync(path);
         await stream.WriteAsync(content);
     }

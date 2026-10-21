@@ -127,6 +127,8 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    `FileOptions.Asynchronous`, which is thread pool emulation on Unix. Suggested fixes: one `Directory.CreateDirectory`
    per distinct folder (a concurrent set of created folders), synchronous `File.Create` / `RandomAccess.Write`, and a
    write concurrency limit of its own (about 4) so CPU slots stay with rendering.
+   *Integration:* `WriteStep` no longer creates the directory itself (`CreateFileAsync` does); the other
+   suggestions are left for phase 5.
 
 5. **A build can hang after an exception outside a unit.** Under `DOTNET_GCHeapHardLimit=20000000` (512 MB) the
    16k synthetic build (`--nav index`) either fails cleanly (`error: pages: Insufficient memory...`, seen with
@@ -134,6 +136,8 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    in `NodeRunner.CompleteAsync` or in the reporting of a failure, which skips `Output.Complete` and
    `Completed.TrySetResult`, so dependents wait on a channel that never completes. Suggested fix: complete the output
    channel and `Completed` in `finally` blocks that cannot be skipped, and add a test that throws from a view callback.
+   *Integration:* fixed that way (`SchedulerTests.ExceptionOutsideAUnitFailsTheBuild`); such an exception now fails
+   the step and cancels the build.
 
 6. **Smaller observations.** Loading the aspire data is a single unit of the `data` step: 0.9 s wall for 1.26 s of
    CPU, so parsing the 342 files in parallel would make it about 0.3 s. RSS for the data is about 9 times the JSON size
