@@ -168,6 +168,12 @@ internal sealed class WorkerProcess
     {
         _shuttingDown = true;
         var killed = false;
+        bool reportedBefore;
+
+        lock (_lock)
+        {
+            reportedBefore = _failureReported;
+        }
 
         if (!_process.HasExited)
         {
@@ -179,6 +185,15 @@ internal sealed class WorkerProcess
             catch (IOException)
             {
                 // It exited meanwhile.
+            }
+            catch (DouzeException)
+            {
+                // It failed (a timeout killed it): the failure is reported below, unless a request reported it
+                // already. No request runs during the shutdown, so the failure was reported only if it was before.
+                lock (_lock)
+                {
+                    _failureReported = reportedBefore;
+                }
             }
 
             using var grace = new CancellationTokenSource(ShutdownGrace);
