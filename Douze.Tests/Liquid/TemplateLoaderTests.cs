@@ -79,8 +79,8 @@ public class TemplateLoaderTests
         const string broken = "{% if %}";
         var hash = Hash128.OfText(broken);
 
-        var first = Assert.Throws<DouzeException>(() => loader.GetOrParse(hash, broken, "/a.html"));
-        var second = Assert.Throws<DouzeException>(() => loader.GetOrParse(hash, broken, "/b.html"));
+        var first = Assert.Throws<TemplateParseException>(() => loader.GetOrParse(hash, broken, "/a.html"));
+        var second = Assert.Throws<TemplateParseException>(() => loader.GetOrParse(hash, broken, "/b.html"));
 
         // The same content is parsed once; each file reports the error under its own path, with the position.
         Assert.StartsWith("/a.html(1,", first.Message);

@@ -1,5 +1,8 @@
+using Douze.Liquid;
 using Douze.Progress;
 using Douze.Tracing;
+using Fluid;
+using Fluid.Values;
 
 namespace Douze.Workflow;
 
@@ -39,4 +42,22 @@ internal sealed class StepContext
     public TraceSpan Span { get; }
 
     public void Log(LogLevel level, string message) => Build.View.Message(level, StepName, message);
+
+    /// <summary>
+    /// A template context whose model is <paramref name="model"/>, with the ambient values every render needs: the
+    /// scopes, the dependency tracker of the unit, and the file being rendered.
+    /// </summary>
+    public TemplateContext CreateTemplateContext(FluidValue model, VirtualFile? file, CancellationToken ct)
+    {
+        var context = new TemplateContext(model, Build.LiquidOptions) { CancellationToken = ct };
+        context.AmbientValues[AmbientKeys.Scopes] = Scopes;
+        context.AmbientValues[AmbientKeys.Dependencies] = Dependencies;
+
+        if (file != null)
+        {
+            context.AmbientValues[AmbientKeys.File] = file;
+        }
+
+        return context;
+    }
 }

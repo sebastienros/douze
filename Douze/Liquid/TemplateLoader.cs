@@ -43,9 +43,14 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     public FluidParser Parser => _parser;
 
     /// <summary>
+    /// The number of distinct templates parsed (or that failed to parse).
+    /// </summary>
+    public int ParsedCount => _parsed.Count;
+
+    /// <summary>
     /// Returns the parsed template for <paramref name="text"/>, parsing it only once per <paramref name="contentHash"/>.
     /// </summary>
-    /// <exception cref="DouzeException"><c>&lt;displayPath&gt;(&lt;line&gt;,&lt;col&gt;): &lt;message&gt;</c> when the template is invalid.</exception>
+    /// <exception cref="TemplateParseException">The template is invalid; the exception names <paramref name="displayPath"/>.</exception>
     public ParsedTemplate GetOrParse(Hash128 contentHash, string text, string displayPath)
     {
         var lazy = _parsed.GetOrAdd(contentHash, static (hash, state) => new Lazy<(ParsedTemplate?, ParseException?)>(
@@ -66,11 +71,32 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
 
         if (parsed == null)
         {
-            var position = error!.Position is { } p ? $"({p.Line},{p.Column})" : "";
-            throw new DouzeException($"{displayPath}{position}: {error.Message}");
+            throw new TemplateParseException(displayPath, error!.Position?.Line, error.Position?.Column, Reason(error));
         }
 
         return parsed;
+    }
+
+    /// <summary>
+    /// The first line of a Fluid parse error, without the position it repeats ("Invalid 'if' tag at (2:8)").
+    /// </summary>
+    private static string Reason(ParseException error)
+    {
+        var message = error.Message;
+        var lineEnd = message.IndexOf('\n');
+        message = (lineEnd >= 0 ? message[..lineEnd] : message).TrimEnd();
+
+        if (error.Position is { } position)
+        {
+            var suffix = $" at ({position.Line}:{position.Column})";
+
+            if (message.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                message = message[..^suffix.Length];
+            }
+        }
+
+        return message;
     }
 
     /// <summary>
@@ -212,9 +238,7 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
         {
             var text = FileContent.FromBytes(Bytes, isText: true).ReadTextAsync(CancellationToken.None).GetAwaiter().GetResult();
 
-            // TODO(phase 1b): FrontMatter.Parse replaces FrontMatterHelper, whose Options argument is unused.
-            var (frontMatter, body) = FrontMatterHelper.ParseFrontMatterAsync(new StringReader(text), null!).GetAwaiter().GetResult();
-            var values = string.IsNullOrWhiteSpace(frontMatter) ? new NodeObject() : YamlHelper.Parse(frontMatter) as NodeObject ?? new NodeObject();
+            var (values, body) = FrontMatter.Parse(text);
 
             return new LoadedTemplate(Path, loader.GetOrParse(Hash128.OfText(body), body, Path.FullName), values, ContentHash);
         }

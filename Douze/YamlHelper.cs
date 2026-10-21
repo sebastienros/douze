@@ -15,7 +15,8 @@ internal sealed class YamlHelper
     {
         var stream = YamlStream.Load(reader);
 
-        return Convert(stream[0].Contents);
+        // An empty document has no contents.
+        return stream.Count == 0 ? null : Convert(stream[0].Contents);
     }
 
     /// <summary>

@@ -31,6 +31,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Placeholders until phases 3 and 4 fill them in. -->
+    <EmbeddedResource Include="Workflow\Commands\douze-worker.mjs" LogicalName="douze-worker.mjs" />
+    <EmbeddedResource Include="Tracing\timeline.html" LogicalName="timeline.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="..\README.md" Pack="true" PackagePath="" />
     <PackageReference Include="Markdig" />
     <PackageReference Include="Fluid.Core" />

@@ -10,7 +10,7 @@ namespace Douze.Workflow;
 /// </summary>
 internal sealed class VirtualFile
 {
-    public VirtualFile(FPath path, FileContent content, Metadata metadata, string? contentType, Provenance provenance, DateTime? lastWriteTimeUtc = null)
+    public VirtualFile(FPath path, FileContent content, Metadata metadata, string? contentType, Provenance provenance, DateTime? lastWriteTimeUtc = null, FPath? sourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -27,6 +27,7 @@ internal sealed class VirtualFile
         ContentType = contentType;
         Provenance = provenance;
         LastWriteTimeUtc = lastWriteTimeUtc;
+        SourcePath = sourcePath;
     }
 
     public FPath Path { get; }
@@ -48,6 +49,17 @@ internal sealed class VirtualFile
     /// </summary>
     public DateTime? LastWriteTimeUtc { get; }
 
+    /// <summary>
+    /// The path of the source file this file comes from, for messages. Kept through <see cref="With"/>; null for files
+    /// derived from several inputs. Not part of <see cref="Ref"/>.
+    /// </summary>
+    public FPath? SourcePath { get; }
+
+    /// <summary>
+    /// <see cref="ContentType"/>, or the content type of the extension when it is null.
+    /// </summary>
+    public string EffectiveContentType => ContentType ?? ContentTypes.FromPath(Path);
+
     public Hash128 ContentHash => Content.Hash;
 
     public Hash128 MetadataHash => Metadata.Hash;
@@ -65,7 +77,8 @@ internal sealed class VirtualFile
             metadata ?? Metadata,
             contentType ?? ContentType,
             new Provenance(step, [Ref]),
-            LastWriteTimeUtc);
+            LastWriteTimeUtc,
+            SourcePath);
     }
 
     /// <summary>
@@ -96,7 +109,8 @@ internal sealed class VirtualFile
             new Metadata(new NodeObject(), path.GetDirectory()),
             contentType: null,
             Provenance.Source,
-            info.LastWriteTimeUtc);
+            info.LastWriteTimeUtc,
+            path);
     }
 
     public override string ToString() => Path.FullName;

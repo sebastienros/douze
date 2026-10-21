@@ -1,5 +1,6 @@
 using System.Text;
 using Douze.FileSystems;
+using Douze.Liquid;
 using Fluid;
 
 namespace Douze.Workflow;
@@ -52,7 +53,11 @@ internal sealed record BuildError(string Step, FPath? File, string Message, Sour
                     : null;
                 return new BuildError(step, file, parse.Message, location, null);
 
-            case DouzeException or WorkflowValidationException or SharpYaml.YamlException:
+            // A page body: the position is in the file itself. A layout or a permalink: the message names the template.
+            case TemplateParseException template when template.Line is { } line && (file == null || template.Path == file.Value.FullName):
+                return new BuildError(step, file ?? template.Path, template.Reason, new SourceLocation(template.Path, line, template.Column ?? 0), null);
+
+            case TemplateParseException or DouzeException or WorkflowValidationException or SharpYaml.YamlException:
                 return new BuildError(step, file, exception.Message, null, null);
 
             default:

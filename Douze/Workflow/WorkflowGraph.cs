@@ -274,7 +274,7 @@ internal sealed partial class WorkflowGraph
     public string ToYaml()
     {
         var builder = new StringBuilder("steps:\n");
-        var width = _definition.Steps.Length == 0 ? 0 : _definition.Steps.Max(x => x.Name.Length) + 2;
+        var width = _definition.Steps.Length == 0 ? 0 : _definition.Steps.Max(x => x.Name.Length) + 1;
 
         foreach (var step in _definition.Steps)
         {
