@@ -485,7 +485,7 @@ public class SchedulerTests
         }
     }
 
-    private sealed class RecordingView : Douze.Console.IProgressView
+    private sealed class RecordingView : Douze.Progress.IProgressView
     {
         private readonly Lock _lock = new();
 
@@ -502,7 +502,7 @@ public class SchedulerTests
         public void BuildStarted(WorkflowGraph graph) { }
         public void StepStarted(StepRun run) { }
         public void StepProgress(StepRun run) { }
-        public void Message(Douze.Console.LogLevel level, string? step, string message) { }
+        public void Message(Douze.Progress.LogLevel level, string? step, string message) { }
         public void BuildCompleted(BuildResult result) { }
         public void Dispose() { }
     }

@@ -1,10 +1,10 @@
-using Douze.Console;
+using Douze.Progress;
 using Douze.Tests.Workflow;
 using Douze.Workflow;
 using Douze.Workflow.Scheduling;
 using Xunit;
 
-namespace Douze.Tests.Console;
+namespace Douze.Tests.Progress;
 
 public class PlainProgressViewTests
 {

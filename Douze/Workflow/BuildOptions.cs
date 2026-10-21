@@ -1,4 +1,4 @@
-using Douze.Console;
+using Douze.Progress;
 using Douze.Tracing;
 
 namespace Douze.Workflow;

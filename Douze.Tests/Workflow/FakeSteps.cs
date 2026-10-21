@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
-using Douze.Console;
+using Douze.Progress;
 using Douze.FileSystems;
 using Douze.Tracing;
 using Douze.Workflow;

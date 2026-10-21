@@ -3,7 +3,7 @@ using System.Text;
 using Douze.Workflow;
 using Douze.Workflow.Scheduling;
 
-namespace Douze.Console;
+namespace Douze.Progress;
 
 /// <summary>
 /// Prints one line per completed step and a summary. With <c>verbose</c>, also one line per unit and stack traces.
@@ -23,7 +23,7 @@ internal sealed class PlainProgressView : IProgressView
         _output = output;
         _verbose = verbose;
 
-        var useUnicode = unicode ?? System.Console.OutputEncoding.CodePage == Encoding.UTF8.CodePage;
+        var useUnicode = unicode ?? Console.OutputEncoding.CodePage == Encoding.UTF8.CodePage;
         _ok = useUnicode ? "✓" : "ok";
         _fail = useUnicode ? "✗" : "FAIL";
         _skip = useUnicode ? "-" : "skip";

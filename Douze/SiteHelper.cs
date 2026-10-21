@@ -40,7 +40,7 @@ internal sealed class SiteHelper
 
                 if (!string.IsNullOrEmpty(result.Description))
                 {
-                    System.Console.WriteLine($"{result.Description} in {sw2.ElapsedMilliseconds} ms");
+                    Console.WriteLine($"{result.Description} in {sw2.ElapsedMilliseconds} ms");
                 }
             }
         }
@@ -134,7 +134,7 @@ internal sealed class SiteHelper
 
                 if (!string.IsNullOrEmpty(result.Description))
                 {
-                    System.Console.WriteLine($"{result.Description} in {sw2.ElapsedMilliseconds} ms");
+                    Console.WriteLine($"{result.Description} in {sw2.ElapsedMilliseconds} ms");
                 }
             }
         }

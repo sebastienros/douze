@@ -1,7 +1,7 @@
 using Douze.Workflow;
 using Douze.Workflow.Scheduling;
 
-namespace Douze.Console;
+namespace Douze.Progress;
 
 /// <summary>
 /// Prints errors only (<c>--quiet</c>, and the default of tests).

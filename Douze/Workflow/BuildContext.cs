@@ -1,4 +1,4 @@
-using Douze.Console;
+using Douze.Progress;
 using Douze.Liquid;
 using Douze.Tracing;
 using Douze.FileSystems;

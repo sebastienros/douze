@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using Douze.Console;
+using Douze.Progress;
 using Douze.Tracing;
 using Douze.Workflow.Scheduling;
 

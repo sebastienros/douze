@@ -1,7 +1,7 @@
 using Douze.Workflow;
 using Douze.Workflow.Scheduling;
 
-namespace Douze.Console;
+namespace Douze.Progress;
 
 internal enum LogLevel { Debug, Info, Warning, Error }
 
