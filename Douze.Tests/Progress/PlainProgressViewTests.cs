@@ -33,6 +33,18 @@ public class PlainProgressViewTests
     }
 
     [Fact]
+    public async Task OneFile()
+    {
+        var (_, lines) = await BuildAsync(new FakeWorkflow()
+            .Add("markdown", d => new FakeMapStep(d), inputs: ["**"])
+            .Write("write", "markdown"), unicode: true, "/a.md");
+
+        // Singular, with the seconds still aligned with "   312 files".
+        Assert.Matches(@"^✓ markdown         1 file     0\.\d\d s$", lines[0]);
+        Assert.StartsWith("Build succeeded: 2 steps, 1 file written in ", lines[2]);
+    }
+
+    [Fact]
     public async Task SkippedLine()
     {
         var (_, lines) = await BuildAsync(new FakeWorkflow()

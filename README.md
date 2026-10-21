@@ -316,4 +316,30 @@ member optional), an array of files, or `null` to drop the file. A thrown error 
 
 # progress and tracing
 
-Not available yet: a live console view, `--trace <file.json>` (Chrome trace events) and `--timeline <file.html>`.
+In a terminal, Douze shows a live table of the running steps: the shape of each step, the units done out of the
+total (`done/?` while a streaming step does not know its total yet), a progress bar and the elapsed time. Each
+completed step prints one line above the table. At the end, a summary table lists every step with its state, files
+in and out, units and time, and a timeline column that places each step on the time scale of the build, so you can
+see which steps ran at the same time and which one held the others back.
+
+The live view is replaced by one line per step (the plain view) with `--plain`, when the output is redirected, when
+`CI` is set (to anything but `false` or `0`), or when `TERM=dumb`. `NO_COLOR` keeps the live view without colors.
+`--quiet` prints errors only; `--verbose` adds stack traces, and in the plain view one line per unit.
+
+```
+douze --trace build.json        # Chrome trace events
+douze --timeline build.html     # a self-contained page with the timeline of the build
+douze --trace-units --timeline build.html   # also one span per file or group
+```
+
+`--trace` writes [Chrome trace events](https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU)
+that open in [Perfetto](https://ui.perfetto.dev) or `chrome://tracing`: one lane for the build, then lanes for the
+steps, then lanes for the units, commands and I/O, so that overlapping spans never share a lane. Times are
+microseconds since the start of the build.
+
+`--timeline` writes a single HTML file that works offline: one row per step on a time axis, with the spans of its
+units (with `--trace-units`) packed under it, a tooltip with the details of each span, zoom with the mouse wheel, pan
+by dragging, and a table of the spans sortable by duration. It follows the light or dark theme of the system.
+
+Both files are written even when the build fails or is cancelled. Step and command spans are always recorded; unit
+spans only with `--trace-units`, because thousands of spans of a few microseconds each are noise on a timeline.

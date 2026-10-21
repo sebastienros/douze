@@ -1531,22 +1531,40 @@ detects the non-interactive profile and renders the final table only. The packag
 phase 4. Phase 4 re-runs the check on the Douze project itself and on `linux-x64` in CI (the
 existing `Publish douze (native AOT)` job).
 
+Phase 4 result (2026-10-21, `osx-arm64`): the publish of Douze has no warnings; with every IL suppression lifted
+(`-p:NoWarn=NU1507 -p:TrimmerSingleWarn=false`) it reports 31 IL warnings, all from Fluid (the ones `Douze.csproj`
+suppresses) and none from Spectre.Console. The binary grows from 14.6 MB to 15.5 MB.
+
 ### 6.2 View selection
 
-`Program` picks the view: `--quiet` gives `SilentProgressView`; `--plain`, a redirected stdout
-(`Console.IsOutputRedirected`), `CI=true`, `TERM=dumb`, or `NO_COLOR` with `--plain` semantics
-gives `PlainProgressView`; otherwise `SpectreProgressView`. Tests always pass a view explicitly.
+`ViewSelector` picks the view: `--quiet` gives `SilentProgressView`; `--plain`, a redirected stdout
+(`Console.IsOutputRedirected`), `CI` set to anything but `false` or `0`, or `TERM=dumb` gives
+`PlainProgressView`; otherwise `SpectreProgressView` on `AnsiConsole.Console`. `NO_COLOR` keeps the live view
+(Spectre removes the colors on its own): it is about colors, not about cursor movement. Tests always pass a view
+explicitly.
 
 ### 6.3 `SpectreProgressView` (phase 4)
 
-A `Live` display of a `Table` with one row per running step: status glyph, step name, shape,
-`done/total` (or `done/?` while streaming), a progress bar when total is known, elapsed time.
-Completed steps leave the table and print one summary line above it (same text as the plain view),
-so a scrollback shows the history. Messages print above the table through `AnsiConsole` while the
-live display is active. Redraws are throttled to 20 per second. On `BuildCompleted` the view prints
-the summary table: step, state, files in, files out, units, elapsed, plus the total time, the
-output count, the error list, and the paths of the trace files when written. Colors: green for
-succeeded, red for failed, yellow for skipped, grey for cancelled.
+A `Live` display of a `Table` with one row per running step, in graph order: spinner, step name, shape,
+`done/total` (or `done/?` while streaming), a progress bar when total is known, elapsed time, and a caption
+with the number of steps done and the build time. Completed steps leave the table and print one line
+above it (same text as the plain view, `StepSummary.Line`), so a scrollback shows the history. Messages print
+above the table too.
+
+The scheduler calls the view from many threads, which only update its state under a lock. One loop owns
+the console: every 50 ms (20 redraws per second) it prints the queued lines and redraws the table. Spectre
+writes lines over the live area without clearing it, so a line shorter than a row would keep the end of
+the row: the loop sets an empty target first when it has lines to print (the live shape only grows, so it
+draws blank lines). A console that is not interactive (or has no ANSI support) gets the lines and the
+summary without the live display.
+
+On `BuildCompleted` the view stops the loop (the last pass prints the last lines and clears the table) and
+prints the summary table: step, state, files in, files out, units, time, and a timeline column that draws
+each step as a bar on the time scale of the build (the axis header goes from 0 to the build time; bars end
+with an eighth of a character of precision), then the headline (`StepSummary.Headline`) and the error
+list. The paths of the trace files are printed by `BuildCommand` after the summary, as Info messages,
+because the files are written once the build result exists. Colors: green for succeeded, red for failed,
+yellow for skipped, grey for cancelled.
 
 ### 6.4 Chrome trace events (phase 4)
 
@@ -1560,22 +1578,34 @@ succeeded, red for failed, yellow for skipped, grey for cancelled.
 ],"displayTimeUnit":"ms","otherData":{"douze":"1.0.0-beta","site":"/abs/src"}}
 ```
 
-`ts` and `dur` are microseconds relative to the build start. `tid` is a lane: lanes are assigned
-greedily so that overlapping spans get distinct lanes (sort by start, reuse the lowest lane whose
-last span ended before this start), which gives a compact swimlane view in Perfetto and
-`chrome://tracing`. `pid` is always 1. Unit spans (with `--trace-units`) use `cat: "unit"` and the
-file or group as `name`.
+`ts` and `dur` are microseconds relative to the first event (the build span), rounded to the
+nanosecond. `tid` is a lane: lanes are assigned greedily so that overlapping spans get distinct lanes
+(sort by start, reuse the lowest lane whose last span ended before this start), which gives a compact
+swimlane view in Perfetto and `chrome://tracing`. The build is lane 0, step spans share lanes 1 to n, and
+every other span (units, commands, I/O) the lanes after those, so that units never push a step into a
+far lane; `thread_name` and `thread_sort_index` metadata events name the lanes (`build`, `steps`,
+`units`). `pid` is always 1. Unit spans (with `--trace-units`) use `cat: "unit"`, the file or group as
+`name` and the step as `args.step`. The writer uses `Utf8JsonWriter` directly (no serializer, nothing for
+AOT to see), whose default encoder escapes `<` and `>`, so the JSON can sit in a `<script>` element.
+`otherData` has `douze` (the version) and `site` (the source folder). The trace is written even when the
+build fails or is cancelled.
 
 ### 6.5 `timeline.html` (phase 4)
 
 `TimelineHtmlWriter.Write(TraceSession, Stream)` takes the embedded `Douze/Tracing/timeline.html`
-and replaces the marker `/*__DOUZE_TRACE__*/` with the same JSON as 6.4. The page is self-contained:
-no external scripts, fonts or styles. It draws one horizontal lane per `tid` on a `<canvas>` with a
-time axis, zooms with the mouse wheel, pans with drag, shows a tooltip with name, category,
-duration and args on hover, lists the steps in a table under the chart (sortable by duration), and
-follows `prefers-color-scheme`. The HTML file is kept under 20 KB and has no build step; it is
-tested by a unit test that checks the marker replacement and that the output contains no
-`http://` or `https://` references.
+and replaces the marker `/*__DOUZE_TRACE__*/null` with the same JSON as 6.4 (streamed, not built as a
+string). The page opened as is shows an empty timeline. The page is self-contained: no external
+scripts, fonts or styles. It draws one row per step (and per other top level span) on a `<canvas>` with
+a time axis, rather than one lane per `tid`: a labeled row per step reads better than packed lanes, and
+the spans of a step's units (`args.step`) are packed in thin sub-lanes under its bar, which shows its
+parallelism. It zooms with the mouse wheel around the cursor, pans with drag, resets on double-click,
+shows a tooltip with name, category, duration, start and args on hover, lists the top level spans in a
+table under the chart (sortable by any column, by duration by default, with the number of unit spans of
+each step), colors a span red when its `args.state` is `failed`, and follows `prefers-color-scheme`.
+The page is about 10 KB and has no build step; unit tests check the marker replacement, that the data
+cannot close the `<script>` element, that the output has no `http://` or `https://` references, that
+the page is under 20 KB, and that each span adds less than 150 bytes (the 64 KB budget for 1,000 spans
+was not reachable with the Chrome JSON, and one format for both files is worth more).
 
 ---
 
@@ -2028,9 +2058,18 @@ README section "progress and tracing" (a placeholder exists).
 
 **Tests.** `ChromeTraceWriterTests` (4: valid JSON through `System.Text.Json` with the source
 generated context, lanes do not overlap, microsecond units, args), `TimelineHtmlWriterTests` (3:
-marker replaced, no external references, size under 64 KB with 1,000 spans),
+marker replaced, no external references, page under 20 KB and under 150 bytes per span),
 `SpectreProgressViewTests` with `TestConsole` (4: running rows, completion lines, summary,
-throttling does not drop the final state), `ViewSelectorTests` (4).
+throttling does not drop the final state), `ViewSelectorTests` (4), `BuildCommandTests` (1: `--trace`
+and `--timeline` write both files), `PlainProgressViewTests.OneFile` (`1 file`, not `1 files`).
+
+**Done (2026-10-21).** Shared formatting moved to `Douze/Progress/StepSummary.cs` (step line, headline,
+name width), used by both views. Verification: the live view was checked by running the AOT and Debug
+builds under a pseudo-terminal (`script`) with `TERM=xterm-256color`, on the Sample and on a generated
+site of 4,000 pages, and replaying the captured byte stream through a small terminal emulator to see
+the frames and the final screen (that is how the residue of short lines over live rows was found and
+fixed); the timeline page was checked in a browser in both themes (tooltip, zoom, sorting, no console
+errors).
 
 **Acceptance.** Shared criteria; the AOT publish log has zero IL warnings from Spectre; a manual run
 in a terminal shows the live table (screenshot in the PR); `--trace out.json` opens in Perfetto
