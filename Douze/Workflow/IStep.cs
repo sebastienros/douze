@@ -34,6 +34,18 @@ internal abstract class Step : IAsyncDisposable
     public StepShape EffectiveShape => Definition.GroupBy is null ? NativeShape : StepShape.Group;
 
     /// <summary>
+    /// What the results of the step depend on beyond its definition and its inputs, part of every result key: for a
+    /// command, the hash of its <c>version</c> and of its <c>sources</c>. Read once <see cref="InitializeAsync"/> ran.
+    /// </summary>
+    public virtual Hash128 CacheVersion => Hash128.Empty;
+
+    /// <summary>
+    /// Whether the units of the step record what they read through the scopes (<see cref="ScopeSet.TryResolve"/>). When
+    /// they do not, as a command does, a result depends on every scope of the step and is reused only when none changed.
+    /// </summary>
+    public virtual bool TracksDependencies => true;
+
+    /// <summary>
     /// Called once before the step receives its first unit: parse options, start workers.
     /// </summary>
     public virtual ValueTask InitializeAsync(BuildContext context, CancellationToken ct) => default;
@@ -52,6 +64,15 @@ internal interface IMapStep
 internal interface IGroupStep
 {
     ValueTask<StepOutput> ProcessGroupAsync(FileGroup group, StepContext context, CancellationToken ct);
+}
+
+/// <summary>
+/// A step that keeps state across its units, told about the units replayed from the cache instead of run.
+/// </summary>
+internal interface IReplayObserver
+{
+    /// <exception cref="DouzeException">The replayed unit fails, as it would have when run.</exception>
+    void Replayed(IReadOnlyList<VirtualFile> inputs, IReadOnlyList<VirtualFile> outputs);
 }
 
 internal interface IReduceStep

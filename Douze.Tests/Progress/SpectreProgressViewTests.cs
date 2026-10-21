@@ -100,9 +100,9 @@ public class SpectreProgressViewTests
         var lines = Lines(console);
         var header = Array.FindIndex(lines, x => x.TrimStart().StartsWith("Step", StringComparison.Ordinal));
 
-        Assert.Matches(@"Step\s+State\s+In\s+Out\s+Units\s+Time\s+0\s+0\.\d\d s", lines[header]);
-        Assert.Matches(@"markdown\s+succeeded\s+2\s+2\s+2\s+0\.\d\d s\s+█", lines[header + 2]);
-        Assert.Matches(@"write\s+succeeded\s+2\s+2\s+2\s+0\.\d\d s\s+ *[█▏▎▍▌▋▊▉]", lines[header + 3]);
+        Assert.Matches(@"Step\s+State\s+In\s+Out\s+Units\s+Cached\s+Time\s+0\s+0\.\d\d s", lines[header]);
+        Assert.Matches(@"markdown\s+succeeded\s+2\s+2\s+2\s+0\s+0\.\d\d s\s+█", lines[header + 2]);
+        Assert.Matches(@"write\s+succeeded\s+2\s+2\s+2\s+0\s+0\.\d\d s\s+ *[█▏▎▍▌▋▊▉]", lines[header + 3]);
         Assert.StartsWith("Build succeeded: 2 steps, 2 files written in ", lines[^1]);
 
         // The timeline: a step starts when its first file arrives, so write starts once markdown has processed a file (20 ms
@@ -132,7 +132,7 @@ public class SpectreProgressViewTests
         Assert.Single(lines, x => x.StartsWith("✓ layout ", StringComparison.Ordinal));
         Assert.Single(lines, x => x.StartsWith("✓ write ", StringComparison.Ordinal));
         Assert.Contains(lines, x => Regex.IsMatch(x, @"^✓ write\s+300 files"));
-        Assert.Contains(lines, x => Regex.IsMatch(x, @"layout\s+succeeded\s+300\s+300\s+300"));
+        Assert.Contains(lines, x => Regex.IsMatch(x, @"layout\s+succeeded\s+300\s+300\s+300\s+0\s"));
         Assert.StartsWith("Build succeeded: 3 steps, 300 files written in ", lines[^1]);
 
         // The live display drew the running steps at least once.

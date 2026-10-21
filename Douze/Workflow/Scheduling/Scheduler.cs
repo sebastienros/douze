@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Douze.FileSystems;
 using Douze.Tracing;
+using Douze.Workflow.Cache;
 
 namespace Douze.Workflow.Scheduling;
 
@@ -18,11 +19,13 @@ internal sealed class Scheduler
 
     private readonly WorkflowGraph _graph;
     private readonly BuildContext _context;
+    private readonly ReplayState? _replay;
 
     public Scheduler(WorkflowGraph graph, BuildContext context)
     {
         _graph = graph;
         _context = context;
+        _replay = context.Cache is { } cache ? new ReplayState(cache, context) : null;
     }
 
     public async Task<SchedulerResult> RunAsync(CancellationToken ct)
@@ -51,7 +54,8 @@ internal sealed class Scheduler
 
     /// <summary>
     /// Enumerates the source files once, sorted by path, keeping only those that some node's <c>inputs</c> match.
-    /// Files under the output folder are excluded when it is inside the source folder.
+    /// Files under the output folder or the cache folder are excluded when they are inside the source folder. A file
+    /// whose length and modification time did not change since a build that cached its hash is not read to be hashed.
     /// </summary>
     private async Task<IReadOnlyList<VirtualFile>> EnumerateSourcesAsync()
     {
@@ -63,44 +67,47 @@ internal sealed class Scheduler
         }
 
         var source = _context.Source;
-        var excluded = GetExcludedOutputFolder();
+        var excluded = _context.ExcludedSourceFolders;
         var entries = await source.EnumerateFileSystemEntriesAsync(FPath.Root, recursive: true, filter: null);
 
         var paths = entries
             .Where(x => !x.IsDirectory)
             .Select(x => x.Path.ToAbsolute())
-            .Where(x => excluded is not { } folder || !x.IsInDirectory(folder))
+            .Where(x => !excluded.Any(x.IsInDirectory))
             .Where(x => roots.Any(r => r.IsMatch(x)))
             .Distinct()
             .Order()
             .ToArray();
 
         var files = new VirtualFile[paths.Length];
+        var cache = _context.Cache;
+        var options = new ParallelOptions { MaxDegreeOfParallelism = _context.MaxDegreeOfParallelism };
 
-        for (var i = 0; i < paths.Length; i++)
+        await Parallel.ForAsync(0, paths.Length, options, async (i, _) =>
         {
-            files[i] = VirtualFile.FromSource(source, paths[i], await source.GetFileMetadataAsync(paths[i]));
-        }
+            var path = paths[i];
+            var info = await source.GetFileMetadataAsync(path);
+            var (length, date) = (info.Length, info.LastWriteTimeUtc);
+            FileContent content;
+
+            if (cache == null)
+            {
+                content = FileContent.FromFile(source, path, length);
+            }
+            else if (cache.TryGetSourceHash(path, length, date, out var hash))
+            {
+                cache.PutSource(path, length, date, hash);
+                content = FileContent.FromFile(source, path, length, hash, null);
+            }
+            else
+            {
+                content = FileContent.FromFile(source, path, length, null, hash => cache.PutSource(path, length, date, hash));
+            }
+
+            files[i] = VirtualFile.FromSource(path, content, date);
+        });
 
         return files;
-    }
-
-    private FPath? GetExcludedOutputFolder()
-    {
-        if (_context.Site.SourceDirectory is not { } sourceDirectory || _context.Site.OutputDirectory is not { } outputDirectory)
-        {
-            return null;
-        }
-
-        var sourceRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourceDirectory)) + Path.DirectorySeparatorChar;
-        var outputRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(outputDirectory)) + Path.DirectorySeparatorChar;
-
-        if (!outputRoot.StartsWith(sourceRoot, StringComparison.Ordinal) || outputRoot.Length == sourceRoot.Length)
-        {
-            return null;
-        }
-
-        return new FPath("/" + outputRoot[sourceRoot.Length..]);
     }
 
     /// <summary>
@@ -140,6 +147,11 @@ internal sealed class Scheduler
         private TraceSpan _span;
         private bool _upstreamUnavailable;
         private int _sourcesReleased;
+
+        // Set once the step is initialized: the cache, when the step's results are cached, and what its result keys
+        // depend on beyond its definition and inputs.
+        private ReplayState? _replay;
+        private Hash128 _version;
 
         public NodeRunner(Scheduler scheduler, GraphNode node, NodeRunner[] runners, CancellationTokenSource buildCts)
         {
@@ -247,6 +259,12 @@ internal sealed class Scheduler
 
                 initialized = true;
                 await Node.Step.InitializeAsync(Context, token);
+
+                if (Node.Definition.Incremental && _scheduler._replay is { } replay)
+                {
+                    _replay = replay;
+                    _version = Node.Step.TracksDependencies ? Node.Step.CacheVersion : Hash128.Combine(Node.Step.CacheVersion, Run.Scopes.Hash);
+                }
 
                 switch (Node.Step.EffectiveShape)
                 {
@@ -470,8 +488,8 @@ internal sealed class Scheduler
                 // Another instance of the same file (a replay re-emitting an unchanged file, a step returning an equal
                 // copy) enters once too; two different files with the same path are an error. The refs are compared
                 // outside the lock: hashing loads the contents.
-                await file.Content.LoadAsync(token);
-                await other.File.Content.LoadAsync(token);
+                await file.Content.EnsureHashAsync(token);
+                await other.File.Content.EnsureHashAsync(token);
 
                 if (other.File.Ref == file.Ref)
                 {
@@ -525,11 +543,12 @@ internal sealed class Scheduler
 
             var processing = Parallel.ForEachAsync(work.Reader.ReadAllAsync(token), options, async (file, ct) =>
             {
-                // Loaded before the slot is taken: the read overlaps with the units that run, and the hash of the
-                // input ref never blocks a thread.
-                await file.Content.LoadAsync(ct);
+                // Loaded before the slot is taken when its hash is not known: the read overlaps with the units that
+                // run, and the hash of the input ref never blocks a thread. Content whose hash is known (from the
+                // cache) is read only if the unit runs.
+                await file.Content.EnsureHashAsync(ct);
 
-                await RunUnitAsync(new UnitKey(Name, file.Path.FullName), [file.Ref], async (context, ct) =>
+                await RunUnitAsync(new UnitKey(Name, file.Path.FullName), [file], [file.Ref], async (context, ct) =>
                 {
                     var outputs = await step.ProcessAsync(file, context, ct);
                     return new StepOutput(outputs);
@@ -563,20 +582,7 @@ internal sealed class Scheduler
             Run.AddUnits(1);
             Run.UnitsFinal = true;
 
-            await RunUnitAsync(new UnitKey(Name, UnitKey.ReduceUnit), Refs(files), async (context, ct) =>
-            {
-                var output = await step.ProcessAllAsync(files, context, ct);
-
-                var contributions = ScopeSet.Empty.WithFolders(output.Folders ?? []);
-
-                if (output.Scope != null)
-                {
-                    contributions = contributions.WithSite(output.Scope);
-                }
-
-                Run.Contributions = contributions;
-                return output;
-            }, null, token);
+            await RunUnitAsync(new UnitKey(Name, UnitKey.ReduceUnit), files, Refs(files), (context, ct) => step.ProcessAllAsync(files, context, ct), null, token);
 
             // Published before the channel completes, so dependents see a complete scope set when they start.
             ContributionReady.TrySetResult();
@@ -626,19 +632,12 @@ internal sealed class Scheduler
 
             await Parallel.ForEachAsync(ordered, options, async (group, ct) =>
             {
-                await RunUnitAsync(new UnitKey(Name, group.Key), Refs(group.Files), async (context, ct) =>
+                await RunUnitAsync(new UnitKey(Name, group.Key), group.Files, Refs(group.Files), (context, ct) =>
                 {
                     // The partition depends on what the group keys read.
                     context.Dependencies.Add(partitionDependencies);
 
-                    var output = await step.ProcessGroupAsync(group, context, ct);
-
-                    if (output.Scope != null || output.Folders != null)
-                    {
-                        throw new InvalidOperationException($"step '{Name}' is a group step and cannot contribute scopes");
-                    }
-
-                    return output;
+                    return step.ProcessGroupAsync(group, context, ct);
                 }, null, ct);
             });
         }
@@ -684,18 +683,20 @@ internal sealed class Scheduler
 
             files.Sort(static (a, b) => a.Path.CompareTo(b.Path));
 
-            // Source files that no map step read yet (the data step's inputs) are loaded in parallel.
+            // Source files that no map step read yet (the data step's inputs) are loaded in parallel, to be hashed.
             var options = new ParallelOptions { MaxDegreeOfParallelism = Context.MaxDegreeOfParallelism, CancellationToken = token };
-            await Parallel.ForEachAsync(files, options, static (file, ct) => file.Content.LoadAsync(ct));
+            await Parallel.ForEachAsync(files, options, static (file, ct) => file.Content.EnsureHashAsync(ct));
 
             return files;
         }
 
         /// <summary>
         /// Runs one unit under a work slot: creates its dependency tracker and span, writes its outputs to the channel as
-        /// soon as it is done, and records its result. Failures are reported, not thrown.
+        /// soon as it is done, and records its result. Failures are reported, not thrown. With the cache, a unit whose
+        /// result key has a result whose dependencies did not change is replayed instead: its outputs (and its
+        /// contribution) come from the cache. A unit that runs stores its result.
         /// </summary>
-        private async Task RunUnitAsync(UnitKey key, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, CancellationToken ct)
+        private async Task RunUnitAsync(UnitKey key, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, CancellationToken ct)
         {
             MarkStarted();
 
@@ -704,15 +705,25 @@ internal sealed class Scheduler
 
             try
             {
+                var replay = _replay;
+                var resultKey = replay == null ? default : ResultKey.Compute(Node.Definition, inputs, _version);
+
+                if (replay != null && await TryReplayAsync(replay, resultKey, key, inputFiles, inputs, file, ct))
+                {
+                    return;
+                }
+
                 var deps = new DependencyTracker();
                 using var span = Context.Trace.Begin(Name, UnitCategory, key.Unit);
                 var context = new StepContext(Node.Definition, Run.Scopes, Context, deps, span);
 
                 StepOutput output;
+                ScopeSet? contributions;
 
                 try
                 {
                     output = await body(context, ct);
+                    contributions = Contribute(output);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -734,7 +745,16 @@ internal sealed class Scheduler
                 }
 
                 Run.AddOut(files.Count);
-                Run.AddResult(new UnitResult(key, inputs, [.. files.AsEnumerable().Select(x => x.Ref)], deps.ToSet())
+
+                var dependencies = deps.ToSet();
+
+                if (replay != null)
+                {
+                    dependencies = replay.Cache.Intern(dependencies);
+                    await StoreAsync(replay, resultKey, key, inputFiles, files, dependencies, contributions, ct);
+                }
+
+                Run.AddResult(new UnitResult(key, inputs, [.. files.AsEnumerable().Select(x => x.Ref)], dependencies)
                 {
                     Files = Context.Options.KeepFiles ? [.. files.AsEnumerable()] : [],
                 });
@@ -746,6 +766,121 @@ internal sealed class Scheduler
 
             Run.AddUnitDone();
             Context.View.StepProgress(Run);
+        }
+
+        /// <summary>
+        /// The contribution of a reduce unit, published as the step's; a group unit cannot contribute.
+        /// </summary>
+        private ScopeSet? Contribute(StepOutput output)
+        {
+            if (Node.Step.EffectiveShape != StepShape.Reduce)
+            {
+                if (output.Scope != null || output.Folders != null)
+                {
+                    throw new InvalidOperationException($"step '{Name}' is a group step and cannot contribute scopes");
+                }
+
+                return null;
+            }
+
+            var contributions = ScopeSet.Empty.WithFolders(output.Folders ?? []);
+
+            if (output.Scope != null)
+            {
+                contributions = contributions.WithSite(output.Scope);
+            }
+
+            Run.Contributions = contributions;
+            return contributions;
+        }
+
+        /// <summary>
+        /// Replays a unit from the cache when its result key has a result whose dependencies did not change. Returns
+        /// whether it did; the unit is then done.
+        /// </summary>
+        private async ValueTask<bool> TryReplayAsync(ReplayState replay, Hash128 resultKey, UnitKey key, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, FPath? file, CancellationToken ct)
+        {
+            if (!replay.Cache.TryGetUnit(resultKey, out var cached) || cached.Step != Name || cached.Unit != key.Unit)
+            {
+                return false;
+            }
+
+            var dependencies = replay.Cache.GetDependencies(cached);
+
+            if (!await replay.IsUnchangedAsync(Name, Run.Scopes, dependencies, ct))
+            {
+                return false;
+            }
+
+            using var span = Context.Trace.Begin(Name, UnitCategory, key.Unit);
+            span.AddArg("cached", "true");
+
+            var provenance = new Provenance(Name, inputs);
+            var outputs = new VirtualFile[cached.Outputs.Length];
+
+            for (var i = 0; i < outputs.Length; i++)
+            {
+                outputs[i] = replay.Cache.Restore(cached.Outputs[i], inputFiles, provenance);
+            }
+
+            try
+            {
+                if (cached.Scope is { } scope && Node.Step.EffectiveShape == StepShape.Reduce)
+                {
+                    Run.Contributions = replay.Cache.RestoreScope(scope, inputFiles);
+                }
+
+                (Node.Step as IReplayObserver)?.Replayed(inputFiles, outputs);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                ReportFailure(BuildError.FromException(Name, file, e));
+                Run.AddUnitDone();
+                Context.View.StepProgress(Run);
+                return true;
+            }
+
+            foreach (var output in outputs)
+            {
+                await Output.WriteAsync(output);
+            }
+
+            Run.AddOut(outputs.Length);
+            replay.Cache.Reused(resultKey, cached);
+
+            Run.AddResult(new UnitResult(key, inputs, [.. outputs.Select(x => x.Ref)], dependencies)
+            {
+                Files = Context.Options.KeepFiles ? [.. outputs] : [],
+                Replayed = true,
+            });
+
+            Run.AddUnitReplayed();
+            Run.AddUnitDone();
+            Context.View.StepProgress(Run);
+            return true;
+        }
+
+        /// <summary>
+        /// Stores the result of a unit that ran. A failure to write the cache is a warning: the build goes on.
+        /// </summary>
+        private async ValueTask StoreAsync(ReplayState replay, Hash128 resultKey, UnitKey key, IReadOnlyList<VirtualFile> inputFiles, FileList files, DependencySet dependencies, ScopeSet? contributions, CancellationToken ct)
+        {
+            try
+            {
+                var outputs = ImmutableArray.CreateBuilder<CachedOutput>(files.Count);
+
+                for (var i = 0; i < files.Count; i++)
+                {
+                    outputs.Add(await replay.Cache.StoreOutputAsync(files[i], inputFiles, ct));
+                }
+
+                var scope = contributions == null ? null : replay.Cache.StoreScope(contributions);
+                replay.Cache.Put(resultKey, new CachedUnit(Name, key.Unit, dependencies.Hash, outputs.MoveToImmutable(), scope), dependencies);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Context.View.Message(Progress.LogLevel.Warning, Name, $"cannot write the cache: {e.Message}");
+            }
         }
     }
 }

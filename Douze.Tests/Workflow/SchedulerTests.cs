@@ -3,6 +3,7 @@ using Douze.FileSystems;
 using Douze.Nodes;
 using Douze.Tracing;
 using Douze.Workflow;
+using Douze.Workflow.Cache;
 using Douze.Workflow.Scheduling;
 using Xunit;
 

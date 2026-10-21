@@ -10,15 +10,17 @@ namespace Douze.Progress;
 internal static class StepSummary
 {
     /// <summary>
-    /// The line of a completed step without its marker: <c>markdown        312 files    0.41 s</c>.
+    /// The line of a completed step without its marker: <c>markdown        312 files    0.41 s</c>, followed by
+    /// <c>   300 cached</c> when units were replayed from the cache.
     /// </summary>
     public static string Line(StepRun run, int nameWidth)
     {
         var name = run.Node.Definition.Name.PadRight(nameWidth);
+        var cached = run.UnitsReplayed > 0 ? string.Create(CultureInfo.InvariantCulture, $"  {run.UnitsReplayed,6} cached") : "";
 
         return run.State switch
         {
-            StepState.Succeeded => string.Create(CultureInfo.InvariantCulture, $"{name}{Files(run.FilesConsumed)} {Duration(run).TotalSeconds,7:0.00} s"),
+            StepState.Succeeded => string.Create(CultureInfo.InvariantCulture, $"{name}{Files(run.FilesConsumed)} {Duration(run).TotalSeconds,7:0.00} s{cached}"),
             StepState.Failed => $"{name}{FirstError(run)}",
             StepState.Cancelled => $"{name}cancelled",
             _ => $"{name}skipped",
@@ -26,7 +28,8 @@ internal static class StepSummary
     }
 
     /// <summary>
-    /// <c>Build succeeded: 12 steps, 13 files written in 0.41 s</c>, or how the build failed.
+    /// <c>Build succeeded: 12 steps, 13 files written in 0.41 s, 40 units executed, 12 cached</c>, or how the build
+    /// failed.
     /// </summary>
     public static string Headline(BuildResult result)
     {
@@ -42,7 +45,9 @@ internal static class StepSummary
             return $"Build failed with {Plural(result.Errors.Count, "error")} in {seconds} s";
         }
 
-        return $"Build succeeded: {Plural(result.Steps.Count, "step")}, {Plural(result.Outputs.Count, "file")} written in {seconds} s";
+        var cached = result.UnitsReplayed > 0 ? $", {result.UnitsReplayed} cached" : "";
+
+        return $"Build succeeded: {Plural(result.Steps.Count, "step")}, {Plural(result.Outputs.Count, "file")} written in {seconds} s, {Plural(result.UnitsExecuted, "unit")} executed{cached}";
     }
 
     /// <summary>

@@ -14,11 +14,22 @@ internal abstract class FileContent
         ".css", ".js", ".mjs", ".cjs", ".ts", ".svg", ".csv", ".tsv", ".map", ".rss", ".atom", ".webmanifest",
     };
 
-    private readonly Lazy<Hash128> _hash;
+    private readonly Lock _hashLock = new();
+    private Hash128 _hash;
+    private volatile bool _hashed;
 
     protected FileContent()
     {
-        _hash = new Lazy<Hash128>(ComputeHash, LazyThreadSafetyMode.ExecutionAndPublication);
+    }
+
+    /// <summary>
+    /// Content whose hash, when not null, is known without reading it: a blob of the cache, a source file that did not
+    /// change.
+    /// </summary>
+    protected FileContent(Hash128? hash)
+    {
+        _hash = hash ?? default;
+        _hashed = hash != null;
     }
 
     public static readonly FileContent Empty = new TextContent("");
@@ -30,7 +41,19 @@ internal abstract class FileContent
     /// <summary>
     /// Creates content that reads the file once, on first access, and then retains its bytes.
     /// </summary>
-    public static FileContent FromFile(IFileSystem fs, FPath path, long length) => new LazyFileContent(fs, path, length, IsTextPath(path));
+    public static FileContent FromFile(IFileSystem fs, FPath path, long length) => new LazyFileContent(fs, path, length, IsTextPath(path), null, null);
+
+    /// <summary>
+    /// Creates content that reads the file once, on first access. <paramref name="hash"/> is its hash when known (the
+    /// file did not change since a previous build); otherwise <paramref name="hashed"/> receives it once computed.
+    /// </summary>
+    public static FileContent FromFile(IFileSystem fs, FPath path, long length, Hash128? hash, Action<Hash128>? hashed) => new LazyFileContent(fs, path, length, IsTextPath(path), hash, hashed);
+
+    /// <summary>
+    /// Creates content whose hash and length are known and whose bytes <paramref name="load"/> reads on first access:
+    /// a blob of the disk cache.
+    /// </summary>
+    public static FileContent FromLoader(Hash128 hash, long length, bool isText, Func<CancellationToken, ValueTask<byte[]>> load) => new LoadedContent(hash, length, isText, load);
 
     /// <summary>
     /// Whether a file is treated as text, based on its extension.
@@ -46,7 +69,35 @@ internal abstract class FileContent
     /// yet this blocks on the read: the scheduler calls <see cref="LoadAsync"/> on every consumed file before the step
     /// sees it, so steps never block here.
     /// </summary>
-    public Hash128 Hash => _hash.Value;
+    public Hash128 Hash
+    {
+        get
+        {
+            if (!_hashed)
+            {
+                lock (_hashLock)
+                {
+                    if (!_hashed)
+                    {
+                        _hash = ComputeHash();
+                        _hashed = true;
+                    }
+                }
+            }
+
+            return _hash;
+        }
+    }
+
+    /// <summary>
+    /// Whether <see cref="Hash"/> is known without reading anything.
+    /// </summary>
+    public bool IsHashKnown => _hashed;
+
+    /// <summary>
+    /// Loads the content when its hash is not known yet, so that <see cref="Hash"/> never blocks on a read.
+    /// </summary>
+    public ValueTask EnsureHashAsync(CancellationToken ct) => _hashed ? default : LoadAsync(ct);
 
     /// <summary>
     /// Reads and retains the bytes of a lazily read file, so that <see cref="Hash"/> and the readers then complete at
@@ -59,6 +110,11 @@ internal abstract class FileContent
     public abstract ValueTask<ReadOnlyMemory<byte>> ReadBytesAsync(CancellationToken ct);
 
     public abstract ValueTask<Stream> OpenReadAsync(CancellationToken ct);
+
+    /// <summary>
+    /// The bytes of the content, to store them: unlike <see cref="ReadBytesAsync"/>, the encoding of a text is not kept.
+    /// </summary>
+    public virtual ValueTask<ReadOnlyMemory<byte>> ReadBytesForStorageAsync(CancellationToken ct) => ReadBytesAsync(ct);
 
     public async ValueTask CopyToAsync(Stream destination, CancellationToken ct)
     {
@@ -115,6 +171,8 @@ internal abstract class FileContent
             return new ReadOnlyMemoryStream(bytes);
         }
 
+        public override ValueTask<ReadOnlyMemory<byte>> ReadBytesForStorageAsync(CancellationToken ct) => new(_bytes ?? Encoding.UTF8.GetBytes(_text));
+
         protected override Hash128 ComputeHash() => Hash128.OfText(_text);
     }
 
@@ -152,13 +210,16 @@ internal abstract class FileContent
         private readonly FPath _path;
         private readonly long _lengthHint;
         private readonly Lazy<Task<byte[]>> _bytes;
+        private readonly Action<Hash128>? _onHashed;
         private string? _text;
 
-        public LazyFileContent(IFileSystem fileSystem, FPath path, long lengthHint, bool isText)
+        public LazyFileContent(IFileSystem fileSystem, FPath path, long lengthHint, bool isText, Hash128? hash, Action<Hash128>? hashed)
+            : base(hash)
         {
             _fileSystem = fileSystem;
             _path = path;
             _lengthHint = lengthHint;
+            _onHashed = hashed;
             IsText = isText;
             _bytes = new Lazy<Task<byte[]>>(LoadAsync, LazyThreadSafetyMode.ExecutionAndPublication);
         }
@@ -204,7 +265,9 @@ internal abstract class FileContent
         {
             // Blocks only when LoadAsync was not awaited first, which the scheduler always does for consumed files.
             var bytes = _bytes.Value.GetAwaiter().GetResult();
-            return Hash128.Of(bytes);
+            var hash = Hash128.Of(bytes);
+            _onHashed?.Invoke(hash);
+            return hash;
         }
 
         private async Task<byte[]> LoadAsync()
@@ -213,6 +276,63 @@ internal abstract class FileContent
             using var memory = new MemoryStream(_lengthHint > 0 && _lengthHint < int.MaxValue ? (int)_lengthHint : 0);
             await stream.CopyToAsync(memory);
             return memory.ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Content read on first access by a loader, whose hash and length are known (a blob of the disk cache).
+    /// </summary>
+    private sealed class LoadedContent : FileContent
+    {
+        private readonly long _length;
+        private readonly Func<CancellationToken, ValueTask<byte[]>> _load;
+        private readonly Lock _lock = new();
+        private Task<byte[]>? _bytes;
+        private string? _text;
+
+        public LoadedContent(Hash128 hash, long length, bool isText, Func<CancellationToken, ValueTask<byte[]>> load) : base(hash)
+        {
+            _length = length;
+            _load = load;
+            IsText = isText;
+        }
+
+        public override bool IsText { get; }
+
+        public override long? Length => _length;
+
+        public override async ValueTask LoadAsync(CancellationToken ct) => await GetBytesAsync().WaitAsync(ct);
+
+        public override async ValueTask<string> ReadTextAsync(CancellationToken ct)
+        {
+            if (_text != null)
+            {
+                return _text;
+            }
+
+            var bytes = await GetBytesAsync().WaitAsync(ct);
+            _text = DecodeText(bytes);
+            return _text;
+        }
+
+        public override async ValueTask<ReadOnlyMemory<byte>> ReadBytesAsync(CancellationToken ct) => await GetBytesAsync().WaitAsync(ct);
+
+        public override async ValueTask<Stream> OpenReadAsync(CancellationToken ct) => new ReadOnlyMemoryStream(await GetBytesAsync().WaitAsync(ct));
+
+        // The hash is known: it is never computed.
+        protected override Hash128 ComputeHash() => throw new InvalidOperationException("The hash of cached content is known");
+
+        private Task<byte[]> GetBytesAsync()
+        {
+            if (_bytes != null)
+            {
+                return _bytes;
+            }
+
+            lock (_lock)
+            {
+                return _bytes ??= _load(CancellationToken.None).AsTask();
+            }
         }
     }
 

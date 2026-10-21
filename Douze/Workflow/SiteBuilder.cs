@@ -38,6 +38,16 @@ internal static class SiteBuilder
             result = await new Scheduler(graph, context).RunAsync(options.Cancellation);
         }
 
+        var succeeded = result.Errors.Count == 0 && !result.Cancelled;
+
+        if (context.Cache is { } cache)
+        {
+            using (trace.Begin("cache", "io"))
+            {
+                cache.Save(succeeded);
+            }
+        }
+
         var outputs = result.Runs
             .Where(x => x.Node.Definition.Uses == "write")
             .SelectMany(x => x.Results)

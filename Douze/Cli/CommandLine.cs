@@ -36,7 +36,7 @@ internal sealed class CommandLine
           -q, --quiet                    errors only
           -v, --verbose                  one line per file, stack traces
               --print-workflow           print the effective workflow as YAML and exit
-              --no-cache                 ignore and do not write the disk cache (not available yet)
+              --no-cache                 ignore and do not write the disk cache
               --cache-dir <dir>          cache location (default: <source>/.douze)
               --port <n>                 dev server port (serve, default 8080)
           -h, --help                     show this help

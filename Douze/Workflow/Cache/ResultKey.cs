@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 
-namespace Douze.Workflow;
+namespace Douze.Workflow.Cache;
 
 /// <summary>
 /// The identity of a unit's result, used by the in-memory replay and the disk cache to find a previous result for

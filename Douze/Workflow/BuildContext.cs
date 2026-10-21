@@ -1,4 +1,6 @@
+using System.Collections.Immutable;
 using Douze.Progress;
+using Douze.Workflow.Cache;
 using Douze.Liquid;
 using Douze.Tracing;
 using Douze.FileSystems;
@@ -28,11 +30,40 @@ internal sealed class BuildContext : IAsyncDisposable
         Templates = new TemplateLoader(site.Source, [site.IncludesFolder], Liquid.LiquidOptions.CreateParser());
         LiquidOptions = Liquid.LiquidOptions.Create(Templates);
 
-        var cacheDirectory = options.CacheDirectory
-            ?? Path.Combine(site.SourceDirectory ?? Path.GetTempPath(), ".douze");
-        TempRoot = Path.Combine(cacheDirectory, "tmp", Guid.NewGuid().ToString("N")) + Path.DirectorySeparatorChar;
+        // A site that is not on disk (tests) has no cache unless a folder is given; its commands use the temp folder.
+        var cacheDirectory = options.CacheDirectory ?? (site.SourceDirectory is { } source ? Path.Combine(source, DefaultCacheFolder) : null);
+        CacheRoot = cacheDirectory == null ? null : Path.GetFullPath(cacheDirectory);
+        TempRoot = Path.Combine(CacheRoot ?? Path.Combine(Path.GetTempPath(), DefaultCacheFolder), "tmp", Guid.NewGuid().ToString("N")) + Path.DirectorySeparatorChar;
+
+        ExcludedSourceFolders = [.. new[] { InsideSource(site, site.OutputDirectory), InsideSource(site, CacheRoot) }.OfType<FPath>()];
+
+        if (options.UseCache && CacheRoot != null)
+        {
+            Cache = BuildCache.Open(Path.Combine(CacheRoot, "cache"), view);
+        }
 
         BaseScopes = ScopeSet.FromSettings(SiteValues(site));
+    }
+
+    /// <summary>
+    /// The virtual path of a folder of the disk when it is inside the source folder.
+    /// </summary>
+    private static FPath? InsideSource(SiteOptions site, string? directory)
+    {
+        if (site.SourceDirectory is not { } sourceDirectory || directory == null)
+        {
+            return null;
+        }
+
+        var sourceRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourceDirectory)) + Path.DirectorySeparatorChar;
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)) + Path.DirectorySeparatorChar;
+
+        if (!root.StartsWith(sourceRoot, StringComparison.Ordinal) || root.Length == sourceRoot.Length)
+        {
+            return null;
+        }
+
+        return new FPath("/" + root[sourceRoot.Length..].Replace(Path.DirectorySeparatorChar, '/'));
     }
 
     /// <summary>
@@ -49,6 +80,11 @@ internal sealed class BuildContext : IAsyncDisposable
         return new NodeObject { ["site"] = new NodeObject { ["url"] = NodeValue.Create(site.Url) } };
     }
 
+    /// <summary>
+    /// The folder of the cache and of the temporary files in the source folder: <c>.douze</c>.
+    /// </summary>
+    public const string DefaultCacheFolder = ".douze";
+
     public SiteOptions Site { get; }
     public BuildOptions Options { get; }
     public IFileSystem Source => Site.Source;
@@ -63,6 +99,9 @@ internal sealed class BuildContext : IAsyncDisposable
     public CancellationToken Cancellation { get; }  // user cancellation (Ctrl+C)
     public string TempRoot { get; }                 // <cache dir>/tmp/<build id>/ for batch commands, created on demand, deleted by DisposeAsync
     public ScopeSet BaseScopes { get; }             // the site settings templates see (site.url), below every contribution
+    public ImmutableArray<FPath> ExcludedSourceFolders { get; }  // the output and cache folders, when they are inside the source folder: never sources
+    public string? CacheRoot { get; }               // --cache-dir, or <source>/.douze/; null for a site not on disk
+    public BuildCache? Cache { get; }               // the disk cache in <cache root>/cache/; null with --no-cache or when another build holds it
 
     /// <summary>
     /// Releases the slots and deletes <see cref="TempRoot"/>, unless <c>--verbose</c> asked to keep what the batch
@@ -72,6 +111,7 @@ internal sealed class BuildContext : IAsyncDisposable
     {
         Parallelism.Dispose();
         ProcessSlots.Dispose();
+        Cache?.Dispose();
 
         try
         {

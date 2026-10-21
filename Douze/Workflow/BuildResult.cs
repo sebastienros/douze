@@ -45,6 +45,16 @@ internal sealed class BuildResult
 
     public TimeSpan Elapsed { get; }
 
+    /// <summary>
+    /// The units that ran (or failed), in every step.
+    /// </summary>
+    public int UnitsExecuted => Steps.Sum(x => x.UnitsExecuted);
+
+    /// <summary>
+    /// The units whose results came from the cache, in every step.
+    /// </summary>
+    public int UnitsReplayed => Steps.Sum(x => x.UnitsReplayed);
+
     public StepRun this[string step] => Steps.First(x => x.Node.Definition.Name == step);
 
     /// <summary>

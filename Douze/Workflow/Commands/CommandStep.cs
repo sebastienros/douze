@@ -16,6 +16,7 @@ internal abstract class CommandStep : Step
 {
     private BuildContext? _build;
     private string? _workingDirectory;
+    private Hash128 _cacheVersion;
 
     protected CommandStep(StepDefinition definition) : base(definition)
     {
@@ -42,9 +43,17 @@ internal abstract class CommandStep : Step
     /// </summary>
     protected string TempFolder => Path.Combine(Build.TempRoot, Name);
 
-    public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
+    /// <summary>
+    /// What the command's results depend on besides its definition and inputs: its <c>version</c>, and the files of the
+    /// source folder that <c>sources</c> matches (the scripts it runs, the data it reads from disk), by path and content.
+    /// A command does not see the scopes: its results do not depend on them.
+    /// </summary>
+    public override Hash128 CacheVersion => _cacheVersion;
+
+    public override async ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
     {
         _build = context;
+        _cacheVersion = await ComputeCacheVersionAsync(context, ct);
 
         // A site without a source folder on disk (tests, memory file systems) runs its commands in the current folder.
         var root = context.Site.SourceDirectory ?? Environment.CurrentDirectory;
@@ -56,7 +65,35 @@ internal abstract class CommandStep : Step
         }
 
         _workingDirectory = directory;
-        return default;
+    }
+
+    private async ValueTask<Hash128> ComputeCacheVersionAsync(BuildContext context, CancellationToken ct)
+    {
+        var hashes = new List<Hash128> { Hash128.OfText(Definition.Version) };
+
+        if (Definition.Sources.IsEmpty)
+        {
+            return hashes[0];
+        }
+
+        var sources = GlobSet.Parse(Definition.Sources);
+        var entries = await context.Source.EnumerateFileSystemEntriesAsync(FPath.Root, recursive: true, filter: null);
+
+        var excluded = context.ExcludedSourceFolders;
+
+        foreach (var path in entries.Where(x => !x.IsDirectory).Select(x => x.Path.ToAbsolute()).Where(x => sources.IsMatch(x) && !excluded.Any(x.IsInDirectory)).Distinct().Order())
+        {
+            ct.ThrowIfCancellationRequested();
+
+            await using var stream = await context.Source.OpenFileAsync(path);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory, ct);
+
+            hashes.Add(Hash128.OfText(path.FullName));
+            hashes.Add(Hash128.Of(memory.GetBuffer().AsSpan(0, (int)memory.Length)));
+        }
+
+        return Hash128.Combine([.. hashes]);
     }
 
     protected CommandModel CreateModel(string? inputs = null, string? outputs = null, FPath? file = null)

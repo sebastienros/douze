@@ -349,3 +349,6 @@ MigrationBackup/
 # Benchmark data and outputs (bench/README.md)
 bench/**/data/
 bench/**/out/
+
+# Douze cache and temporary files
+.douze/

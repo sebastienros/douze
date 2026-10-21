@@ -113,6 +113,15 @@ internal sealed class VirtualFile
             path);
     }
 
+    /// <summary>
+    /// Creates a source file with its content.
+    /// </summary>
+    public static VirtualFile FromSource(FPath path, FileContent content, DateTime lastWriteTimeUtc)
+    {
+        path = path.ToAbsolute();
+        return new VirtualFile(path, content, new Metadata(new NodeObject(), path.GetDirectory()), contentType: null, Provenance.Source, lastWriteTimeUtc, path);
+    }
+
     public override string ToString() => Path.FullName;
 }
 

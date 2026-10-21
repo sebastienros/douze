@@ -12,8 +12,10 @@ namespace Douze.Workflow;
 /// </summary>
 internal sealed class SiteScope
 {
-    private readonly NodeObject _values;
-    private readonly ConcurrentDictionary<string, Hash128> _keyHashes = new(StringComparer.Ordinal);
+    private readonly NodeObject? _values;
+    private readonly Lazy<NodeObject>? _load;
+    private readonly IReadOnlyDictionary<string, Hash128>? _keys;
+    private readonly ConcurrentDictionary<string, Hash128>? _keyHashes;
     private Hash128? _hash;
 
     public SiteScope(string source, NodeObject values)
@@ -23,24 +25,51 @@ internal sealed class SiteScope
 
         Source = source;
         _values = values;
+        _keyHashes = new(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// A scope restored from the disk cache: the hashes of its keys are known, its values are read by
+    /// <paramref name="load"/> when a unit reads them. Units replayed from the cache only compare hashes.
+    /// </summary>
+    public SiteScope(string source, Hash128 valuesHash, IReadOnlyDictionary<string, Hash128> keyHashes, Func<NodeObject> load)
+    {
+        Source = source;
+        _keys = keyHashes;
+        _load = new Lazy<NodeObject>(load, LazyThreadSafetyMode.ExecutionAndPublication);
+        _hash = Hash128.Combine(Hash128.OfText(source), valuesHash);
     }
 
     public string Source { get; }
 
-    public NodeObject Values => _values;
+    public NodeObject Values => _values ?? _load!.Value;
 
-    public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Source), NodeHash.Of(_values));
+    public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Source), NodeHash.Of(Values));
 
-    public bool TryGetValue(string key, out Node? value) => _values.TryGetItem(key, out value);
+    public bool TryGetValue(string key, out Node? value)
+    {
+        if (_keys != null && !_keys.ContainsKey(key))
+        {
+            value = null;
+            return false;
+        }
 
-    public bool ContainsKey(string key) => _values.TryGetItem(key, out _);
+        return Values.TryGetItem(key, out value);
+    }
+
+    public bool ContainsKey(string key) => _keys?.ContainsKey(key) ?? _values!.TryGetItem(key, out _);
 
     /// <summary>
     /// The hash of the value of <paramref name="key"/>, which must be defined.
     /// </summary>
     public Hash128 KeyHash(string key)
     {
-        return _keyHashes.GetOrAdd(key, static (key, values) => NodeHash.Of(values.GetItem(key)), _values);
+        if (_keys != null)
+        {
+            return _keys[key];
+        }
+
+        return _keyHashes!.GetOrAdd(key, static (key, values) => NodeHash.Of(values.GetItem(key)), _values!);
     }
 }
 

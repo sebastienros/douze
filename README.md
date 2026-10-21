@@ -29,16 +29,28 @@ Options:
   -q, --quiet                    errors only
   -v, --verbose                  one line per file, stack traces
       --print-workflow           print the effective workflow as YAML and exit
+      --no-cache                 ignore and do not write the disk cache
+      --cache-dir <dir>          cache location (default: <source>/.douze)
   -h, --help                     show the help
       --version                  show the version
 ```
 
-`douze --help` also lists the commands and options of features that are not available yet (watch mode, dev server,
-cache).
+`douze --help` also lists the commands and options of features that are not available yet (watch mode, dev server).
 
 The exit code is 0 on success, 1 when the build has errors (each one is printed as
 `error: <step>: <file>(<line>,<col>): <message>`), 2 for an invalid command line or workflow, and 130 when the
 build is cancelled with Ctrl+C.
+
+# cache
+
+A build stores the result of each unit of work (a file in a step, a group, a whole step for collections and data) in
+`<source>/.douze/cache/`, and the next build reuses every result whose inputs and dependencies did not change: a second
+build without changes runs nothing (`0 units executed`), and after an edit only the units that the edit affects run.
+A result depends on the files the unit received, the step's options, the layouts, includes and templates it read, the
+data it resolved (folder data, site data, collections, `site:` settings) and, for a command, its `version` and the files
+its `sources` match. The `write` step writes a file again when it is missing from the output folder or was changed
+there. `--no-cache` builds without reading or writing the cache, `--cache-dir` moves it. Add `.douze/` to your
+`.gitignore`.
 
 # site layout
 
@@ -48,7 +60,7 @@ build is cancelled with Ctrl+C.
 | data | `_data` if it exists, else none | site data |
 | includes | `_includes` if it exists, else the source folder | layouts, includes and templates |
 
-The output folder is skipped when it is inside the source folder.
+The output folder and the `.douze` folder are skipped when they are inside the source folder.
 
 # how a site is built
 

@@ -191,7 +191,7 @@ internal sealed class SpectreProgressView : IProgressView
         var origin = started.Length == 0 ? DateTimeOffset.MinValue : started.Min(x => x.StartedAt!.Value);
         var end = started.Length == 0 ? origin : started.Max(x => x.EndedAt ?? x.StartedAt!.Value);
         var span = Math.Max((end - origin).TotalSeconds, 1e-6);
-        var width = Math.Clamp(_console.Profile.Width - _nameWidth - 50, 10, 60);
+        var width = Math.Clamp(_console.Profile.Width - _nameWidth - 59, 10, 60);
 
         var endLabel = Seconds(end - origin);
         var axis = "0".PadRight(Math.Max(width - endLabel.Length, 2)) + endLabel;
@@ -202,6 +202,7 @@ internal sealed class SpectreProgressView : IProgressView
             .AddColumn(new TableColumn("In").RightAligned())
             .AddColumn(new TableColumn("Out").RightAligned())
             .AddColumn(new TableColumn("Units").RightAligned())
+            .AddColumn(new TableColumn("Cached").RightAligned())
             .AddColumn(new TableColumn("Time").RightAligned())
             .AddColumn(new TableColumn(new Text(axis, new Style(Color.Grey))).Width(width).NoWrap());
 
@@ -216,6 +217,7 @@ internal sealed class SpectreProgressView : IProgressView
                 new Text(Count(run.FilesIn)),
                 new Text(Count(run.FilesOut)),
                 new Text(Count(run.Units)),
+                new Text(Count(run.UnitsReplayed)),
                 new Text(ran ? Seconds(StepSummary.Duration(run)) : ""),
                 ran
                     ? new Text(TimelineBar((run.StartedAt!.Value - origin).TotalSeconds / span, ((run.EndedAt ?? run.StartedAt!.Value) - origin).TotalSeconds / span, width), new Style(color))
