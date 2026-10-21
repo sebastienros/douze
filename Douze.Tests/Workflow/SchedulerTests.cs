@@ -180,6 +180,26 @@ public class SchedulerTests
     }
 
     [Fact]
+    public async Task SameFileThroughTwoNeedsEntersOnce()
+    {
+        // A diamond: 'collect' consumes the Markdown files and emits nothing, and passes the stylesheet through, so the
+        // same stylesheet reaches 'render' from 'pages' and from 'collect'. It is the same file, not a duplicate.
+        var site = await new FakeSite().WithFilesAsync("/a.md", "/style.css");
+
+        var graph = new FakeWorkflow()
+            .Add("pages", d => new FakeMapStep(d) { Process = (f, _, _) => new(FileList.Of(f)) }, inputs: ["**"])
+            .Add("collect", d => new FakeReduceStep(d), needs: ["pages"], match: ["**/*.md"])
+            .Add("render", d => new FakeMapStep(d), needs: ["pages", "collect"])
+            .Build();
+
+        var result = await site.BuildAsync(graph);
+
+        Assert.True(result.Succeeded, string.Join("\n", result.Errors));
+        Assert.Equal(2, result["render"].FilesIn);
+        Assert.Equal(["/a.md|render", "/style.css|render"], await ContentsAsync(result["render"]));
+    }
+
+    [Fact]
     public async Task UnmatchedFilesPassThroughImmediately()
     {
         var site = await new FakeSite().WithFilesAsync("/index.md", "/style.css");

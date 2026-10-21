@@ -112,7 +112,7 @@ internal sealed class Scheduler
         private readonly CancellationTokenSource _buildCts;
         private readonly CancellationTokenSource _stepCts;
         private readonly Lock _pathsLock = new();
-        private readonly Dictionary<FPath, string> _producers = new();
+        private readonly Dictionary<FPath, (string Producer, VirtualFile File)> _producers = new();
         private bool _upstreamUnavailable;
 
         public NodeRunner(Scheduler scheduler, GraphNode node, NodeRunner[] runners, CancellationTokenSource buildCts)
@@ -336,14 +336,20 @@ internal sealed class Scheduler
         {
             lock (_pathsLock)
             {
-                if (_producers.TryGetValue(file.Path, out var existing) && existing != producer)
+                if (_producers.TryGetValue(file.Path, out var existing) && existing.Producer != producer)
                 {
-                    var (first, second) = string.CompareOrdinal(existing, producer) < 0 ? (existing, producer) : (producer, existing);
+                    // The same file passed through two needs (a diamond in the graph) enters once.
+                    if (ReferenceEquals(existing.File, file))
+                    {
+                        return;
+                    }
+
+                    var (first, second) = string.CompareOrdinal(existing.Producer, producer) < 0 ? (existing.Producer, producer) : (producer, existing.Producer);
                     ReportFailure(new BuildError(Name, file.Path, $"step '{Name}' received '{file.Path}' from both '{first}' and '{second}'", null, null));
                     return;
                 }
 
-                _producers[file.Path] = producer;
+                _producers[file.Path] = (producer, file);
             }
 
             Run.AddFileIn();
