@@ -2463,6 +2463,14 @@ Each item has a recommended answer; implementers use it unless the user decides 
     their `.md` extension through `permalink` so that steps can still match them as Markdown.
     `DefaultWorkflowTests.PagesCanPaginateCollections` covers it.
 
+20. **Fluid's `for ... limit:` enumerates the whole array** (benchmark finding 1): a nav include
+    looping over `collections.all limit: 50` costs O(N) per page, O(N²) per build (39.5 s against
+    6.9 s for the 32k synthetic site when the loop indexes instead). Recommended: fix it in Fluid
+    (`limit`/`offset` should stop the enumeration, and `NodeArrayValue` can expose indexed access),
+    as a candidate for phase 5, following the "Fluid changes" rule of `AGENTS.md` (separate Fluid
+    worktree and branch, tests in Fluid, validated in Douze with a locally packed preview; Douze keeps
+    the published preview until the change ships).
+
 ---
 
 ## Appendix A: the Sample through the default workflow
