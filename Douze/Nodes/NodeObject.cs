@@ -72,6 +72,23 @@ internal partial class NodeObject : Node
         return obj;
     }
 
+    /// <summary>
+    ///   Copies the top-level properties into a new <see cref="NodeObject"/>. Nested nodes are shared, not cloned.
+    /// </summary>
+    public NodeObject ShallowClone()
+    {
+        var obj = new NodeObject();
+
+        if (_dictionary == null)
+        {
+            return obj;
+        }
+
+        obj._dictionary = new Dictionary<string, Node?>(_dictionary);
+
+        return obj;
+    }
+
     public void Merge(NodeObject? node, MergeSettings? mergeSettings = null)
     {
         if (node == null)

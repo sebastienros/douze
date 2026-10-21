@@ -35,6 +35,7 @@
     <PackageReference Include="Markdig" />
     <PackageReference Include="Fluid.Core" />
     <PackageReference Include="SharpYaml" />
+    <PackageReference Include="System.IO.Hashing" />
     <PackageReference Include="ZString" />
   </ItemGroup>
 </Project>
