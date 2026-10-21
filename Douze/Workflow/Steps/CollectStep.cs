@@ -25,6 +25,9 @@ internal sealed class CollectStep : Step, IReduceStep
 
     public override GlobSet DefaultMatch => Pages;
 
+    // Collections hold the metadata of the pages, never their content: editing a body does not build them again.
+    public override bool ReadsContent => false;
+
     public ValueTask<StepOutput> ProcessAllAsync(IReadOnlyList<VirtualFile> files, StepContext context, CancellationToken ct)
     {
         var scopes = context.Scopes;

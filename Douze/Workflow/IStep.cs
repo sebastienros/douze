@@ -46,6 +46,12 @@ internal abstract class Step : IAsyncDisposable
     public virtual bool TracksDependencies => true;
 
     /// <summary>
+    /// Whether the step reads the content of the files it consumes. A step that reads only their metadata (and emits
+    /// none of their contents) is not run again when only a content changed: its result keys leave contents out.
+    /// </summary>
+    public virtual bool ReadsContent => true;
+
+    /// <summary>
     /// Called once before the step receives its first unit: parse options, start workers.
     /// </summary>
     public virtual ValueTask InitializeAsync(BuildContext context, CancellationToken ct) => default;

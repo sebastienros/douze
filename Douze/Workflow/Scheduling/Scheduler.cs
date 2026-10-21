@@ -706,7 +706,7 @@ internal sealed class Scheduler
             try
             {
                 var replay = _replay;
-                var resultKey = replay == null ? default : ResultKey.Compute(Node.Definition, inputs, _version);
+                var resultKey = replay == null ? default : ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent);
 
                 if (replay != null && await TryReplayAsync(replay, resultKey, key, inputFiles, inputs, file, ct))
                 {

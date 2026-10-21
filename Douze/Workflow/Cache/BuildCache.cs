@@ -465,7 +465,7 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
         {
             SaveCore(succeeded);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or DouzeException)
         {
             _view.Message(LogLevel.Warning, null, $"cannot save the cache '{_directory}': {e.Message}");
         }
