@@ -5,9 +5,10 @@ using Douze.Nodes;
 namespace Douze.Workflow;
 
 /// <summary>
-/// Site wide values: the data folder ("data") or a step contribution ("step:&lt;name&gt;").
+/// Site wide values contributed by a step ("step:&lt;name&gt;"), such as the data folder or the collections.
 /// </summary>
-// KeySources: Top-level key to the data file that defined it, for dependency tracking.
+// KeySources: Top-level key to the data file that defined it (or the folder, for a key built from a folder of files),
+// for dependency tracking.
 internal sealed record SiteScope(string Source, NodeObject Values, IReadOnlyDictionary<string, string>? KeySources = null)
 {
     private Hash128? _hash;

@@ -14,10 +14,23 @@ During the workflow engine refactor (`docs/workflow-engine-plan.md`), earlier de
 - Package versions are managed centrally in `Directory.Packages.props`, shared MSBuild properties live in `Common.props`. Keep dependencies on their latest stable versions.
 - Douze ships as a native AOT `dotnet tool` (`douze`). Anything reflection based must keep working under AOT; for instance the `json` Liquid filter relies on `Douze/Liquid/DouzeJsonContext.cs`.
 
+## Architecture
+
+Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the design): a graph of steps that virtual files (path, content, metadata) flow through.
+
+- `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`), `WorkflowSource` (finds the workflow), `ViewSelector`.
+- `Douze/Workflow/`: the engine. `WorkflowGraph` validates a `WorkflowDefinition` and instantiates its steps; `SiteBuilder` runs it with the `Scheduling/Scheduler`, which streams files between steps by shape (`map`, `group`, `reduce`). `DefaultWorkflow` is the workflow of a site without a workflow file.
+- `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write`).
+- `Douze/Liquid/`: the Fluid bridge. `TemplateLoader` parses templates once per content hash and serves includes; `MetadataValue` is the model of every render.
+- `Douze/Progress/` and `Douze/Tracing/`: progress views and trace recording.
+
 ## Conventions
 
-- Builds must be deterministic: documents are processed in parallel, so anything collected across documents must be sorted before it is exposed.
-- Collection items (`collections.all`, `collections.<tag>`) are sorted by date ascending, using front matter `date` if defined, or `page.date` (the file date) otherwise, then by source path (ordinal). This matches Eleventy.
+- Builds must be deterministic: files are processed in parallel, so anything collected across files must be sorted before it is exposed (reduce and group inputs, collections, results).
+- `VirtualFile` is immutable: a step returns new files (`With`, `Derived`) or the same instance. Metadata nodes are shared between files and never mutated once published: shallow clone (`Metadata.With`) and replace.
+- Data is never copied into files. Folder and site data live in scopes, and steps read metadata only through `ScopeSet.TryResolve`, which records what a unit depends on.
+- Data files are keyed by file name: `_data/colors.json` is `colors`. The nearest scope wins: own data, folder data (nearest folder first), site data, then the front matter of layouts.
+- Collection items (`collections.all`, `collections.<tag>`) are sorted by date ascending, using front matter `date` if defined, or `page.date` (the file date) otherwise, then by path (ordinal). This matches Eleventy.
 - Pagination pages (`pagination.pages`, `page.next`, ...) only link pages generated from the same template.
 
 ## Build and test
@@ -40,6 +53,12 @@ Generate the sample site:
 
 ```bash
 dotnet run --project Douze -- -s Sample -o <output folder>
+```
+
+Compare the Sample output with another branch's Douze (lines with `Generated on` are ignored); any difference must be intentional and documented in the change:
+
+```bash
+scripts/compare-sample.sh <base-ref>
 ```
 
 ## Releases

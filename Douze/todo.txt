@@ -1,35 +1,41 @@
-﻿- Results should list which source files can alter its results to the rebuilds can be incremental.
-- The result's content type will drive post-processors (images can be compressed, html can be minified, ...)
+﻿Remaining after the workflow engine plan (docs/workflow-engine-plan.md covers workflow files, command steps, the live
+progress view and timeline, the disk cache, watch mode and the dev server):
+
+- Run Liquid before Markdown by default (plan, open question 3), updating the Sample.
+- Report template errors at the position in the source file, not in the content a previous step produced (front matter
+  removed, Markdown rendered).
 - Shortcodes
-- Configuration
-- Server command
-- Pagination/Collections/Url generation seem to be related and should be computed in the same file processor
-    - collections can be paginated, permalinks can be defined in pagination, collections need the url (permalink)
+- Markdown includes, heading anchors, syntax highlighting
 - Taxonomies? i.e. define multiple named list of tags, "tags" is a taxonomy
-- XML parsing
 - Sitemaps
 - RSS feeds
 - Robots.txt
-- Sass, css, image, js ?
+- Post-processors by content type: minify HTML, CSS and JS, compress and resize images, fingerprint assets
+- Sass
+- Link validation
+- Dates from git history
 - Multi-language
 - Localization
+- Large data files: a Node backed by JsonElement if the benchmark needs it (plan, gap B6)
 
 - Implemented
+    - Workflow of steps (data, frontmatter, parse, markdown, paginate, permalink, collect, liquid, layout, write)
     - File created based on folder and source file name. blog/post-1.md => blog/post-1/index.html
-    - Chained layouts, {{ content | raw }} to render the page
+    - Chained layouts, {{ content }} to render the page
     - Layout, sections, {% capture %} from template, named Templates is other SSGs
+    - {% include %} and {% render %} from the includes folder
     - FrontMatter parsing
-    - Json data source
-    - Yaml data source
+    - Json, Yaml and Xml data sources, keyed by file name
     - Data inheritance per folder
     - Global data in _data
-    - Permalinks, 'permalink' metadata, can use 'slug' filter
-    - Copy files to destination
+    - Permalinks, 'permalink' metadata, can use 'slug' filter, 'permalink: false'
+    - Copy files to destination (every file no step claims)
     - page.date represents the template's UTC last write time
     - Tags and collections
-    - Pagination
+    - Pagination, with a permalink per page
     - Content folder options (defaults to _content) that behaves like it's at the root folder, such that _content/foo.md creates a /foo/index.html
-    - if _content, _includes or _data don't exist, "/" is assumed for these files
+    - if _content or _includes don't exist, "/" is assumed for these files
+    - Build errors with file, line and column; exit code 1
 
 - Build
-    - dotnet publish -c Release --self-contained -r win-x64 -p:PublishReadyToRun=true -p:PublishTrimmed=true -p:PublishSingleFile=true -o ./artifacts/win-x64
+    - dotnet publish Douze -c Release -o tool-out (native AOT)

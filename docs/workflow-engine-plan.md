@@ -139,6 +139,8 @@ internal sealed class VirtualFile
     public string? ContentType { get; }        // null means "derive from the extension" (ContentTypes.FromPath)
     public Provenance Provenance { get; }
     public DateTime? LastWriteTimeUtc { get; } // modification time of the source file this one comes from, kept through With; used for page.date
+    public FPath? SourcePath { get; }          // path of the source file this one comes from, kept through With, null for Derived; for messages only, not in Ref
+    public string EffectiveContentType { get; } // ContentType ?? ContentTypes.FromPath(Path)
 
     public Hash128 ContentHash => Content.Hash;
     public Hash128 MetadataHash => Metadata.Hash;
@@ -253,8 +255,10 @@ after a step publishes them. Steps that need to change a nested object replace i
 
 ```csharp
 internal sealed record SiteScope(string Source, NodeObject Values, IReadOnlyDictionary<string, string>? KeySources = null);
-// Source: "data" for the data folder, or "step:<name>" for a step contribution.
-// KeySources: top-level key -> data file path, used for dependency tracking at whole-file granularity.
+// Source: "step:<name>" of the contributing step (data steps included).
+// KeySources: top-level key -> data file path, used for dependency tracking at whole-file granularity. A key built
+// from a folder of files (_data/pkgs/*.json -> pkgs) maps to the folder path ("/_data/pkgs/"): a replay checks every
+// data file under it.
 
 internal sealed record FolderScope(FPath Directory, NodeObject Values, ImmutableArray<FPath> Sources);
 
@@ -563,7 +567,9 @@ created with `VirtualFile.FromSource` and read lazily.
 with `MergeAsync(readers)`. While merging it tracks paths in a `Dictionary<FPath, string>`
 (path to producing step) under a lock; a path arriving from two different producers raises
 `BuildError` "step 'write' received '/a/index.html' from both 'render' and 'api'" and fails the
-node. Entering files are then split by `Match`: files that match are **consumed** by the step;
+node, unless it is the same `VirtualFile` instance: a file passed through by two needs (a diamond, such
+as `render` needing `permalink` and `collections` in the default workflow, where `collections` passes
+the non-HTML files through) enters once. Entering files are then split by `Match`: files that match are **consumed** by the step;
 files that do not match are **passed through** to the node's output unchanged, as soon as they
 arrive, without waiting for the step.
 
@@ -741,7 +747,7 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     public TemplateLoader(IFileSystem source, IReadOnlyList<FPath> includesFolders, FluidParser parser);
 
     // Parses once per distinct content hash. Used by liquid (page bodies), layout, grouped liquid (with.template) and permalink templates.
-    public ParsedTemplate GetOrParse(Hash128 contentHash, string text, string displayPath);    // throws DouzeException with "<displayPath>(<line>,<col>): <fluid message>" on parse errors
+    public ParsedTemplate GetOrParse(Hash128 contentHash, string text, string displayPath);    // throws TemplateParseException(displayPath, line, column, reason): "<displayPath>(<line>,<col>): <reason>"; BuildError maps it to a location
     public ValueTask<LoadedTemplate?> LoadAsync(FPath relativePath, DependencyTracker deps, CancellationToken ct);   // searches the includes folders in order; reads the file, strips front matter, caches by path+hash; records the dependency
     public void Invalidate(FPath sourcePath);   // watch mode
 
@@ -895,6 +901,8 @@ Options:
       --no-cache                 ignore and do not write the disk cache (phase 5)
       --cache-dir <dir>          cache location (default: <source>/.douze)
       --port <n>                 dev server port (serve, default 8080)
+  -h, --help                     show the help
+      --version                  show the version
 ```
 
 `-c`, `-d` and `-i` are removed: the folders come from `douze.yml` (`site:` section, phase 2) or
@@ -915,7 +923,7 @@ contributes scopes.
   -> `pkgs["Aspire.Hosting"]`. Two files mapping to the same key is an error
   ("data key 'colors' is defined by both '/_data/colors.json' and '/_data/colors.yml'"). A file
   whose root is a scalar or an array is stored as is. Keys are recorded in `SiteScope.KeySources`.
-  Contribution: `SiteScope("data", values, keySources)`.
+  Contribution: `SiteScope("step:<name>", values, keySources)`.
 - `folder`: files are sorted by path and each one's top-level keys are merged into the
   `FolderScope` of its directory (later files override earlier keys, which is today's behavior
   made deterministic). Contribution: `Folders`.
@@ -925,8 +933,11 @@ contributes scopes.
 **`frontmatter`** (map, default match: `**/*.md`, `**/*.html`, `**/*.liquid`). Parses the YAML front
 matter with `FrontMatter.Parse` (today's `FrontMatterHelper`), merges it into Own (arrays replaced,
 as today), strips the header from the content, sets `page.date` to `file.LastWriteTimeUtc` when it
-is set (the date of the source file, kept through `With`), and sets `ContentType` by extension. Non-text files are not matched by
-default. Options: none.
+is set (the date of the source file, kept through `With`), before merging the front matter (so a
+front matter `page` object keeps `date`). `ContentType` stays null (derived from the extension).
+The merge never changes a node the file shares: nested objects are merged into shallow clones. A
+file without front matter keeps its content instance. Non-text files are not matched by default and
+pass through when matched. Options: none.
 
 **`parse`** (map, default match: `**/*.json`, `**/*.yml`, `**/*.yaml`, `**/*.xml`). Parses the whole
 content into Own under `with.as` (default `data`), keeps the content. Used by data-driven workflows
@@ -934,8 +945,9 @@ such as the aspire.dev API pages (one JSON file becomes the model of a template)
 
 **`markdown`** (map, default match: `**/*.md`). Renders with a `MarkdownPipeline` built once in the
 constructor from `with.extensions` (`none` default, which is today's bare pipeline; `advanced` maps
-to `UseAdvancedExtensions()`; a list maps to the Markdig extension names). Output: content type
-`text/html`, path extension changed to `.html` (`post1.md` -> `post1.html`). Changing the extension
+to `UseAdvancedExtensions()`; a list maps to the Markdig extension names through
+`MarkdownPipelineBuilder.Configure`). Output: path extension changed to `.html` (`post1.md` ->
+`post1.html`), so the derived content type is `text/html`. Changing the extension
 here, rather than in `permalink` as today, is what lets later steps match on `**/*.html`.
 
 **`paginate`** (map 1 to n, default match: `**/*.html`). Reproduces `PaginationProcessor` on top of
@@ -945,16 +957,26 @@ shallow clone + `pagination` (`items`, `pageNumber`, `pages`, `page.next/previou
 alias. New in this step (gap B2/A13): each page's `permalink` is resolved **now**, with the page's
 `pagination` and alias in scope, through `PermalinkResolver.ResolveAsync`, and stored as a concrete
 `permalink` string in Own. When the file has no `permalink`, the resolved value is today's
-`GeneratePagedPath` (`/products/index.html`, `/products/1/index.html`). All page hrefs are stored
-in `pagination.hrefs` (array) so that templates can link pages. Pages are linked through shared
-`pagination` objects exactly as today. Files without `pagination` pass through.
+`GeneratePagedPath` (`/products/index.html`, `/products/1/index.html`); more generally, when every
+page resolves to the same path (no `permalink`, or one that does not depend on the page), pages get
+paged paths of that path. Each page file gets its resolved path right away. All page hrefs are stored
+in `pagination.hrefs` (array) so that templates can link pages. `pagination.pages` and
+`pagination.page.next/previous/first/last` are page summaries (`items`, `pageNumber`, `href`) shared
+by every page: linking the full pagination objects as before would form cycles that `Metadata.Hash`
+cannot follow. `pagination.data` may be a dotted path (`collections.post`): the first segment
+resolves through the scopes. `with.root` (default: the content folder) as for `permalink`. Files
+without `pagination` pass through.
 
-**`permalink`** (map, default match: `**/*.html`). Computes the output path with
-`PermalinkResolver.ResolveAsync(file, scopes)`: renders the `permalink` template (parsed once per
-distinct template string through `TemplateLoader.GetOrParse`), applies today's rules (no extension
-means a folder with `index.html`; `index.*` stays in place; otherwise `name/index.html`), strips
-`with.root` (default: the content folder) from the front, sets Own `url` to the result, and returns
+**`permalink`** (map, default match: all files). Computes the output path with
+`PermalinkResolver.ResolveAsync(file, metadata, context, root)`: renders the `permalink` template
+(resolved through the scopes, parsed once per distinct template string through
+`TemplateLoader.GetOrParse`), applies today's rules (no extension means a folder with `index.html`;
+without `permalink`, `index.html` stays in place and other `.html` files become `name/index.html`,
+and files that are not HTML keep their path), strips `with.root` (default: the content folder) from
+the front, sets Own `url` to the result (an absolute path, `/blog/post/index.html`), and returns
 `file.With(path: result)`. `permalink: false` drops the file (returns `FileList.None`, gap A17).
+Matching every file is what removes the content folder from the paths of images and other
+passthrough files.
 
 `PermalinkResolver` (`Douze/Workflow/Steps/PermalinkResolver.cs`) is shared by `paginate` and
 `permalink` so both produce identical paths.
@@ -962,7 +984,9 @@ means a folder with `index.html`; `index.*` stays in place; otherwise `name/inde
 **`collect`** (reduce, default match: `**/*.html`). Builds `collections.all` and `collections.<tag>`
 from the sorted input: each item is `NodeObject { ["data"] = new NodeValue<Metadata>(file.Metadata) }`,
 items are sorted by date (front matter `date`, else `page.date`, resolved through scopes), then by
-source path (ordinal), exactly as today. Emits **no files** and contributes
+path (ordinal; the path entering the step, the output path in the default workflow), exactly as today.
+`tags` resolve through the scopes too (a folder can tag its pages), and a tag listed twice adds the
+file once. Emits **no files** and contributes
 `SiteScope("step:<name>", { ["collections"] = collectionsObject })`. The `collections` hash is the
 hash of the sorted item refs.
 
@@ -976,9 +1000,11 @@ hash of the sorted item refs.
 - With `with.template: <includes-relative path>`: the template is loaded through
   `TemplateLoader.LoadAsync` and rendered once per unit. In map mode the unit is a file, exposed as
   `file` (`path`, `name`, `dir`, `ext`, `content`, `data`); in group mode the unit is a group,
-  exposed as `group` (`key`, `files`). The output path is `with.permalink` (required, a Liquid
-  template rendered with the same model, then the permalink rules), the content type comes from the
-  resulting extension. Output Own = `{ url }` plus `with.data` entries if any.
+  exposed as `group` (`key`, `files`). The model of the render resolves other names through the
+  scopes (site data), with the directory of the (first) file. The output path is `with.permalink`
+  (required, a Liquid template rendered with the same model; no extension means a folder with
+  `index.html`), the content type comes from the resulting extension. Output Own = `{ url }` plus
+  `with.data` entries if any (a mapping). `group-by` is only supported with `with.template`.
 - `with.encode: html | none` (default `html`) selects the encoder.
 
 **`layout`** (map, default match: `**/*.html`). Resolves `layout` through scopes (so a global default
@@ -986,15 +1012,16 @@ in the data folder works, as today). Loads the layout through `TemplateLoader.Lo
 `with.includes` (default: the includes folder), renders it with
 `new MetadataValue(file.Metadata, fallback: layout.FrontMatter)` and `content` set in the context,
 chains to the layout's own `layout` front matter key, and returns the final HTML. Precedence is
-own, folder, site, then layout front matter, which is today's effective order. Missing layout:
-`BuildError` "layout 'x.html' not found in '/_includes/' (used by '/index.md')". A layout chain
-longer than 32 is an error.
+own, folder, site, then layout front matter (the innermost layout's first), which is today's
+effective order. `content` is set unencoded. Missing layout: `BuildError` "layout 'x.html' not found
+in '/_includes/' (used by '/index.md')", where the source path comes from `VirtualFile.SourcePath`. A
+layout chain longer than 32 is an error ("layout chain is longer than 32: a.html -> b.html -> ...").
 
 **`write`** (map, default match: all). Creates the directory, writes the content to the output file
 system, and passes the file through so that later steps (`needs: write`) can run. Duplicate output
-paths are detected with a `ConcurrentDictionary<FPath, VirtualFile>` on the step instance; the
-error lists both provenance chains ("output '/a/index.html' is produced by both '/_content/a.md'
-and '/_content/a.html'"). In watch mode (phase 6) it skips files whose content hash equals the last
+paths are detected with a `ConcurrentDictionary<FPath, VirtualFile>` on the step instance (cleared in
+`InitializeAsync`); the error names both source paths in ordinal order ("output '/a/index.html' is
+produced by both '/_content/a.html' and '/_content/a.md'"), or the producing step for a derived file. In watch mode (phase 6) it skips files whose content hash equals the last
 written hash and deletes files that disappeared.
 
 Files that no step claims (css, js, images) flow from `frontmatter` (not matched, passed through)
@@ -1191,8 +1218,11 @@ Graph rules:
 
 `DefaultWorkflow.Create(SiteOptions)` produces the equivalent of the following, with `_content`,
 `_data` and `_includes` replaced by the detected folders. When the content folder is `/`, the
-`inputs` of `pages` also exclude the data and includes folders, `douze.yml`, and the output folder.
-This is what `douze build --print-workflow` prints for a site with no `douze.yml`.
+`inputs` of `pages` and `folder-data` also exclude the data and includes folders (when they are not
+`/`), `douze.yml`, and the output folder (when it is inside the source), and `folder-data` and
+`permalink` have no `root`. When there is no data folder (`/`), `site-data` is omitted: data files at
+the root are the folder data of `/`, which applies to every file. This is what `douze build
+--print-workflow` prints for a site with no `douze.yml` (`DefaultWorkflowTests` checks both cases).
 
 ```yaml
 steps:
@@ -1757,6 +1787,41 @@ new engine; the three Sample data adaptations are part of the change), `dotnet r
 prints one line per step and a summary, exit code 1 with a `BuildError` line when a layout is
 missing (manual check documented in the PR), and `git grep -l "IFileProcessor\|IDocument\|IncludeRule"` returns nothing.
 
+**As implemented** (later phases build on these):
+- Sample output differences, intentional (everything else is identical, and the three data adaptations change
+  nothing on their own):
+  - Folder data wins over site data (section 2.3; the processor pipeline merged the site data first and never
+    replaced a key, so the outermost data won). The articles now use `articles.html`, chained to `layout.html`, as
+    `articles/articles.yml` says (Appendix A).
+  - `url` is an absolute path: `/articles/article1/index.html` instead of `articles/article1/index.html` (a relative
+    link that only worked from the root, and was absolute already when the content folder was `/`).
+  - Passthrough files lose the content folder: the images are written to `/posts/images/`, not
+    `/_content/posts/images/`. This needs `permalink` to match every file (2.11).
+- The scheduler lets the same file instance reach a node through two needs (2.6): the default workflow's
+  `render` needs `permalink` and `collections`, and `collections` passes the files it does not match through, so
+  without this every image arrived twice.
+- `VirtualFile.SourcePath` (messages), `VirtualFile.EffectiveContentType` and `ContentTypes.FromPath` are added;
+  no step sets `ContentType` in the default workflow.
+- `TemplateLoader.GetOrParse` throws `TemplateParseException` (path, line, column, reason; the reason is the first
+  line of Fluid's message without the position it repeats). `BuildError.FromException` turns it into a location
+  when the template is the file itself. `TemplateLoader.ParsedCount` exists for tests.
+- `StepContext.CreateTemplateContext(model, file, ct)` sets the ambient values of 2.8 for every step render.
+- `Douze/Workflow/Steps/StepPaths.cs` normalizes folder options (`_content` -> `/_content/`) and strips roots.
+- Data steps contribute `SiteScope("step:<name>")`, like every other step.
+- `paginate` page summaries, paged paths, `with.root` and dotted `pagination.data`; `permalink` matching every
+  file; `liquid` `with.data` and `with.encode`; layout front matter layering: see 2.11.
+- CLI: `-h`/`--help` and `--version` are added; `--print-workflow` works already (it prints
+  `WorkflowGraph.ToYaml()`, whose padding now matches 4.6), so phase 2 only replaces `WorkflowSource`. `--trace`
+  and `--timeline` are accepted and print a warning until phase 4; `--no-cache` and `--cache-dir` are accepted.
+  Unknown options are an error (exit code 2). `--keep-going` with `--fail-fast`, or `--quiet` with `--verbose`,
+  is an error.
+- `FrontMatter.Parse(string)` returns the values and the content; `FrontMatter.Split` keeps today's algorithm,
+  except that a file ending right after the closing `---` no longer throws.
+- `YamlHelper.Parse` returns null for an empty document (an empty data file).
+- `DouzeVersion` is not empty on the native AOT publish (`douze --version` prints `1.0.0-beta-0`).
+- `NodeValuesTests.DateTimeRendersLikeTheProcessorPipeline` keeps the processor pipeline's renderings as literals.
+- `IncludeRuleTests` is deleted: `GlobTests` (phase 1a) covers its cases with standard semantics.
+
 ### Phase 2: YAML workflow loading (Medium)
 
 **Goal.** `douze.yml` with `site` and `steps`, validation with file and line, `--print-workflow`.
@@ -2092,9 +2157,9 @@ Each item has a recommended answer; implementers use it unless the user decides 
 - `markdown` renders the `.md` files to `.html`; `api.html` passes through.
 - `paginate` expands `products.html` into 4 pages whose `permalink` values are
   `/products/index.html`, `/products/1/index.html`, ... ; everything else passes through.
-- `permalink` computes paths: `index.html`, `articles/index.html`, `articles/article1/index.html`,
-  `articles/article2/index.html`, `posts/2020/01/01/my-awesome-title/index.html` (from the fixed
-  modification time of the comparison script), `posts/api.json`, the product pages, and strips
+- `permalink` computes paths: `/index.html`, `/articles/index.html`, `/articles/article1/index.html`,
+  `/articles/article2/index.html`, `/posts/2020/01/01/my-awesome-title/index.html` (from the fixed
+  modification time of the comparison script), `/posts/api.json`, the product pages, and strips
   `/_content/`. Images keep their path minus `/_content/`.
 - `collections` builds `all` and `article` (two articles, sorted by date then path) and emits no
   files.
