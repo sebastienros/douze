@@ -3,5 +3,5 @@ layout:
 permalink: "posts/api.json"
 ---
 {
-    "posts": {{ 'hello' | split | json | raw }}
+    "posts": {{ 'hello' | split: '' | json | raw }}
 }

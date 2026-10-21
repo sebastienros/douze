@@ -10,7 +10,7 @@ internal static class SlugFilter
 {
     public static ValueTask<FluidValue> Slugify(FluidValue input, FilterArguments arguments, TemplateContext context)
     {
-        var text = input.ToStringValue();
+        var text = input.ToStringValue(context);
 
         if (string.IsNullOrEmpty(text))
         {
@@ -75,6 +75,6 @@ internal static class SlugFilter
 
         slug = slug.Trim('-', '_', '.');
 
-        return new StringValue(slug);
+        return StringValue.Create(slug);
     }
 }

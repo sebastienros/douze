@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Global Package References -->
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.402" PrivateAssets="all" />
+    <!-- Douze -->
+    <PackageVersion Include="Fluid.Core" Version="3.0.0-preview-776" />
+    <PackageVersion Include="Markdig" Version="1.4.2" />
+    <PackageVersion Include="SharpYaml" Version="3.16.0" />
+    <PackageVersion Include="ZString" Version="2.6.0" />
+    <!-- Testing -->
+    <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.2" />
+  </ItemGroup>
+</Project>

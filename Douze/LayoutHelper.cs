@@ -85,7 +85,7 @@ internal static class LayoutHelper
 
         var context = new TemplateContext(localData, options.TemplateOptions);
 
-        context.SetValue("content", new StringValue(content, false));
+        context.SetValue("content", StringValue.Create(content, false));
 
         var html = await cachedLayout.Template.RenderAsync(context, HtmlEncoder.Default);
 

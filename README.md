@@ -1,6 +1,12 @@
 # douze
 Stupidly simple, blazing fast static site generator
 
+# installation
+
+```
+dotnet tool install -g douze --prerelease
+```
+
 # usage
 
 Usage: douze [options]

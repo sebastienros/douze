@@ -25,12 +25,13 @@ internal sealed class PaginationProcessor : IFileProcessor
     public Task<IEnumerable<IResult>> ProcessFileAsync(IEnumerable<IDocument> documents, Options options)
     {
         var result = new ConcurrentBag<IResult>();
-        var pages = new ConcurrentBag<NodeObject>();
+        var pages = new ConcurrentBag<(FPath Source, NodeObject Pagination)>();
 
         Parallel.ForEach(documents, new ParallelOptions { MaxDegreeOfParallelism = options.MaxDegreeOfParallelism }, (document, cancellationToken) =>
         {
             if (!Match(document.Path))
             {
+                result.Add(new DocumentsResult(document));
                 return;
             }
 
@@ -81,7 +82,7 @@ internal sealed class PaginationProcessor : IFileProcessor
                         ["pageNumber"] = pageNumber,
                     };
 
-                    pages.Add(pagination);
+                    pages.Add((document.Path, pagination));
 
                     var path = GeneratePagedPath(document.Path, pageNumber);
 
@@ -113,7 +114,7 @@ internal sealed class PaginationProcessor : IFileProcessor
                         ["pageNumber"] = pageNumber,
                     };
 
-                    pages.Add(pagination);
+                    pages.Add((document.Path, pagination));
 
                     var path = GeneratePagedPath(document.Path, pageNumber);
 
@@ -134,21 +135,24 @@ internal sealed class PaginationProcessor : IFileProcessor
             }
         });
 
-        var orderedPages = pages.OrderBy(x => x["pageNumber"]?.GetValue<int>()).ToArray();
-        var allPages = new NodeArray(orderedPages);
-
-        for (var i = 0; i < allPages.Count; i++)
+        // Link the pages of each paginated document together
+        foreach (var documentPages in pages.GroupBy(x => x.Source))
         {
-            var page = allPages[i]!;
+            var allPages = new NodeArray(documentPages.Select(x => x.Pagination).OrderBy(x => x["pageNumber"]?.GetValue<int>()).ToArray());
 
-            page["pages"] = allPages;
-            page["page"] = new NodeObject
+            for (var i = 0; i < allPages.Count; i++)
             {
-                ["next"] = i < allPages.Count - 1 ? allPages[i + 1] : null,
-                ["previous"] = i > 0 ? allPages[i - 1] : null,
-                ["first"] = allPages[0],
-                ["last"] = allPages[allPages.Count - 1],
-            };
+                var page = allPages[i]!;
+
+                page["pages"] = allPages;
+                page["page"] = new NodeObject
+                {
+                    ["next"] = i < allPages.Count - 1 ? allPages[i + 1] : null,
+                    ["previous"] = i > 0 ? allPages[i - 1] : null,
+                    ["first"] = allPages[0],
+                    ["last"] = allPages[allPages.Count - 1],
+                };
+            }
         }
 
         return Task.FromResult<IEnumerable<IResult>>(result);

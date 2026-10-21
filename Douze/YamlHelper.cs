@@ -23,7 +23,7 @@ internal sealed class YamlHelper
     /// </summary>
     /// <param name="node"></param>
     /// <returns></returns>
-    private static Node? Convert(YamlNode node)
+    private static Node? Convert(YamlNode? node)
     {
         if (node is YamlMapping yamlMapping)
         {

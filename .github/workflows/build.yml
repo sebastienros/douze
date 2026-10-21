@@ -1,30 +1,41 @@
 name: Build
 
 on:
-
   push:
     branches: [ main ]
     paths-ignore:
     - 'doc/**'
-    - '*.md'
+    - 'README.md'
 
 jobs:
   build:
 
+    # Don't run on forks
+    if: github.repository == 'sebastienros/douze'
     runs-on: ubuntu-latest
     env:
         DOTNET_NOLOGO: true
         DOTNET_CLI_TELEMETRY_OPTOUT: 1
 
     steps:
-    - name: Checkout source code
-      uses: actions/checkout@v2
-
-    - name: Setup dotnet 6.0
-      uses: actions/setup-dotnet@v1
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
       with:
-        dotnet-version: 6.0.x
-        include-prerelease: true
+        global-json-file: global.json
 
-    - name: Build
-      run: dotnet build --configuration Release
+    - name: Test
+      run: dotnet test -c Release
+
+    # Preview packages are framework dependent: native AOT packages are only produced when publishing a release.
+    - name: Pack preview packages
+      run: dotnet pack Douze --output artifacts --configuration Release --property:PackTool=true --property:PublishAot=false --property:ToolPackageRuntimeIdentifiers= --property:VersionSuffix=preview-$GITHUB_RUN_NUMBER --property:ContinuousIntegrationBuild=True
+
+    - name: Push preview packages to Feedz
+      shell: bash
+      env:
+        FEEDZ_IO_API_KEY: ${{ secrets.FEEDZ_IO_API_KEY }}
+      run: |
+        set -euo pipefail
+        for package in artifacts/*.nupkg; do
+          dotnet nuget push "$package" --api-key "$FEEDZ_IO_API_KEY" --source https://f.feedz.io/sebastienros/douze/nuget/index.json --skip-duplicate
+        done

@@ -48,10 +48,6 @@ public readonly struct FPath : IEquatable<FPath>, IComparable<FPath>
 
     public static FPath Combine(FPath path1, FPath path2)
     {
-        ArgumentNullException.ThrowIfNull(nameof(path1));
-
-        ArgumentNullException.ThrowIfNull(nameof(path2));
-
         if (path1.IsEmpty && path2.IsEmpty)
         {
             return Empty;
@@ -175,7 +171,7 @@ public readonly struct FPath : IEquatable<FPath>, IComparable<FPath>
 
     private static string Normalize(string path)
     {
-        ArgumentNullException.ThrowIfNull(nameof(path));
+        ArgumentNullException.ThrowIfNull(path);
 
         if (path == "/")
         {

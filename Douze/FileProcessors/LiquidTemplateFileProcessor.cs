@@ -37,11 +37,9 @@ internal sealed class LiquidTemplateFileProcessor : IFileProcessor
             var context = new TemplateContext(document.Data, options.TemplateOptions);
 
             // Copy the data with locally created variables for captures
-            var captures = new Dictionary<string, FluidValue>();
-
-            context.Captured = (identifier, result) =>
+            context.Captured = (identifier, result, context) =>
             {
-                document.Data.Add(identifier, result);
+                document.Data.Add(identifier, result.ToStringValue(context));
                 return ValueTask.FromResult(result);
             };
 

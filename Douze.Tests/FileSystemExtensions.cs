@@ -1,7 +1,7 @@
 ﻿using System.IO;
 using System.Threading.Tasks;
 using Douze.FileSystems;
-using SharpYaml.Serialization;
+using SharpYaml;
 
 namespace Douze.Tests;
 
@@ -18,7 +18,7 @@ internal static class FileSystemExtensions
 
         if (data != null)
         {
-            await sw.WriteAsync($"---\n{new Serializer().Serialize(data)}---\n");
+            await sw.WriteAsync($"---\n{YamlSerializer.Serialize(data)}---\n");
         }
 
         await sw.WriteAsync(content);

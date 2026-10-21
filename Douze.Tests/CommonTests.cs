@@ -142,7 +142,7 @@ public class CommonTests
 
         await SiteHelper.BuildSiteAsync(_options);
 
-        Assert.True((await _outputFs.GetFileEntryAsync("posts/api.json")).Exists);
+        Assert.True((await _outputFs.GetFileEntryAsync("/posts/api.json")).Exists);
         Assert.Equal("{ \"error\": false }", await _outputFs.ReadAllTextAsync("/posts/api.json"));
     }
 
@@ -163,6 +163,54 @@ public class CommonTests
         Assert.Equal(4, _options.SiteData["collections"]?["article"]?.AsArray()?.Count);
         Assert.Equal(2, _options.SiteData["collections"]?["music"]?.AsArray()?.Count);
         Assert.Equal(2, _options.SiteData["collections"]?["science"]?.AsArray()?.Count);
+    }
+
+    [Fact]
+    public async Task CollectionsShouldBeSortedByDate()
+    {
+        // Created in reverse order of their dates
+        for (var i = 30; i > 0; i--)
+        {
+            await _sourceFs.CreateTemplateAsync($"/articles/a{i:00}.md", "Hello World", new { tags = "article", title = $"Article {i}", date = $"2020-01-{31 - i:00}" });
+        }
+
+        await SiteHelper.BuildSiteAsync(_options);
+
+        var titles = _options.SiteData["collections"]?["article"]?.AsArray().Select(x => x?["data"]?["title"]?.GetValue<string>()).ToArray();
+
+        Assert.Equal(Enumerable.Range(1, 30).Reverse().Select(i => $"Article {i}"), titles);
+    }
+
+    [Fact]
+    public async Task CollectionsShouldBeSortedByPathWhenDatesAreEqual()
+    {
+        // Created in reverse order of their paths
+        for (var i = 30; i > 0; i--)
+        {
+            await _sourceFs.CreateTemplateAsync($"/articles/a{i:00}.md", "Hello World", new { tags = "article", title = $"Article {i}", date = "2020-01-01" });
+        }
+
+        await SiteHelper.BuildSiteAsync(_options);
+
+        var titles = _options.SiteData["collections"]?["article"]?.AsArray().Select(x => x?["data"]?["title"]?.GetValue<string>()).ToArray();
+
+        Assert.Equal(Enumerable.Range(1, 30).Select(i => $"Article {i}"), titles);
+    }
+
+    [Fact]
+    public async Task PaginationShouldOnlyLinkPagesOfTheSameDocument()
+    {
+        var template = "{{ pagination.pageNumber }}/{{ pagination.pages.size }}:{{ pagination.items | join: ',' }}";
+
+        await _sourceFs.CreateTemplateAsync("/letters.html", template, new { pagination = new { data = "items", size = 1 }, items = new[] { "a", "b", "c" } });
+        await _sourceFs.CreateTemplateAsync("/digits.html", template, new { pagination = new { data = "items", size = 1 }, items = new[] { "1", "2" } });
+
+        await SiteHelper.BuildSiteAsync(_options);
+
+        Assert.Equal("0/3:a", await _outputFs.ReadAllTextAsync("/letters/index.html"));
+        Assert.Equal("2/3:c", await _outputFs.ReadAllTextAsync("/letters/2/index.html"));
+        Assert.Equal("0/2:1", await _outputFs.ReadAllTextAsync("/digits/index.html"));
+        Assert.Equal("1/2:2", await _outputFs.ReadAllTextAsync("/digits/1/index.html"));
     }
 
     [Fact]

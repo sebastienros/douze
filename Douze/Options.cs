@@ -59,7 +59,7 @@ internal sealed partial class Options
     /// </summary>
     public IFileSystem OutputFileSystem { get; set; } = new MemoryFileSystem();
 
-    public Options(IFileSystem source, IFileSystem output, IEnumerable<string>? dataFolders = null, IEnumerable<string>? contentFolders = null, IEnumerable<string>? includesFolders = null) : this()
+    public Options(IFileSystem source, IFileSystem output, IEnumerable<string>? dataFolders = null, IEnumerable<string>? contentFolders = null, IEnumerable<string>? includesFolders = null)
     {
         ArgumentNullException.ThrowIfNull(source, nameof(source));
         ArgumentNullException.ThrowIfNull(output, nameof(output));

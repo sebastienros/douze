@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/Files/">
+    <File Path=".editorconfig" />
+    <File Path=".github/workflows/build.yml" />
+    <File Path=".github/workflows/pr.yml" />
+    <File Path=".github/workflows/publish.yml" />
+    <File Path="AGENTS.md" />
+    <File Path="Common.props" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="NuGet.config" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="Douze.Tests/Douze.Tests.csproj" />
+  <Project Path="Douze/Douze.csproj" />
+</Solution>
