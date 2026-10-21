@@ -106,7 +106,7 @@ Douze/
     Yaml/WorkflowLoader.cs  YamlSource.cs  WorkflowSchema.cs
     Cache/BuildCache.cs  CacheIndex.cs  ResultKey.cs  (phase 5)
     Watch/FileWatcher.cs  IncrementalBuilder.cs  DevServer.cs  LiveReload.cs  (phase 6)
-  Console/IProgressView.cs  PlainProgressView.cs  SilentProgressView.cs  SpectreProgressView.cs
+  Progress/IProgressView.cs  PlainProgressView.cs  SilentProgressView.cs  SpectreProgressView.cs
   Tracing/ITraceRecorder.cs  TraceRecorder.cs  TraceSession.cs  ChromeTraceWriter.cs
           TimelineHtmlWriter.cs  timeline.html (embedded resource)
 ```
@@ -748,7 +748,7 @@ by thousands of paginated pages (gap B5). The cache is a `ConcurrentDictionary<H
 Both interfaces exist from phase 1 with simple implementations so the scheduler is instrumented
 from the start. Phase 4 adds the Spectre view and the file writers.
 
-`Douze/Console/IProgressView.cs`
+`Douze/Progress/IProgressView.cs` (namespace `Douze.Progress`: a `Douze.Console` namespace would hide `System.Console` everywhere under `Douze`)
 
 ```csharp
 internal enum LogLevel { Debug, Info, Warning, Error }
@@ -1548,7 +1548,8 @@ Acceptance criteria that apply to every phase, in addition to the phase's own:
 
 1. `dotnet test` passes (xUnit v3 on Microsoft.Testing.Platform).
 2. The Sample output is unchanged: `scripts/compare-sample.sh` (created in phase 1a) reports
-   `Sample output identical`.
+   `Sample output identical`, or every difference is intentional, listed in the PR with its reason, and
+   the Sample sources are adapted when that makes sense. An unexplained difference is a bug.
 3. The native AOT publish and smoke test from `AGENTS.md` pass:
    `dotnet publish Douze -c Release -o tool-out && ./tool-out/douze -s Sample -o site-out`, and
    the publish log has no new IL warnings beyond the ones already suppressed in `Douze.csproj`.
@@ -1567,7 +1568,9 @@ comment. Only lines containing `Generated on` are ignored:
 set -euo pipefail
 base=${1:-main}
 tmp=$(mktemp -d)
-git worktree add -q "$tmp/base" "$base"
+# --detach: the base branch may be checked out in another worktree.
+git worktree add -q --detach "$tmp/base" "$base"
+trap 'git worktree remove --force "$tmp/base" 2>/dev/null || true' EXIT
 cp -R "$tmp/base/Sample" "$tmp/base-sample"
 cp -R Sample "$tmp/head-sample"
 find "$tmp/base-sample" "$tmp/head-sample" -exec touch -t 202001010000 {} +
@@ -1615,7 +1618,7 @@ so the phase is mergeable on its own.
 - `Douze/Liquid/TemplateLoader.cs`, `MetadataValue.cs`, `NodeValues.cs`, `AmbientKeys.cs`,
   `LiquidOptions.cs` (the group key resolver and `MetadataValue` need them; `Options.Liquid.cs`
   stays until 1b).
-- `Douze/Console/`: `IProgressView.cs`, `PlainProgressView.cs`, `SilentProgressView.cs`.
+- `Douze/Progress/`: `IProgressView.cs`, `PlainProgressView.cs`, `SilentProgressView.cs`.
 - `Douze/Tracing/`: `ITraceRecorder.cs`, `TraceRecorder.cs`, `NullTraceRecorder.cs`,
   `TraceSession.cs`.
 - `Douze/Nodes/NodeObject.cs`: add `ShallowClone()`.
@@ -1624,7 +1627,7 @@ so the phase is mergeable on its own.
 - Tests in `Douze.Tests/Workflow/`: `FakeSteps.cs` (configurable map, group and reduce steps with
   gates, delays and failures), `GlobTests.cs`, `Hash128Tests.cs`, `MetadataTests.cs`,
   `ScopeSetTests.cs`, `WorkflowGraphTests.cs`, `SchedulerTests.cs`, `FileContentTests.cs`;
-  `Douze.Tests/Console/PlainProgressViewTests.cs`; `Douze.Tests/Tracing/TraceRecorderTests.cs`;
+  `Douze.Tests/Progress/PlainProgressViewTests.cs`; `Douze.Tests/Tracing/TraceRecorderTests.cs`;
   `Douze.Tests/Liquid/MetadataValueTests.cs`, `NodeValuesTests.cs`.
 
 **Tests to add** (names are the test methods; each is one `[Fact]` unless noted):
@@ -1659,6 +1662,32 @@ so the phase is mergeable on its own.
 **Acceptance.** The shared criteria (the Sample still builds through the old pipeline), all new
 tests pass, `SiteBuilder.BuildAsync` runs a graph of fake steps end to end from a
 `MemoryFileSystem` source to a `MemoryFileSystem` output through a fake `write` step.
+
+**As implemented** (later phases build on these; they refine the signatures above):
+- `WorkflowGraph.Build(WorkflowDefinition definition, Func<StepDefinition, Step>? factory = null)`: the factory
+  defaults to `StepFactory.Create`; tests inject fake steps. `WorkflowGraph.Warnings` holds the "no 'write' step"
+  warning, which `SiteBuilder` forwards to the view. `ToYaml` is a first version (flow mappings in definition
+  order); phase 2 may rework it with `WorkflowSchema`.
+- `StepRun` also exposes `Scopes` (what the step saw), `FilesPassedThrough` and `UnitsFinal` (the `done/?` case).
+  `BuildResult` has a `this[string step]` indexer. `DependencyTracker.Add(DependencySet)` replays the reads of
+  group keys into each group's tracker.
+- Completion order: a node makes its run final (state, end time, counters), waits for the nodes it needs, calls
+  `IProgressView.StepCompleted`, and only then completes its channel. For every edge A -> B, A is reported
+  before B, whatever the states. A node that stops early is `Skipped` when a need failed or was skipped,
+  `Cancelled` otherwise.
+- A node waits for the contributions of its ancestors (only reduce nodes delay them), not for its needs'
+  channels, so chains of map steps stream.
+- On a miss, `ScopeSet.TryResolve` records every site scope and the consulted folder scopes' data files.
+- `Douze/Workflow/CanonicalJson.cs` writes nodes as canonical JSON (`Utf8JsonWriter`, no reflection) for
+  `Metadata.Hash`, scope hashes and `StepDefinition.ConfigHash`; `NodeValue<Metadata>` is written as its hash.
+- `BuildContext.Cache` is added in phase 5 with `BuildCache`. `BuildContext.MaxDegreeOfParallelism` is the
+  normalized value.
+- `Glob.Parse` throws `GlobFormatException : FormatException` with a `Position`; its message is the reason only
+  ("unterminated character class"), as the 4.5 messages expect.
+- `FileContent.IsText` for lazy source files is decided by extension (`FileContent.IsTextPath`).
+- The duplicate path error names both producers in ordinal order, so the message is deterministic.
+- Open question 4 is resolved: `NodeValuesTests.DateTimeRendersLikeTheProcessorPipeline` renders the same with
+  both paths, no adjustment needed.
 
 ### Phase 1b: built-in steps, default workflow, CLI, deletion of the old pipeline (Medium, review)
 
@@ -1753,7 +1782,7 @@ documents the protocol with the examples of 5.3.
 
 **Goal.** The live console view, the Chrome trace file, `timeline.html`.
 
-**Owns.** `Douze/Console/SpectreProgressView.cs`, `Douze/Cli/ViewSelector.cs` (real selection),
+**Owns.** `Douze/Progress/SpectreProgressView.cs`, `Douze/Cli/ViewSelector.cs` (real selection),
 `Douze/Tracing/ChromeTraceWriter.cs`, `TimelineHtmlWriter.cs`, `timeline.html`,
 `Douze/Cli/BuildCommand.cs` (write the trace files when requested), `Directory.Packages.props`
 and `Douze/Douze.csproj` (`Spectre.Console`; test project gets `Spectre.Console.Testing`),
