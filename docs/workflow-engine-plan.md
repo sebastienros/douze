@@ -1578,8 +1578,8 @@ yellow for skipped, grey for cancelled.
 ```json
 {"traceEvents":[
   {"name":"build","cat":"build","ph":"X","ts":0,"dur":2143000,"pid":1,"tid":0},
-  {"name":"markdown","cat":"step","ph":"X","ts":12000,"dur":410000,"pid":1,"tid":1,"args":{"files":"312","shape":"map"}},
-  {"name":"og-images","cat":"command","ph":"X","ts":430000,"dur":900000,"pid":1,"tid":3,"args":{"command":"node scripts/og.mjs ..."}}
+  {"name":"markdown","cat":"step","ph":"X","ts":12000,"dur":410000,"pid":1,"tid":1,"args":{"shape":"map","files":"312","state":"succeeded"}},
+  {"name":"og-images","cat":"command","ph":"X","ts":430000,"dur":900000,"pid":1,"tid":3,"args":{"step":"og-images","command":"node scripts/og.mjs ..."}}
 ],"displayTimeUnit":"ms","otherData":{"douze":"1.0.0-beta","site":"/abs/src"}}
 ```
 
@@ -1589,7 +1589,11 @@ nanosecond. `tid` is a lane: lanes are assigned greedily so that overlapping spa
 swimlane view in Perfetto and `chrome://tracing`. The build is lane 0, step spans share lanes 1 to n, and
 every other span (units, commands, I/O) the lanes after those, so that units never push a step into a
 far lane; `thread_name` and `thread_sort_index` metadata events name the lanes (`build`, `steps`,
-`units`). `pid` is always 1. Unit spans (with `--trace-units`) use `cat: "unit"`, the file or group as
+`units`). `pid` is always 1. A step span runs from the step's start (its first file or unit, 2.6) to
+its final state, and carries `shape`, `files` (consumed) and `state` (`succeeded`, `failed`, `skipped`
+or `cancelled`); the scheduler sets `state` before the span ends. Command spans (a process of a
+`filter` or `batch` step, the start of a worker) carry `step`, like unit spans, so the timeline packs
+them under their step. Unit spans (with `--trace-units`) use `cat: "unit"`, the file or group as
 `name` and the step as `args.step`. The writer uses `Utf8JsonWriter` directly (no serializer, nothing for
 AOT to see), whose default encoder escapes `<` and `>`, so the JSON can sit in a `<script>` element.
 `otherData` has `douze` (the version) and `site` (the source folder). The trace is written even when the

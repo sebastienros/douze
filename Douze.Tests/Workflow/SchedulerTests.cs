@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Douze.FileSystems;
 using Douze.Nodes;
+using Douze.Tracing;
 using Douze.Workflow;
 using Douze.Workflow.Scheduling;
 using Xunit;
@@ -289,6 +290,33 @@ public class SchedulerTests
         Assert.True(broken!.Started.Count < 4, $"the remaining units should be cancelled, {broken.Started.Count} started");
         Assert.False(result.Succeeded);
         Assert.False(result.Cancelled);
+    }
+
+    [Fact]
+    public async Task StepSpansCarryShapeAndState()
+    {
+        var site = await new FakeSite().WithFilesAsync("/a.md", "/b.md");
+        var trace = new TraceRecorder();
+
+        var graph = new FakeWorkflow()
+            .Add("pages", d => new FakeMapStep(d) { Delay = TimeSpan.FromMilliseconds(20) }, inputs: ["**"])
+            .Add("all", d => new FakeReduceStep(d), needs: ["pages"])
+            .Add("broken", d => new FakeMapStep(d) { FailWhen = _ => true }, needs: ["pages"])
+            .Build();
+
+        var result = await site.BuildAsync(graph, trace: trace);
+
+        Assert.False(result.Succeeded);
+
+        var spans = trace.Session.Events.Where(x => x.Category == "step").ToDictionary(x => x.Name, x => x.Args.ToDictionary());
+        Assert.Equal(("map", "succeeded", "2"), (spans["pages"]["shape"], spans["pages"]["state"], spans["pages"]["files"]));
+        Assert.Equal(("reduce", "succeeded"), (spans["all"]["shape"], spans["all"]["state"]));
+        Assert.Equal(("map", "failed"), (spans["broken"]["shape"], spans["broken"]["state"]));
+
+        // A step starts with its first file: 'all' waits for the first page, which takes 20 ms.
+        var events = trace.Session.Events.Where(x => x.Category == "step").ToDictionary(x => x.Name);
+        Assert.True(events["all"].StartTicks > events["pages"].StartTicks);
+        Assert.True(result["all"].StartedAt >= result["pages"].StartedAt + TimeSpan.FromMilliseconds(15));
     }
 
     [Fact]

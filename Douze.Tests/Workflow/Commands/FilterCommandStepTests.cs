@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Douze.FileSystems;
 using Douze.Nodes;
 using Douze.Progress;
+using Douze.Tracing;
 using Douze.Workflow;
 using Douze.Workflow.Commands;
 using Xunit;
@@ -30,6 +31,19 @@ public class FilterCommandStepTests : CommandTestBase
         var a = Outputs(run).Single(x => x.Path == "/docs/a.txt");
         Assert.True(a.Content.IsText);
         Assert.Equal("upper", a.Provenance.Step);
+    }
+
+    [Fact]
+    public async Task CommandSpansCarryTheirStep()
+    {
+        await Source.WriteTextFileAsync("/a.txt", "a");
+        var trace = new TraceRecorder();
+
+        var result = await RunAsync(Workflow(Command("upper", Tool("filter-upper"), CommandMode.Filter, inputs: ["**"])), trace: trace);
+
+        Assert.True(result.Succeeded);
+        var span = Assert.Single(trace.Session.Events, x => x.Category == "command");
+        Assert.Contains(new KeyValuePair<string, string>("step", "upper"), span.Args);
     }
 
     [Fact]

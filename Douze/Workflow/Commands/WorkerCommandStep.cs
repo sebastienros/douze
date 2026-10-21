@@ -115,6 +115,7 @@ internal sealed class WorkerCommandStep : CommandStep, IMapStep
     private async Task<WorkerProcess> StartAsync(System.Diagnostics.ProcessStartInfo info, ReadOnlyMemory<byte> hello, int concurrency, CancellationToken ct)
     {
         using var span = Build.Trace.Begin(Name, "command");
+        span.AddArg("step", Name);
         span.AddArg("worker", "start");
 
         var worker = await WorkerProcess.StartAsync(info, hello, concurrency, Definition.Stderr, (level, message) => Build.View.Message(level, Name, message), ct);

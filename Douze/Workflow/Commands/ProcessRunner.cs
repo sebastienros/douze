@@ -173,6 +173,7 @@ internal static class ProcessRunner
         CancellationToken ct)
     {
         using var span = trace.Begin(step, "command");
+        span.AddArg("step", step);
         span.AddArg("command", DisplayCommand(info));
         var stopwatch = Stopwatch.StartNew();
 

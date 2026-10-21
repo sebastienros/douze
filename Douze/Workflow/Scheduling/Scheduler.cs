@@ -229,7 +229,9 @@ internal sealed class Scheduler
             Run.State = GetFinalState(token);
             Run.Seal();
 
+            // The state is final before the span ends: the timeline colors failed steps.
             _span.AddArg("files", Run.FilesConsumed.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            _span.AddArg("state", Run.State.ToString().ToLowerInvariant());
             _span.Dispose();
 
             Context.View.StepCompleted(Run);
@@ -261,6 +263,7 @@ internal sealed class Scheduler
 
                 Run.StartedAt = DateTimeOffset.UtcNow;
                 _span = Context.Trace.Begin(Name, "step");
+                _span.AddArg("shape", Node.Step.EffectiveShape.ToString().ToLowerInvariant());
                 Volatile.Write(ref _started, 1);
             }
 
