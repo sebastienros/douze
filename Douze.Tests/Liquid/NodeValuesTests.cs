@@ -56,4 +56,55 @@ public class NodeValuesTests
 
         Assert.Equal("2 3 0", await RenderAsync("{{ items.size }} {{ map | size }} {{ none | size }}", own));
     }
+
+    [Fact]
+    public async Task ForWithLimitConvertsOnlyTheItemsItRenders()
+    {
+        // Fluid reads arrays implementing IFluidArray by index: a nav loop over 'collections.all limit: 3' must not
+        // convert every item of the collection (benchmark finding 1).
+        var conversions = new int[1];
+        var items = new NodeArray(Enumerable.Range(0, 1000).Select(i => (Node?)new CountingNode(i, conversions)).ToArray());
+        var own = new NodeObject { ["items"] = items };
+
+        Assert.Equal("0,1,2,", await RenderAsync("{% for i in items limit: 3 %}{{ i }},{% endfor %}", own));
+        Assert.Equal(3, conversions[0]);
+
+        conversions[0] = 0;
+        Assert.Equal("10,11,", await RenderAsync("{% for i in items offset: 10 limit: 2 %}{{ i }},{% endfor %}", own));
+        Assert.Equal(2, conversions[0]);
+
+        conversions[0] = 0;
+        Assert.Equal("0 999 5", await RenderAsync("{{ items | first }} {{ items | last }} {{ items | slice: 5 }}", own));
+        Assert.Equal(3, conversions[0]);
+    }
+
+    [Fact]
+    public async Task ArraysEqualFluidArraysWithTheSameItems()
+    {
+        var own = new NodeObject
+        {
+            ["items"] = new NodeArray(NodeValue.Create("a"), NodeValue.Create("b")),
+            ["none"] = new NodeArray(),
+        };
+
+        Assert.Equal("yes yes yes", await RenderAsync("{% assign split = 'a,b' | split: ',' %}{% if items == split %}yes{% endif %} {% if split == items %}yes{% endif %} {% if none == empty %}yes{% endif %}", own));
+    }
+
+    // A node that renders as its number and counts how many times it is converted to a Fluid value.
+    private sealed class CountingNode(int value, int[] conversions) : Node
+    {
+        public override T GetValue<T>() => throw new NotSupportedException();
+
+        public override Node Clone() => this;
+
+        public override bool Equals(Node? other) => ReferenceEquals(this, other);
+
+        public override int GetHashCode() => value;
+
+        public override string ToString()
+        {
+            Interlocked.Increment(ref conversions[0]);
+            return value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+    }
 }

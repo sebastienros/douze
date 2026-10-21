@@ -126,9 +126,11 @@ internal sealed class NodeObjectValue : FluidValue
 }
 
 /// <summary>
-/// A <see cref="NodeArray"/> seen from a template, like Fluid's array value.
+/// A <see cref="NodeArray"/> seen from a template, like Fluid's array value. Items are converted when they are read:
+/// through <see cref="IFluidArray"/>, <c>for ... limit:</c> and the <c>first</c>, <c>last</c> and <c>slice</c> filters
+/// convert only the items they use.
 /// </summary>
-internal sealed class NodeArrayValue : FluidValue
+internal sealed class NodeArrayValue : FluidValue, IFluidArray
 {
     public NodeArrayValue(NodeArray value)
     {
@@ -139,6 +141,10 @@ internal sealed class NodeArrayValue : FluidValue
 
     public override FluidValues Type => FluidValues.Array;
 
+    public int Count => Value.Count;
+
+    public FluidValue this[int index] => NodeValues.ToFluidValue(Value[index]);
+
     public override ValueTask<FluidValue> GetValueAsync(string name, TemplateContext context)
     {
         var count = Value.Count;
@@ -146,8 +152,8 @@ internal sealed class NodeArrayValue : FluidValue
         return name switch
         {
             "size" => new(NumberValue.Create(count)),
-            "first" => new(count > 0 ? NodeValues.ToFluidValue(Value[0]) : NilValue.Instance),
-            "last" => new(count > 0 ? NodeValues.ToFluidValue(Value[count - 1]) : NilValue.Instance),
+            "first" => new(count > 0 ? this[0] : NilValue.Instance),
+            "last" => new(count > 0 ? this[count - 1] : NilValue.Instance),
             _ => new(NilValue.Instance),
         };
     }
@@ -162,7 +168,7 @@ internal sealed class NodeArrayValue : FluidValue
             i += count;
         }
 
-        return new(i >= 0 && i < count ? NodeValues.ToFluidValue(Value[i]) : NilValue.Instance);
+        return new(i >= 0 && i < count ? this[i] : NilValue.Instance);
     }
 
     public override async ValueTask<bool> ContainsAsync(FluidValue value, TemplateContext context)
@@ -188,9 +194,33 @@ internal sealed class NodeArrayValue : FluidValue
         await Task.CompletedTask;
     }
 
+    // Equal to any IFluidArray with equal items, like Fluid's ArrayValue, so that comparisons agree in both directions.
     public override bool Equals(FluidValue other)
     {
-        return other is NodeArrayValue nodeArray && (ReferenceEquals(nodeArray.Value, Value) || nodeArray.Value.Equals(Value));
+        if (other is NodeArrayValue nodeArray && (ReferenceEquals(nodeArray.Value, Value) || nodeArray.Value.Equals(Value)))
+        {
+            return true;
+        }
+
+        if (other is IFluidArray array && other.Type == FluidValues.Array)
+        {
+            if (array.Count != Count)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < Count; i++)
+            {
+                if (!this[i].Equals(array[i] ?? NilValue.Instance))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return (other.IsNil() || other.Type == FluidValues.Empty) && Count == 0;
     }
 
     [Obsolete("Use the TemplateContext overload.")]
@@ -215,5 +245,16 @@ internal sealed class NodeArrayValue : FluidValue
 
     public override bool Equals(object? obj) => obj is FluidValue other && Equals(other);
 
-    public override int GetHashCode() => Value.GetHashCode();
+    // Hashes the items like Fluid's ArrayValue, so that equal arrays of both kinds have equal hashes.
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+
+        for (var i = 0; i < Count; i++)
+        {
+            hash.Add(this[i]);
+        }
+
+        return hash.ToHashCode();
+    }
 }
