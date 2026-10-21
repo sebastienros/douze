@@ -43,7 +43,8 @@ internal sealed class VirtualFile
     public Provenance Provenance { get; }
 
     /// <summary>
-    /// The modification time of a source file, used for <c>page.date</c>. Null for derived files.
+    /// The modification time of the source file this file comes from, used for <c>page.date</c>. Kept through
+    /// <see cref="With"/>; null for files derived from several inputs.
     /// </summary>
     public DateTime? LastWriteTimeUtc { get; }
 
@@ -63,7 +64,8 @@ internal sealed class VirtualFile
             content ?? Content,
             metadata ?? Metadata,
             contentType ?? ContentType,
-            new Provenance(step, [Ref]));
+            new Provenance(step, [Ref]),
+            LastWriteTimeUtc);
     }
 
     /// <summary>
