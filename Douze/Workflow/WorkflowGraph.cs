@@ -1,13 +1,11 @@
-using System.Text;
-using System.Text.RegularExpressions;
-using Douze.Nodes;
+using Douze.Workflow.Yaml;
 
 namespace Douze.Workflow;
 
 /// <summary>
 /// A validated workflow: one step instance per definition, in topological order.
 /// </summary>
-internal sealed partial class WorkflowGraph
+internal sealed class WorkflowGraph
 {
     public const string ReservedName = Provenance.SourceStep;
 
@@ -269,97 +267,9 @@ internal sealed partial class WorkflowGraph
     }
 
     /// <summary>
-    /// The effective workflow as YAML, one flow mapping per step, in definition order.
+    /// The effective workflow as YAML, one flow mapping per step, in definition order (see <see cref="WorkflowSchema.ToYaml"/>).
     /// </summary>
-    public string ToYaml()
-    {
-        var builder = new StringBuilder("steps:\n");
-        var width = _definition.Steps.Length == 0 ? 0 : _definition.Steps.Max(x => x.Name.Length) + 1;
-
-        foreach (var step in _definition.Steps)
-        {
-            var fields = new List<string>();
-
-            AddList(fields, "inputs", step.Inputs);
-            AddList(fields, "needs", step.Needs);
-            AddList(fields, "match", step.Match);
-
-            if (step.Uses != null)
-            {
-                fields.Add($"uses: {Scalar(step.Uses)}");
-            }
-
-            if (step.Run != null)
-            {
-                fields.Add($"run: {Scalar(step.Run)}");
-                fields.Add($"mode: {step.Mode.ToString().ToLowerInvariant()}");
-            }
-
-            if (step.GroupBy != null)
-            {
-                fields.Add($"group-by: {Scalar(step.GroupBy)}");
-            }
-
-            if (step.With.Count > 0)
-            {
-                fields.Add($"with: {FlowNode(step.With)}");
-            }
-
-            AddList(fields, "outputs", step.Outputs);
-            AddList(fields, "sources", step.Sources);
-
-            if (!step.Incremental)
-            {
-                fields.Add("incremental: false");
-            }
-
-            if (step.Version.Length > 0)
-            {
-                fields.Add($"version: {Scalar(step.Version)}");
-            }
-
-            builder.Append("  ").Append((step.Name + ":").PadRight(width)).Append(" { ").AppendJoin(", ", fields).Append(" }\n");
-        }
-
-        return builder.ToString();
-
-        static void AddList(List<string> fields, string name, IReadOnlyList<string> values)
-        {
-            switch (values.Count)
-            {
-                case 0:
-                    break;
-                case 1:
-                    fields.Add($"{name}: {Scalar(values[0])}");
-                    break;
-                default:
-                    fields.Add($"{name}: [{string.Join(", ", values.Select(Scalar))}]");
-                    break;
-            }
-        }
-    }
-
-    private static string FlowNode(Node? node)
-    {
-        return node switch
-        {
-            null => "null",
-            NodeObject obj => "{ " + string.Join(", ", obj.Select(x => $"{x.Key}: {FlowNode(x.Value)}")) + " }",
-            NodeArray array => "[" + string.Join(", ", array.Select(FlowNode)) + "]",
-            NodeValue<string> s => Scalar(s.Value),
-            NodeValue<bool> b => b.Value ? "true" : "false",
-            IFormattable formattable => formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
-            _ => Scalar(node.ToString() ?? ""),
-        };
-    }
-
-    private static string Scalar(string value)
-    {
-        return PlainScalar().IsMatch(value) ? value : "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
-    }
-
-    [GeneratedRegex(@"^[A-Za-z0-9_./-][A-Za-z0-9_./ -]*$")]
-    private static partial Regex PlainScalar();
+    public string ToYaml() => WorkflowSchema.ToYaml(_definition);
 }
 
 internal sealed class GraphNode
