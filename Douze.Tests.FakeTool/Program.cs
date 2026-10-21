@@ -23,6 +23,8 @@ switch (args[0])
     case "sleep": Thread.Sleep(Timeout.Infinite); return 0;
     case "args": return Args(rest);
     case "env": return Env(rest);
+    case "worker-echo": return await Worker(rest.Length > 0 ? int.Parse(rest[0]) : 1, slowShutdown: false);
+    case "worker-slow": return await Worker(1, slowShutdown: true);
     default: return Usage();
 }
 
@@ -137,6 +139,147 @@ static int Env(string[] names)
 {
     WriteStdout(string.Join("\n", names.Select(x => $"{x}={Environment.GetEnvironmentVariable(x)}")));
     return 0;
+}
+
+// A worker (protocol 1) that announces <concurrency>, handles requests concurrently after the delay of their 'delay'
+// metadata, and upper cases text unless the content asks for something else (see Handle). It reads stdin to its end,
+// so it exits once Douze closes stdin after 'shutdown'; worker-slow never exits after 'shutdown'.
+static async Task<int> Worker(int concurrency, bool slowShutdown)
+{
+    var stdin = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
+    var stdout = Console.OpenStandardOutput();
+    var writeLock = new Lock();
+    var tasks = new List<Task>();
+    var inflight = 0;
+    var maxInflight = 0;
+    var sequence = 0;
+    string? hello = null;
+
+    while (await stdin.ReadLineAsync() is { } line)
+    {
+        var message = JsonNode.Parse(line)!.AsObject();
+
+        switch ((string?)message["type"])
+        {
+            case "hello":
+                hello = line;
+                Send(new JsonObject { ["type"] = "ready", ["protocol"] = 1, ["concurrency"] = concurrency, ["name"] = "fake" });
+                break;
+
+            case "file":
+                tasks.Add(Task.Run(() => HandleAsync(message)));
+                break;
+
+            case "shutdown" when slowShutdown:
+                Thread.Sleep(Timeout.Infinite);
+                break;
+        }
+    }
+
+    await Task.WhenAll(tasks);
+    return 0;
+
+    void Send(JsonNode message) => Write(message.ToJsonString() + "\n");
+
+    void Write(string line)
+    {
+        var bytes = Encoding.UTF8.GetBytes(line);
+
+        lock (writeLock)
+        {
+            stdout.Write(bytes);
+            stdout.Flush();
+        }
+    }
+
+    async Task HandleAsync(JsonObject request)
+    {
+        var current = Interlocked.Increment(ref inflight);
+
+        lock (writeLock)
+        {
+            maxInflight = Math.Max(maxInflight, current);
+        }
+
+        try
+        {
+            var id = (string)request["id"]!;
+            var path = (string)request["path"]!;
+            var content = (string)request["content"]!;
+            var delay = request["metadata"]?["delay"]?.GetValue<int>() ?? 0;
+
+            await Task.Delay(delay);
+
+            JsonObject File(object? text, string? filePath = null, JsonObject? metadata = null) => new()
+            {
+                ["path"] = filePath,
+                ["encoding"] = "utf8",
+                ["content"] = text?.ToString(),
+                ["metadata"] = metadata,
+            };
+
+            JsonObject Stats() => new() { ["sequence"] = Interlocked.Increment(ref sequence), ["maxInflight"] = Volatile.Read(ref maxInflight) };
+
+            JsonArray files;
+
+            if ((string?)request["encoding"] == "base64")
+            {
+                var bytes = Convert.FromBase64String(content).Select(x => (byte)(255 - x)).ToArray();
+                files = [new JsonObject { ["encoding"] = "base64", ["content"] = Convert.ToBase64String(bytes) }];
+            }
+            else
+            {
+                switch (content.Trim())
+                {
+                    case "HELLO":
+                        files = [File(hello)];
+                        break;
+                    case "ERROR":
+                        Send(new JsonObject { ["type"] = "error", ["id"] = id, ["message"] = "TS2304: Cannot find name 'foo'", ["file"] = path, ["line"] = 12, ["column"] = 3 });
+                        return;
+                    case "LOG":
+                        Send(new JsonObject { ["type"] = "log", ["level"] = "info", ["message"] = $"log from {path}" });
+                        files = [File("LOGGED")];
+                        break;
+                    case "EXIT":
+                        Console.Error.WriteLine("crashing");
+                        Environment.Exit(3);
+                        return;
+                    case "GARBAGE":
+                        Write("this is not json\n");
+                        return;
+                    case "STDERR":
+                        Console.Error.WriteLine("worker warning");
+                        files = [File("STDERR")];
+                        break;
+                    case "MANY":
+                        files = [File("one"), File("two", path + ".copy")];
+                        break;
+                    case "DROP":
+                        files = [];
+                        break;
+                    case "RENAME":
+                        files = [File("<p>renamed</p>", Path.ChangeExtension(path, ".html"))];
+                        break;
+                    case "META":
+                        files = [new JsonObject { ["metadata"] = new JsonObject { ["extra"] = 1, ["title"] = "replaced" } }];
+                        break;
+                    case "HANG":
+                        await Task.Delay(Timeout.Infinite);
+                        return;
+                    default:
+                        files = [File(content.ToUpperInvariant(), metadata: Stats())];
+                        break;
+                }
+            }
+
+            Send(new JsonObject { ["type"] = "result", ["id"] = id, ["files"] = files });
+        }
+        finally
+        {
+            Interlocked.Decrement(ref inflight);
+        }
+    }
 }
 
 static string ReadStdin()

@@ -15,7 +15,8 @@ internal static class CommandStepFactory
         {
             CommandMode.Filter => new FilterCommandStep(definition),
             CommandMode.Batch => new BatchCommandStep(definition),
-            _ => throw new WorkflowValidationException("worker command steps are not available yet", definition.Location),
+            CommandMode.Worker => new WorkerCommandStep(definition),
+            _ => throw new ArgumentOutOfRangeException(nameof(definition), definition.Mode, "unknown command mode"),
         };
     }
 }

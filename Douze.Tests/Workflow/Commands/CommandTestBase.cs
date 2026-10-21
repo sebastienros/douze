@@ -87,12 +87,15 @@ public abstract class CommandTestBase : StepTestBase, IDisposable
     /// <summary>
     /// Builds with a view that records messages, the test's folder as the cache folder, and 4 parallel units.
     /// </summary>
-    internal Task<BuildResult> RunAsync(WorkflowDefinition workflow, int parallelism = 4, bool verbose = false)
+    internal Task<BuildResult> RunAsync(WorkflowDefinition workflow, int parallelism = 4, bool verbose = false, FailurePolicy failure = FailurePolicy.Default)
     {
+        Messages.Clear();
+
         return BuildAsync(workflow, new BuildOptions
         {
             MaxDegreeOfParallelism = parallelism,
             Verbose = verbose,
+            Failure = failure,
             CacheDirectory = Path.Combine(TempFolder, "cache"),
             Trace = NullTraceRecorder.Instance,
             View = new RecordingView(Messages),
