@@ -160,11 +160,30 @@ What changed:
 Douze moved to .NET 11 with runtime async and `ConcurrentGarbageCollection=false` (`Douze/Douze.csproj`). The
 published binary built that way: synthetic 32000 34.1 s and 6.5 GB (single run), nav index 5.6 to 5.7 s and 3.4 GB.
 
+### Fluid 3.0.0-preview-780 (`IFluidArray`), 2026-10-21
+
+Same machine and data, native AOT, non concurrent GC. **Base** is 00f309e (Fluid preview-776), **head** reads
+`NodeArrayValue` items by index through Fluid's new `IFluidArray` (sebastienros/fluid#1057): `for ... limit:` and the
+`first`, `last` and `slice` filters convert only the items they use. Runs interleaved, median of 3:
+
+| Scenario | Variant | Wall (s) | User (s) | Sys (s) | Peak RSS (MB) |
+|---|---|---:|---:|---:|---:|
+| synthetic 32000 | base | 34.34 | 63.81 | 17.37 | 6172 |
+| synthetic 32000 | head | 6.08 | 5.60 | 19.67 | 3207 |
+| synthetic 32000, nav index | base | 6.32 | 6.33 | 19.81 | 3212 |
+| synthetic 32000, nav index | head | 6.31 | 6.38 | 19.74 | 3247 |
+| aspire API pages | base | 7.13 | 19.48 | 9.13 | 5487 |
+| aspire API pages | head | 6.95 | 18.93 | 9.12 | 5019 |
+
+Finding 1 is fixed: the `limit:` loop now costs what the indexed loop costs (6.1 s against 6.3 s), the synthetic site
+builds in 6.1 s instead of 34.3 s and its peak RSS drops from 6.2 to 3.2 GB. The aspire pages do not use `limit:` and
+are unchanged (their RSS varies between 4.8 and 5.9 GB from run to run, as before).
+
 ## Findings
 
 Measured on the engine of phase 1b. None of these are fixed here (phase B owns only `bench/`); they feed phase 5.
 
-1. **`{% for p in collections.all limit: 50 %}` costs O(N) per page, O(N²) per build.** The nav include alone takes
+1. *Fixed by Fluid 3.0.0-preview-780 (`IFluidArray`), see above.* **`{% for p in collections.all limit: 50 %}` costs O(N) per page, O(N²) per build.** The nav include alone takes
    the synthetic 32k build from 6.9 s to 39.5 s and from 3.4 GB to 6.0 GB; with `collections.all[i]` for i in 0..49
    the same output costs almost nothing (6.9 s against 6.4 s without a nav). Fluid's `for` enumerates the whole
    `NodeArrayValue` (and wraps every item in a `MetadataValue`) before applying `limit` and `offset`. Suggested fix:
