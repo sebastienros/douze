@@ -32,6 +32,25 @@ public class PaginateStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task MarkdownPagesAfterPermalink()
+    {
+        await Source.WriteTextFileAsync("/letters.md", Letters);
+
+        var result = await BuildSuccessfullyAsync(Workflow(
+            Step("pages", "frontmatter", inputs: ["**"]),
+            Step("permalink", "permalink", needs: ["pages"]),
+            Step("paginate", "paginate", needs: ["permalink"])));
+
+        // Paged paths keep the Markdown extension; url and hrefs are the HTML paths.
+        var pages = Outputs(result["paginate"]);
+        Assert.Equal(["/letters/1/index.md", "/letters/2/index.md", "/letters/index.md"], pages.Select(x => x.Path.FullName).Order(StringComparer.Ordinal));
+
+        var second = pages.Single(x => x.Path == "/letters/1/index.md");
+        Assert.Equal("/letters/1/index.html", second.Metadata.Own["url"]!.GetValue<string>());
+        Assert.Equal(["/letters/index.html", "/letters/1/index.html", "/letters/2/index.html"], second.Metadata.Own["pagination"]!["hrefs"]!.AsArray().Select(x => x!.GetValue<string>()));
+    }
+
+    [Fact]
     public async Task PerPagePermalinkWithAlias()
     {
         await Source.WriteTextFileAsync("/products.html", "---\npagination:\n  data: products\n  size: 1\n  alias: product\nproducts: [shoes, hats]\npermalink: \"shop/{{ product }}/\"\n---\n{{ product }}");

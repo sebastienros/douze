@@ -9,7 +9,8 @@ namespace Douze.Workflow.Steps;
 /// <c>resolve: values</c>) into one file per page. Each page's <c>permalink</c> is resolved with its own
 /// <c>pagination</c> and alias, and stored as a concrete path; when every page resolves to the same path (no
 /// <c>permalink</c>, or one that does not depend on the page), pages get paged paths: <c>/a/index.html</c>,
-/// <c>/a/1/index.html</c>... Files without <c>pagination</c> pass through.
+/// <c>/a/1/index.html</c>... Each page gets its <c>url</c>, as with <c>permalink</c>, so the step can run after it and
+/// after <c>collect</c> (<c>pagination.data: collections.post</c>). Files without <c>pagination</c> pass through.
 /// </summary>
 /// <remarks>
 /// A page's <c>pagination</c> is <c>items</c>, <c>pageNumber</c>, <c>hrefs</c> (every page's path), <c>pages</c> and
@@ -19,7 +20,7 @@ namespace Douze.Workflow.Steps;
 /// </remarks>
 internal sealed class PaginateStep : Step, IMapStep
 {
-    private static readonly GlobSet HtmlFiles = GlobSet.Parse(["**/*.html"]);
+    private static readonly GlobSet Pages = GlobSet.Parse(["**/*.html", "**/*.md"]);
 
     private readonly FPath? _root;
 
@@ -31,7 +32,7 @@ internal sealed class PaginateStep : Step, IMapStep
 
     public override StepShape NativeShape => StepShape.Map;
 
-    public override GlobSet DefaultMatch => HtmlFiles;
+    public override GlobSet DefaultMatch => Pages;
 
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
@@ -128,7 +129,7 @@ internal sealed class PaginateStep : Step, IMapStep
         // The pagination objects are not published yet: hrefs can still be filled in.
         for (var i = 0; i < pageCount; i++)
         {
-            var href = paths[i] is { } p ? NodeValue.Create(p.FullName) : null;
+            var href = paths[i] is { } p ? NodeValue.Create(PermalinkResolver.Url(p)) : null;
             hrefs.Add(href);
             summaries[i]["href"] = href;
         }
@@ -143,7 +144,12 @@ internal sealed class PaginateStep : Step, IMapStep
                 continue;
             }
 
-            var metadata = metadatas[i].With(own => own[PermalinkResolver.Key] = NodeValue.Create(path.FullName));
+            var metadata = metadatas[i].With(own =>
+            {
+                own[PermalinkResolver.Key] = NodeValue.Create(path.FullName);
+                own["url"] = NodeValue.Create(PermalinkResolver.Url(path));
+            });
+
             outputs.Add(file.With(Name, path: path, metadata: metadata));
         }
 

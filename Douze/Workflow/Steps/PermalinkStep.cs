@@ -5,7 +5,8 @@ namespace Douze.Workflow.Steps;
 
 /// <summary>
 /// <c>uses: permalink</c>. Moves each file to its output path (see <see cref="PermalinkResolver"/>), without
-/// <c>with.root</c> (default: the content folder), and sets <c>url</c> to it. A <c>permalink: false</c> file is dropped.
+/// <c>with.root</c> (default: the content folder), and sets <c>url</c> to it (the HTML path of a Markdown page). A
+/// <c>permalink: false</c> file is dropped.
 /// </summary>
 internal sealed class PermalinkStep : Step, IMapStep
 {
@@ -28,7 +29,7 @@ internal sealed class PermalinkStep : Step, IMapStep
             return FileList.None;
         }
 
-        var metadata = file.Metadata.With(own => own["url"] = NodeValue.Create(output.FullName));
+        var metadata = file.Metadata.With(own => own["url"] = NodeValue.Create(PermalinkResolver.Url(output)));
 
         return FileList.Of(file.With(Name, path: output, metadata: metadata));
     }

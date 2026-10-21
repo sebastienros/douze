@@ -13,7 +13,7 @@ internal static class DefaultWorkflow
 
     /// <summary>
     /// Data files of the data folder are site data, data files of the content folder are folder data, and every other
-    /// file of the content folder goes through front matter, Markdown, pagination, permalinks, collections, Liquid and
+    /// file of the content folder goes through front matter, permalinks, collections, pagination, Liquid, Markdown and
     /// layouts, then is written. Files no step claims (images, styles) are written as they are.
     /// </summary>
     public static WorkflowDefinition Create(SiteOptions site)
@@ -59,12 +59,14 @@ internal static class DefaultWorkflow
             Uses = "frontmatter",
         });
 
-        steps.Add(new StepDefinition { Name = "markdown", Needs = ["pages"], Uses = "markdown" });
-        steps.Add(new StepDefinition { Name = "paginate", Needs = ["markdown"], Uses = "paginate" });
-        steps.Add(new StepDefinition { Name = "permalink", Needs = ["paginate"], Uses = "permalink", With = Root(content) });
+        // Collections are built before pagination, so a page can paginate over collections.<tag>; Liquid runs before
+        // Markdown, as in Eleventy, so Markdown renders what Liquid produced.
+        steps.Add(new StepDefinition { Name = "permalink", Needs = ["pages"], Uses = "permalink", With = Root(content) });
         steps.Add(new StepDefinition { Name = "collections", Needs = ["permalink"], Uses = "collect" });
-        steps.Add(new StepDefinition { Name = "render", Needs = ["permalink", "collections"], Uses = "liquid" });
-        steps.Add(new StepDefinition { Name = "layout", Needs = ["render"], Uses = "layout" });
+        steps.Add(new StepDefinition { Name = "paginate", Needs = ["permalink", "collections"], Uses = "paginate" });
+        steps.Add(new StepDefinition { Name = "render", Needs = ["paginate"], Uses = "liquid" });
+        steps.Add(new StepDefinition { Name = "markdown", Needs = ["render"], Uses = "markdown" });
+        steps.Add(new StepDefinition { Name = "layout", Needs = ["markdown"], Uses = "layout" });
         steps.Add(new StepDefinition { Name = "write", Needs = ["layout"], Uses = "write" });
 
         return new WorkflowDefinition(steps.ToImmutable(), SourceFile: null);

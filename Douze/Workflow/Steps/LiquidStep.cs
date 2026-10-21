@@ -9,13 +9,19 @@ namespace Douze.Workflow.Steps;
 
 /// <summary>
 /// <c>uses: liquid</c>. Without <c>with.template</c>, renders the content of each file as a Liquid template whose model
-/// is the file's metadata, and keeps the variables it captures in its metadata. With <c>with.template</c> (a path in the
+/// is the file's metadata, and keeps the variables it captures in its metadata; a file whose <c>liquid</c> resolves to
+/// <c>false</c> (front matter, or folder or site data) passes through as it is. With <c>with.template</c> (a path in the
 /// includes folder), renders that template once per file (<c>file</c> in the template) or once per group with
 /// <c>group-by</c> (<c>group</c>), to the path rendered from <c>with.permalink</c>.
 /// </summary>
 internal sealed class LiquidStep : Step, IMapStep, IGroupStep
 {
-    private static readonly GlobSet Templates = GlobSet.Parse(["**/*.html", "**/*.json"]);
+    /// <summary>
+    /// The key that turns Liquid off for a file: <c>liquid: false</c>.
+    /// </summary>
+    public const string OptOutKey = "liquid";
+
+    private static readonly GlobSet Templates = GlobSet.Parse(["**/*.html", "**/*.md", "**/*.json"]);
 
     private readonly FPath? _template;
     private readonly string? _permalink;
@@ -65,6 +71,11 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
             var model = await FileModelAsync(file, ct);
             var (path, content, metadata) = await RenderTemplateAsync("file", model, file.Metadata.Directory, file, context, ct);
             return FileList.Of(file.With(Name, path: path, content: content, metadata: metadata));
+        }
+
+        if (context.Scopes.TryResolve(file.Metadata, OptOutKey, null, context.Dependencies, out var optOut, out _) && optOut is NodeValue<bool> { Value: false })
+        {
+            return FileList.Of(file);
         }
 
         var text = await file.Content.ReadTextAsync(ct);

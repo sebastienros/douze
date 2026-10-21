@@ -44,6 +44,26 @@ public class PermalinkStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task MarkdownKeepsItsExtensionUntilConverted()
+    {
+        await Source.WriteTextFileAsync("/_content/index.md", "home");
+        await Source.WriteTextFileAsync("/_content/blog/post.md", "post");
+        await Source.WriteTextFileAsync("/_content/blog/named.md", "---\npermalink: blog/{{ 'x' }}.html\n---\nnamed");
+        await Source.WriteTextFileAsync("/_content/feed.md", "---\npermalink: feed.xml\n---\nfeed");
+
+        var result = await BuildSuccessfullyAsync(Permalink());
+
+        // The markdown step changes .md to .html; a permalink that is not HTML keeps its extension.
+        Assert.Equal(["/blog/post/index.md", "/blog/x.md", "/feed.xml", "/index.md"], Paths(result));
+
+        var urls = Outputs(result["permalink"]).ToDictionary(x => x.Path.FullName, x => x.Metadata.Own["url"]!.GetValue<string>());
+        Assert.Equal("/blog/post/index.html", urls["/blog/post/index.md"]);
+        Assert.Equal("/blog/x.html", urls["/blog/x.md"]);
+        Assert.Equal("/feed.xml", urls["/feed.xml"]);
+        Assert.Equal("/index.html", urls["/index.md"]);
+    }
+
+    [Fact]
     public async Task PermalinkFalseDrops()
     {
         await Source.WriteTextFileAsync("/draft.html", "---\npermalink: false\n---\ndraft");

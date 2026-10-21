@@ -57,6 +57,20 @@ public class LiquidStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task LiquidFalsePassesThrough()
+    {
+        await Source.WriteTextFileAsync("/a.md", "---\nliquid: false\n---\n{{ broken");
+        await Source.WriteTextFileAsync("/b.md", "{{ 1 | plus: 1 }}");
+
+        var result = await BuildSuccessfullyAsync(Render());
+
+        // Markdown files are templates by default; liquid: false keeps the content, even when it is not valid Liquid.
+        var files = Outputs(result["render"]).ToDictionary(x => x.Path.FullName);
+        Assert.Equal("{{ broken", await TextAsync(files["/a.md"]));
+        Assert.Equal("2", await TextAsync(files["/b.md"]));
+    }
+
+    [Fact]
     public async Task TemplateParsedOnceForTwoFilesWithTheSameContent()
     {
         await Source.WriteTextFileAsync("/a.html", "---\ntitle: A\n---\n<h1>{{ title }}</h1>");

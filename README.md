@@ -57,16 +57,22 @@ workflow:
    content folder as folder data.
 2. Moves the YAML front matter of `.md`, `.html` and `.liquid` files into their data, and sets `page.date` to the
    file's modification time.
-3. Renders Markdown to HTML (`post.md` becomes `post.html`).
-4. Expands paginated pages.
-5. Computes output paths: `blog/post.html` is written to `blog/post/index.html`, `index.html` stays in place,
-   `permalink` overrides the path, and `permalink: false` skips the file. The content folder is removed from the
-   path, and `url` holds the result (`/blog/post/index.html`).
-6. Builds `collections.all` and `collections.<tag>` from the `tags` of every page.
-7. Renders every HTML and JSON file as a Liquid template.
+3. Computes output paths: `blog/post.html` and `blog/post.md` are written to `blog/post/index.html`, `index.html`
+   and `index.md` stay in place, `permalink` overrides the path, and `permalink: false` skips the file. The content
+   folder is removed from the path, and `url` holds the result (`/blog/post/index.html`).
+4. Builds `collections.all` and `collections.<tag>` from the `tags` of every page.
+5. Expands paginated pages, which can paginate a collection (`pagination.data: collections.post`).
+6. Renders every Markdown, HTML and JSON file as a Liquid template, unless its `liquid` is `false`.
+7. Renders Markdown to HTML.
 8. Applies layouts.
 9. Writes every file to the output folder. Files that no step claims (images, stylesheets, scripts) are copied as
    they are.
+
+Liquid runs before Markdown, as in Eleventy: a Markdown page can use tags and variables, and Markdown renders what
+they produce. A page whose Markdown contains `{{` or `{%` that are not Liquid (code samples) sets `liquid: false` in
+its front matter, or its folder's data file sets it for every page of the folder; `{% raw %}` works too. A variable
+captured in a Markdown page (`{% capture footer %}`) holds Markdown source, which is not rendered: write it in HTML.
+A Markdown page whose `permalink` is not HTML (`feed.xml`) is not rendered to HTML.
 
 ## data
 
@@ -100,8 +106,9 @@ Each page has `pagination.items`, `pagination.pageNumber`, `pagination.hrefs` (t
 `pagination.pages` and `pagination.page.next`, `previous`, `first`, `last` (each one is `items`, `pageNumber` and
 `href`). A `permalink` is rendered for each page, so it can use the alias or `pagination.pageNumber` (not the
 `href` values, which come from it); without one, pages are written to `products/index.html`,
-`products/1/index.html`... Pagination runs before collections are built, so `collections.<tag>` cannot be paginated
-by the default workflow.
+`products/1/index.html`... Each page has its own `url`. Collections are built before pagination, so a page can
+paginate `collections.<tag>`; the paginated page itself is in `collections.all` once, with the `url` of its first
+page.
 
 ## layouts
 

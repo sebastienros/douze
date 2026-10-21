@@ -14,7 +14,7 @@ internal sealed class CollectStep : Step, IReduceStep
     public const string Collections = "collections";
     public const string All = "all";
 
-    private static readonly GlobSet HtmlFiles = GlobSet.Parse(["**/*.html"]);
+    private static readonly GlobSet Pages = GlobSet.Parse(["**/*.html", "**/*.md"]);
 
     public CollectStep(StepDefinition definition) : base(definition)
     {
@@ -23,7 +23,7 @@ internal sealed class CollectStep : Step, IReduceStep
 
     public override StepShape NativeShape => StepShape.Reduce;
 
-    public override GlobSet DefaultMatch => HtmlFiles;
+    public override GlobSet DefaultMatch => Pages;
 
     public ValueTask<StepOutput> ProcessAllAsync(IReadOnlyList<VirtualFile> files, StepContext context, CancellationToken ct)
     {

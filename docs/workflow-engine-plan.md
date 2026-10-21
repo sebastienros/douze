@@ -285,7 +285,8 @@ internal sealed class ScopeSet
 ```
 
 Lookup semantics are "first scope that contains the top-level key wins". There is no deep merge
-between scopes. This matches today's behavior for every Sample and test case (folder data only sets
+between scopes (the settings scope of `site:`, added at the integration of phases 2 to B, completes a
+`site` object one level deep; see 4.2). This matches today's behavior for every Sample and test case (folder data only sets
 top-level keys), and it is what makes sharing safe.
 
 Which scopes a step sees: the scheduler gives each step a `ScopeSet` that is the merge of the
@@ -979,7 +980,7 @@ to `UseAdvancedExtensions()`; a list maps to the Markdig extension names through
 `post1.html`), so the derived content type is `text/html`. Changing the extension
 here, rather than in `permalink` as today, is what lets later steps match on `**/*.html`.
 
-**`paginate`** (map 1 to n, default match: `**/*.html`). Reproduces `PaginationProcessor` on top of
+**`paginate`** (map 1 to n, default match: `**/*.html`, `**/*.md`). Reproduces `PaginationProcessor` on top of
 scopes: `pagination.data` names a key resolved through `Scopes.TryResolve`; `size`, `alias`,
 `resolve: values` behave as today. For each page it creates `file.With(...)` with Own =
 shallow clone + `pagination` (`items`, `pageNumber`, `pages`, `page.next/previous/first/last`) +
@@ -994,8 +995,9 @@ in `pagination.hrefs` (array) so that templates can link pages. `pagination.page
 by every page: linking the full pagination objects as before would form cycles that `Metadata.Hash`
 cannot follow. The hrefs are only known once every page's `permalink` is resolved, so a `permalink`
 that reads `pagination.hrefs` or a page's `href` sees them empty. `pagination.data` may be a dotted
-path (`collections.post`, when the step runs after `collect`; see open question 19 for the default
-workflow): the first segment resolves through the scopes. A `pagination.data` that resolves to
+path (`collections.post`, when the step runs after `collect`, as in the default workflow since the
+integration of phases 2 to B, open question 19): the first segment resolves through the scopes. Each
+page gets its `url` (the HTML path, `PermalinkResolver.Url`), so the step can run after `permalink`. A `pagination.data` that resolves to
 nothing passes the file through unchanged, as before. `with.root` (default: the content folder) as
 for `permalink`. Files without `pagination` pass through.
 
@@ -1008,12 +1010,15 @@ and files that are not HTML keep their path), strips `with.root` (default: the c
 the front, sets Own `url` to the result (an absolute path, `/blog/post/index.html`), and returns
 `file.With(path: result)`. `permalink: false` drops the file (returns `FileList.None`, gap A17).
 Matching every file is what removes the content folder from the paths of images and other
-passthrough files.
+passthrough files. A Markdown file is a page whose content is not HTML yet: its HTML output path
+keeps the `.md` extension (`post.md` -> `/post/index.md`) and `url` is the `.html` path, so that
+`markdown`, which changes the extension, can run after `permalink` (4.6); a `permalink` that is not
+HTML (`feed.xml`) is kept as is.
 
 `PermalinkResolver` (`Douze/Workflow/Steps/PermalinkResolver.cs`) is shared by `paginate` and
 `permalink` so both produce identical paths.
 
-**`collect`** (reduce, default match: `**/*.html`). Builds `collections.all` and `collections.<tag>`
+**`collect`** (reduce, default match: `**/*.html`, `**/*.md`). Builds `collections.all` and `collections.<tag>`
 from the sorted input: each item is `NodeObject { ["data"] = new NodeValue<Metadata>(file.Metadata) }`,
 items are sorted by date (front matter `date`, else `page.date`, resolved through scopes), then by
 path (ordinal; the path entering the step, the output path in the default workflow), exactly as today.
@@ -1023,7 +1028,8 @@ file once. Emits **no files** and contributes
 hash of the sorted item refs.
 
 **`liquid`** (map; group when `with.template` is set and `group-by` is present; default match:
-`**/*.html`, `**/*.json`).
+`**/*.html`, `**/*.md`, `**/*.json`). A file whose `liquid` resolves (through the scopes) to `false`
+passes through unchanged, without `with.template` (the per-page opt-out of open question 3).
 - Without `with.template`: parses the file content once per content hash, renders with a
   `TemplateContext(new MetadataValue(file.Metadata), options)` and the ambient values of 2.8,
   `HtmlEncoder.Default`, collects captured variables (`context.Captured`) into a new Own, returns
@@ -1284,19 +1290,38 @@ steps:
   site-data:   { inputs: "_data/**/*.{yml,yaml,json,xml}", uses: data, with: { scope: site } }
   folder-data: { inputs: "_content/**/*.{yml,yaml,json,xml}", uses: data, with: { scope: folder, root: _content } }
   pages:       { inputs: ["_content/**", "!_content/**/*.{yml,yaml,json,xml}"], needs: [site-data, folder-data], uses: frontmatter }
-  markdown:    { needs: pages, uses: markdown }
-  paginate:    { needs: markdown, uses: paginate }
-  permalink:   { needs: paginate, uses: permalink, with: { root: _content } }
+  permalink:   { needs: pages, uses: permalink, with: { root: _content } }
   collections: { needs: permalink, uses: collect }
-  render:      { needs: [permalink, collections], uses: liquid }
-  layout:      { needs: render, uses: layout }
+  paginate:    { needs: [permalink, collections], uses: paginate }
+  render:      { needs: paginate, uses: liquid }
+  markdown:    { needs: render, uses: markdown }
+  layout:      { needs: markdown, uses: layout }
   write:       { needs: layout, uses: write }
 ```
 
-Compared with today, the order of pagination and permalink is swapped (section 2.11 explains why
-the output is identical for the Sample and the tests), Markdown still runs before Liquid (switching
-the order changes the Sample output, see section 10, gap A4), and data files are keyed by file
-name, which requires the Sample adaptations listed in phase 1b.
+*Changed at the integration of phases 2 to B* (open questions 3 and 19, approved): Liquid runs before
+Markdown (Eleventy's model), and collections are built before pagination, so a page can paginate
+`collections.<tag>`. Before, the order was `pages -> markdown -> paginate -> permalink -> collections ->
+render (needs permalink and collections) -> layout`. What makes the new order work:
+
+- `permalink` runs on Markdown files before they are HTML: a `.md` page gets the HTML output path with
+  the `.md` extension kept (`post.md` -> `/post/index.md`, `index.md` stays), and `url` is the HTML
+  path (`PermalinkResolver.Url`). `markdown` still matches `**/*.md` and changes the extension to
+  `.html`. A `.md` page whose `permalink` is not HTML (`feed.xml`) keeps that extension and is not
+  rendered to HTML.
+- `paginate`, `collect` and `liquid` match `**/*.md` by default, besides their HTML (and JSON) globs.
+- `paginate` runs after `permalink`, so it sets each page's `url` itself (and its `href`s are URLs);
+  the paginated file is in `collections.all` once, unpaginated, with the `url` of its first page
+  (Eleventy's default). The barrier before `paginate` (it needs `collections`) replaces the one that
+  was before `render`, so nothing streams later than before.
+- Per-page opt-out of Liquid (gap A4's `templateEngine`, Eleventy's `templateEngineOverride: md`):
+  `liquid: false`, resolved through the scopes, so front matter or a folder's data file sets it; the
+  `liquid` step passes such a file through unchanged.
+
+Data files are keyed by file name, which requires the Sample adaptations listed in phase 1b; the
+reorder requires one more (the `footer` capture of `index.md` is written in HTML, since a capture now
+holds Markdown source), and changes the Sample output as listed in "Integration of phases 2, 3, 4
+and B" (section 8).
 
 ### 4.7 Example: the aspire.dev API pages
 
@@ -2118,6 +2143,45 @@ the four that edits it), `.gitignore` (`bench/**/data/`, `bench/**/out/`).
 synthetic site on the implementer's machine, and the aspire data harness runs when the data is
 present.
 
+### Integration of phases 2, 3, 4 and B
+
+The four phases merged without textual conflicts; this step made the result green and applied two
+approved product changes. Each item is its own commit.
+
+- **Tests in Release.** `Douze.Tests.FakeTool` was not in `Douze.slnx`, and MSBuild builds a project
+  reference that is outside the solution without the solution's configuration: `dotnet test -c
+  Release` built the fake tool in Debug, and the 35 command tests could not find it under
+  `bin/Release/`. It is in the solution now.
+- **`TwoPipelineFixtureBuilds`.** The `**/[Pp]ackages/*` rule of `.gitignore` (NuGet's legacy
+  packages folder) kept phase 2's `Fixtures/workflows/two-pipelines/data/packages/*.json` out of its
+  commits, so the merged fixture had no packages. The rule is gone and the files are added.
+- **`SpectreProgressViewTests.Summary`.** A step's `StartedAt` was set when its ancestors' scopes
+  were ready, which is the start of the build for every streaming step, so every bar of the summary
+  timeline started at 0 and the test passed only when JIT delays separated the starts (it ran alone in
+  phase 4, among more tests after the merge). A step now starts with its first file or unit (2.6).
+- **Integration items:** `site.url` reaches templates (4.2, base settings scope); step spans carry
+  `shape` and their final `state`, command spans `step` (6.4); `BuildContext` deletes its temp root;
+  `--help` and the README no longer list worker-helper, `--trace`, `--timeline` and workflow files as
+  unavailable; the command fixture has a `douze.yml` and `--print-workflow` prints `run:` steps;
+  benchmark finding 5 (hang after an exception outside a unit) is fixed with a test (2.6); the write
+  step no longer creates each directory twice (finding 4, partly). Findings 1 to 3 are left for
+  phase 5 and are not made worse: the new `ScopeSet` settings scope adds one hash per scope set and a
+  shallow clone per `site` object and scope set.
+- **Default workflow** (open questions 3 and 19): Liquid before Markdown with `liquid: false` as the
+  opt-out, collections before pagination (4.6).
+
+Sample differences against `update-dependencies`, besides the three of phase 1b (folder data over
+site data with the `articles.html` chain, absolute `url`, images under `/posts/images/`), all in
+`index.html`, all from Liquid running before Markdown:
+
+1. The lines produced by the two `{% for %}` loops lose their leading and trailing space
+   (` Red: 1  &lt;Blue&gt;: 2 ` is `Red: 1  &lt;Blue&gt;: 2`): Markdig now renders Liquid's output,
+   and trims the lines of a paragraph.
+2. The empty `<p></p>`, the stray `</p>` after `</body>` and the unclosed `<p>` before the footer are
+   gone: Markdig used to wrap the raw `{%- capture %}` and `{%- endcapture %}` tags in paragraphs.
+3. The footer is `<strong>hello</strong>` instead of `<p><strong>hello</strong>`: a capture now holds
+   Markdown source, which nothing renders, so the Sample writes it in HTML (`index.md` adapted).
+
 ### Phase 5: disk cache, early cutoff and replay (High, review)
 
 **Goal.** A second `douze build` with no changes executes zero units; a build after one change
@@ -2271,7 +2335,7 @@ separately.
 |---|---|---|
 | A1 passthrough copy of every file type | Solved naturally: unclaimed files flow to `write` | 1b |
 | A2 `{% include %}` / `{% render %}` file provider | Solved naturally: `TemplateLoader` is the Fluid file provider | 1a, 1b |
-| A4 Liquid before Markdown | Solved by ordering steps in `douze.yml`; the default order is unchanged | 2 (configurable), default flip is open question 3 |
+| A4 Liquid before Markdown | Solved: the default workflow runs Liquid first, `liquid: false` opts a page or folder out, `douze.yml` can order steps differently | 2 (configurable), integration (default flip, open question 3) |
 | A12 / B1 data keyed by file name and folder | Solved: `data` step, `scope: site` | 1b |
 | A13 / B2 pagination with permalink templates | Solved: `paginate` resolves `permalink` per page | 1b |
 | A14 non-HTML templates | Solved by `match` on `liquid` and `layout`, and `.md` outputs through `with.permalink` | 2 (needs YAML to express) |
@@ -2311,6 +2375,9 @@ Each item has a recommended answer; implementers use it unless the user decides 
    captured `footer` in `index.md` would hold raw Markdown). Recommended: keep Markdown first in
    the default workflow during this plan; sites choose their order in `douze.yml`; flip the default
    in a separate change that updates the Sample, after phase 2.
+   *Resolved at the integration of phases 2 to B (approved by the user):* Liquid runs first, with
+   `liquid: false` as the per-page (or per-folder) opt-out; the Sample's `footer` capture is written
+   in HTML. See 4.6.
 
 4. **`page.date` rendering parity.** Today `page.date` reaches Fluid as a `NodeValue<DateTime>`
    wrapped in a reflection `ObjectValue`, and the `date` filter parses its `ToString()`. The explicit
@@ -2391,6 +2458,10 @@ Each item has a recommended answer; implementers use it unless the user decides 
     exists (it needs `collections`), so nothing streams later. The Sample output would not change.
     Recommended: keep 4.6 during this plan (a `douze.yml` chooses its order from phase 2), and flip
     the default in a separate change after phase 2, together with open question 3.
+    *Resolved at the integration of phases 2 to B (approved by the user):* the default is
+    `permalink -> collections -> paginate -> render -> markdown -> layout` (4.6). Markdown pages keep
+    their `.md` extension through `permalink` so that steps can still match them as Markdown.
+    `DefaultWorkflowTests.PagesCanPaginateCollections` covers it.
 
 ---
 
@@ -2402,17 +2473,18 @@ Each item has a recommended answer; implementers use it unless the user decides 
   and become the folder scopes of `/_content/articles/` and `/_content/articles/article1/`.
 - Every other file under `_content/` enters `pages`. Markdown and HTML files get their front
   matter in Own and `page.date`; `posts/images/*.jpg` pass through untouched.
-- `markdown` renders the `.md` files to `.html`; `api.html` passes through.
-- `paginate` expands `products.html` into 4 pages whose `permalink` values are
-  `/products/index.html`, `/products/1/index.html`, ... ; everything else passes through.
-- `permalink` computes paths: `/index.html`, `/articles/index.html`, `/articles/article1/index.html`,
-  `/articles/article2/index.html`, `/posts/2020/01/01/my-awesome-title/index.html` (from the fixed
-  modification time of the comparison script), `/posts/api.json`, the product pages, and strips
-  `/_content/`. Images keep their path minus `/_content/`.
+- `permalink` computes paths: `/index.md`, `/articles/index.md`, `/articles/article1/index.md`,
+  `/articles/article2/index.md`, `/posts/2020/01/01/my-awesome-title/index.md` (from the fixed
+  modification time of the comparison script), `/posts/api.json`, `/products/index.md`, and strips
+  `/_content/` (Markdown pages keep `.md` until `markdown`; their `url` is the `.html` path). Images
+  keep their path minus `/_content/`.
 - `collections` builds `all` and `article` (two articles, sorted by date then path) and emits no
   files.
-- `render` evaluates Liquid in every `.html` file with Own, the folder scopes, `collections` and
-  the data scope in reach; the `footer` capture of `index.html` lands in its Own.
+- `paginate` expands `products.md` into 4 pages, `/products/index.md`, `/products/1/index.md`, ...,
+  each with its `url`; everything else passes through.
+- `render` evaluates Liquid in every `.md`, `.html` and `.json` file with Own, the folder scopes,
+  `collections` and the data scope in reach; the `footer` capture of `index.md` lands in its Own.
+- `markdown` renders the `.md` files to `.html`; `api.json` passes through.
 - `layout` resolves `layout` to `articles.html` for the articles (folder scope), `layout.html` for
   the others (data scope), `null` for `api.html` (own front matter), chains `articles.html` to
   `layout.html`, and uses the layout's `title: My Rad Blog` only when nothing above defines one.

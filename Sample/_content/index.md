@@ -20,5 +20,5 @@ colors: {{ colors.size }}
 
 {%- capture footer %}
 <!-- FOOTER -->
-**hello**
+<strong>hello</strong>
 {%- endcapture %}
