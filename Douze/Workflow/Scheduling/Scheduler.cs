@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Threading.Channels;
 using Douze.FileSystems;
+using Douze.Tracing;
 
 namespace Douze.Workflow.Scheduling;
 
@@ -113,6 +114,9 @@ internal sealed class Scheduler
         private readonly CancellationTokenSource _stepCts;
         private readonly Lock _pathsLock = new();
         private readonly Dictionary<FPath, (string Producer, VirtualFile File)> _producers = new();
+        private readonly Lock _startLock = new();
+        private int _started;
+        private TraceSpan _span;
         private bool _upstreamUnavailable;
 
         public NodeRunner(Scheduler scheduler, GraphNode node, NodeRunner[] runners, CancellationTokenSource buildCts)
@@ -165,10 +169,6 @@ internal sealed class Scheduler
                 Run.Scopes = ScopeSet.Merge(ancestors.Select(x => x.Run.Contributions).ToArray(), ScopeSet.Empty);
 
                 Run.State = StepState.Running;
-                Run.StartedAt = DateTimeOffset.UtcNow;
-                Context.View.StepStarted(Run);
-
-                using var span = Context.Trace.Begin(Name, "step");
 
                 initialized = true;
                 await Node.Step.InitializeAsync(Context, token);
@@ -185,8 +185,6 @@ internal sealed class Scheduler
                         await RunGroupAsync(sources, token);
                         break;
                 }
-
-                span.AddArg("files", Run.FilesConsumed.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -223,7 +221,7 @@ internal sealed class Scheduler
         /// </summary>
         private async Task CompleteAsync(CancellationToken token)
         {
-            Run.StartedAt ??= DateTimeOffset.UtcNow;
+            MarkStarted();
             Run.EndedAt = DateTimeOffset.UtcNow;
 
             await Task.WhenAll(Node.Needs.Select(x => _runners[x.Index].Completed.Task));
@@ -231,12 +229,42 @@ internal sealed class Scheduler
             Run.State = GetFinalState(token);
             Run.Seal();
 
+            _span.AddArg("files", Run.FilesConsumed.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            _span.Dispose();
+
             Context.View.StepCompleted(Run);
 
             Output.Complete(Run.State == StepState.Succeeded ? null : new StepUnavailableException(Name, Run.State));
             _stepCts.Dispose();
 
             Completed.TrySetResult();
+        }
+
+        /// <summary>
+        /// Starts the step's time and span when it has something to do: its first entering file, or its first unit (a
+        /// reduce step with no input still runs once). A step that waits for its needs is not running yet, so the
+        /// times of the summary and the trace show when each step worked.
+        /// </summary>
+        private void MarkStarted()
+        {
+            if (Volatile.Read(ref _started) == 1)
+            {
+                return;
+            }
+
+            lock (_startLock)
+            {
+                if (_started == 1)
+                {
+                    return;
+                }
+
+                Run.StartedAt = DateTimeOffset.UtcNow;
+                _span = Context.Trace.Begin(Name, "step");
+                Volatile.Write(ref _started, 1);
+            }
+
+            Context.View.StepStarted(Run);
         }
 
         /// <summary>
@@ -372,6 +400,7 @@ internal sealed class Scheduler
                 return;
             }
 
+            MarkStarted();
             Run.AddFileIn();
 
             if (Node.Match.IsMatch(file.Path))
@@ -556,6 +585,8 @@ internal sealed class Scheduler
         /// </summary>
         private async Task RunUnitAsync(UnitKey key, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, CancellationToken ct)
         {
+            MarkStarted();
+
             var slots = Node.Definition.IsCommand ? Context.ProcessSlots : Context.Parallelism;
             await slots.WaitAsync(ct);
 

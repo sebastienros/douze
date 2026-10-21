@@ -17,6 +17,7 @@
     <File Path="bench/fetch-aspire-data.sh" />
     <Project Path="bench/Douze.Bench/Douze.Bench.csproj" />
   </Folder>
+  <Project Path="Douze.Tests.FakeTool/Douze.Tests.FakeTool.csproj" />
   <Project Path="Douze.Tests/Douze.Tests.csproj" />
   <Project Path="Douze/Douze.csproj" />
 </Solution>

@@ -105,7 +105,8 @@ public class SpectreProgressViewTests
         Assert.Matches(@"write\s+succeeded\s+2\s+2\s+2\s+0\.\d\d s\s+ *[█▏▎▍▌▋▊▉]", lines[header + 3]);
         Assert.StartsWith("Build succeeded: 2 steps, 2 files written in ", lines[^1]);
 
-        // The timeline: write starts after markdown has started, so its bar starts further right.
+        // The timeline: a step starts when its first file arrives, so write starts once markdown has processed a file (20 ms
+        // in) and its bar starts further right.
         Assert.True(lines[header + 3].IndexOf('█') > lines[header + 2].IndexOf('█') || !lines[header + 3].Contains('█'));
     }
 

@@ -659,8 +659,13 @@ group keys are sorted, `BuildResult.Outputs` is sorted, `collections` are sorted
 and the `write` step is order independent. Trace lanes (section 6.3) are assigned by span start
 time, which is the only nondeterministic output, and it is a diagnostic.
 
-**Progress reporting.** The scheduler calls `IProgressView.StepStarted` when a node starts,
-`StepProgress(step, done, total)` after each unit (the view throttles redraws), and
+**Progress reporting.** The scheduler calls `IProgressView.StepStarted` when a node starts working:
+when its first file enters, or when its first unit runs (a reduce step with no input), or when it
+completes without either. A node waiting for its needs is not started: `StepRun.StartedAt`, the
+step's trace span, the summary's time column and its timeline all measure the time a step had work,
+so a streaming step's bar starts after its first need produced a file. (Until the integration of
+phases 2 to B, a node started as soon as its ancestors' scopes were ready, which is the start of the
+build for most steps, and every bar of the timeline started at 0.) Then `StepProgress(step, done, total)` after each unit (the view throttles redraws), and
 `StepCompleted(run)` at the end. `total` is null for a streaming map step until its input channel is
 complete, which the views show as `done/?`.
 
