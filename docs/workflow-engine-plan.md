@@ -2319,6 +2319,11 @@ Measured on the published native AOT binary, 8 cores, warm file cache, median of
 Memory is measured as peak RSS of the Douze process only; worker processes are reported
 separately.
 
+Douze runs on .NET 11 with runtime async and the non concurrent GC since the integration: on .NET 11 the
+concurrent GC throttles the allocating threads (40% slower on the synthetic site), without it the synthetic site
+builds in 33 s instead of 43 s on .NET 10 (`bench/README.md`, ".NET 11 and runtime async", finding 7). Phase 5
+re-measures the GC modes after its memory changes.
+
 ### 9.3 Validation beyond tests
 
 - Build the Sample and a copy of the Sample with a `douze.yml` that reproduces the default

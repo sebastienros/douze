@@ -101,6 +101,65 @@ The aspire pages are faster because a paginated template is now in `collections.
 (19,712 pages were collected, sorted and hashed with the shared pagination data of finding 2). Findings 1 to 3 are
 otherwise unchanged.
 
+### .NET 11 and runtime async, 2026-10-21
+
+Same machine and data. Variants built from the same sources: **A** .NET 10 (the base commit 4eb91a5, SDK 10.0.400,
+runtime 10.0.11), **B** .NET 11 RC 2 (SDK 11.0.100-rc.2.26504.105), **C** B with runtime async
+(`<Features>runtime-async=on</Features>`). Each was published native AOT (`tool-out`) and framework dependent (JIT,
+`-p:PublishAot=false`). Runs were interleaved (one run of every variant per round, 5 rounds with the default GC, 3 with
+`DOTNET_gcConcurrent=0`); the table has the medians. AOT binary sizes (osx-arm64): A 16.12 MB, B 15.86 MB, C 15.64 MB.
+
+| Scenario | Variant | GC | Wall (s) | User (s) | Sys (s) | Peak RSS (MB) |
+|---|---|---|---:|---:|---:|---:|
+| synthetic 32000 | A AOT | default | 42.85 | 74.28 | 29.79 | 5635 |
+| synthetic 32000 | B AOT | default | 59.65 | 95.95 | 23.15 | 6998 |
+| synthetic 32000 | C AOT | default | 58.11 | 96.21 | 22.67 | 7078 |
+| synthetic 32000 | A JIT | default | 49.09 | 88.36 | 25.47 | 8267 |
+| synthetic 32000 | B JIT | default | 70.29 | 116.83 | 23.91 | 6933 |
+| synthetic 32000 | C JIT | default | 68.58 | 115.56 | 24.04 | 6952 |
+| synthetic 32000 | A AOT | non concurrent | 45.39 | 71.81 | 23.77 | 5807 |
+| synthetic 32000 | B AOT | non concurrent | 33.02 | 63.08 | 16.89 | 6243 |
+| synthetic 32000 | C AOT | non concurrent | 33.62 | 65.19 | 16.64 | 6312 |
+| synthetic 32000 | A JIT | non concurrent | 45.62 | 79.27 | 25.54 | 6085 |
+| synthetic 32000 | B JIT | non concurrent | 40.81 | 86.77 | 18.07 | 6545 |
+| synthetic 32000 | C JIT | non concurrent | 40.97 | 86.17 | 18.05 | 6111 |
+| aspire API pages | A AOT | default | 8.97 | 20.82 | 10.72 | 5566 |
+| aspire API pages | B AOT | default | 7.85 | 26.96 | 11.94 | 9502 |
+| aspire API pages | C AOT | default | 6.80 | 23.77 | 11.05 | 11231 |
+| aspire API pages | A JIT | default | 8.03 | 32.58 | 9.19 | 11347 |
+| aspire API pages | B JIT | default | 9.72 | 46.99 | 11.66 | 11042 |
+| aspire API pages | C JIT | default | 8.35 | 38.97 | 10.26 | 11701 |
+| aspire API pages | A AOT | non concurrent | 7.64 | 19.18 | 9.34 | 5544 |
+| aspire API pages | B AOT | non concurrent | 7.04 | 19.88 | 9.57 | 4919 |
+| aspire API pages | C AOT | non concurrent | 6.51 | 18.94 | 9.30 | 6391 |
+| aspire API pages | A JIT | non concurrent | 8.93 | 30.14 | 8.34 | 4897 |
+| aspire API pages | B JIT | non concurrent | 8.80 | 41.51 | 7.28 | 5739 |
+| aspire API pages | C JIT | non concurrent | 8.60 | 40.46 | 7.04 | 5705 |
+
+Peak RSS of the aspire pages varies a lot between runs (4.3 to 7.1 GB for A AOT, 4.8 to 6.7 GB for C AOT non
+concurrent); the synthetic numbers are stable within about 5%. Single runs of `synthetic 32000, nav index` (no `limit:`
+loop): A AOT 6.8 to 7.5 s and 3.4 GB; B and C AOT with the default GC 6.4 to 7.3 s and 2.9 to 3.0 GB; C AOT non
+concurrent 5.6 to 5.7 s and 3.4 GB.
+
+What changed:
+
+- With the default (concurrent) workstation GC, .NET 11 is 40% slower on the synthetic site, all of it in `layout`
+  (38 s against 58 s), the step where the nav include runs the `limit:` loop of finding 1, and the aspire pages need
+  up to twice the memory. A `sample` of the .NET 11 build shows the allocating threads sleeping in
+  `gc_heap::allocate_soh` (`GCToOSInterface::Sleep`) while a background GC runs: allocations are throttled during
+  background GCs, which the allocation rate of finding 1 triggers back to back. Server GC (`DOTNET_gcServer=1`) does
+  not help (57.6 s).
+- With concurrent GC off, .NET 11 is faster than .NET 10 in every configuration: synthetic 33.0 s against 42.9 s (A
+  with its default GC; A gets slower without concurrent GC), aspire 6.5 to 7.0 s against 9.0 s, and 5.7 s against 7.0 s
+  without the `limit:` loop. Peak RSS is 10% higher on the synthetic site (6.2 GB against 5.6 GB, garbage of finding 1
+  collected less eagerly) and lower or equal on the aspire pages.
+- Runtime async changes nothing measurable: B and C are within noise of each other everywhere, and the BCL is
+  compiled with it in both. Douze's own async methods lose their state machines (167 compiler generated state machine
+  types in `douze.dll` against 11 left, the async iterators), and the AOT binary is 216 KB smaller.
+
+Douze moved to .NET 11 with runtime async and `ConcurrentGarbageCollection=false` (`Douze/Douze.csproj`). The
+published binary built that way: synthetic 32000 34.1 s and 6.5 GB (single run), nav index 5.6 to 5.7 s and 3.4 GB.
+
 ## Findings
 
 Measured on the engine of phase 1b. None of these are fixed here (phase B owns only `bench/`); they feed phase 5.
@@ -159,6 +218,12 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    CPU, so parsing the 342 files in parallel would make it about 0.3 s. RSS for the data is about 9 times the JSON size
    (714 MB for 78.5 MB), within the target. The render and layout steps parse each page's template once, which is
    cheap next to findings 1 to 3.
+
+7. **The GC mode matters as much as the code on .NET 11.** Background GCs throttle allocating threads, which made the
+   allocation heavy `limit:` loop 40% slower than on .NET 10 until `douze` turned concurrent GC off (".NET 11 and
+   runtime async" above). Re-measure the GC modes (concurrent, non concurrent, Server GC with DATAS) after each memory
+   change of phase 5: once findings 1 and 3 cut the allocation rate and the live set, concurrent GC or a lower peak RSS
+   from a heap limit (`GCHeapHardLimit`, `GCConserveMemory`) may become the better trade.
 
 Suggested order for phase 5: finding 2 (hash caching, it also makes cache keys cheap), then 3 (results and content
 retention, which the disk cache design decides anyway), then 4 and 5. Finding 1 is a Fluid change and can land at any
