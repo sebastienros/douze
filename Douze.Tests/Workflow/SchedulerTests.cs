@@ -200,6 +200,26 @@ public class SchedulerTests
     }
 
     [Fact]
+    public async Task EqualFileThroughTwoNeedsEntersOnce()
+    {
+        // A diamond where 'copy' returns an equal copy of every file (as a replay of unchanged results, or a step that
+        // rebuilds its input, does): 'render' gets two instances of each file with the same path, content and metadata.
+        var site = await new FakeSite().WithFilesAsync("/a.md", "/b.md");
+
+        var graph = new FakeWorkflow()
+            .Add("pages", d => new FakeMapStep(d) { Process = (f, _, _) => new(FileList.Of(f)) }, inputs: ["**"])
+            .Add("copy", d => new FakeMapStep(d) { Process = (f, _, _) => new(FileList.Of(f.With(d.Name))) }, needs: ["pages"])
+            .Add("render", d => new FakeMapStep(d), needs: ["pages", "copy"])
+            .Build();
+
+        var result = await site.BuildAsync(graph);
+
+        Assert.True(result.Succeeded, string.Join("\n", result.Errors));
+        Assert.Equal(2, result["render"].FilesIn);
+        Assert.Equal(["/a.md|render", "/b.md|render"], await ContentsAsync(result["render"]));
+    }
+
+    [Fact]
     public async Task UnmatchedFilesPassThroughImmediately()
     {
         var site = await new FakeSite().WithFilesAsync("/index.md", "/style.css");

@@ -298,7 +298,7 @@ internal sealed class Scheduler
 
                         if (inputs.IsMatch(file.Path))
                         {
-                            await AcceptAsync(file, Provenance.SourceStep, consume);
+                            await AcceptAsync(file, Provenance.SourceStep, consume, token);
                         }
                     }
                 }, token));
@@ -315,7 +315,7 @@ internal sealed class Scheduler
                     {
                         await foreach (var file in reader.ReadAllAsync(token))
                         {
-                            await AcceptAsync(file, producer, consume);
+                            await AcceptAsync(file, producer, consume, token);
                         }
                     }
                     catch (Exception e) when (e is StepUnavailableException or ChannelClosedException { InnerException: StepUnavailableException })
@@ -332,8 +332,10 @@ internal sealed class Scheduler
             token.ThrowIfCancellationRequested();
         }
 
-        private async ValueTask AcceptAsync(VirtualFile file, string producer, Action<VirtualFile> consume)
+        private async ValueTask AcceptAsync(VirtualFile file, string producer, Action<VirtualFile> consume, CancellationToken token)
         {
+            (string Producer, VirtualFile File)? conflict = null;
+
             lock (_pathsLock)
             {
                 if (_producers.TryGetValue(file.Path, out var existing) && existing.Producer != producer)
@@ -344,12 +346,30 @@ internal sealed class Scheduler
                         return;
                     }
 
-                    var (first, second) = string.CompareOrdinal(existing.Producer, producer) < 0 ? (existing.Producer, producer) : (producer, existing.Producer);
-                    ReportFailure(new BuildError(Name, file.Path, $"step '{Name}' received '{file.Path}' from both '{first}' and '{second}'", null, null));
+                    conflict = existing;
+                }
+                else
+                {
+                    _producers[file.Path] = (producer, file);
+                }
+            }
+
+            if (conflict is { } other)
+            {
+                // Another instance of the same file (a replay re-emitting an unchanged file, a step returning an equal
+                // copy) enters once too; two different files with the same path are an error. The refs are compared
+                // outside the lock: hashing loads the contents.
+                await file.Content.LoadAsync(token);
+                await other.File.Content.LoadAsync(token);
+
+                if (other.File.Ref == file.Ref)
+                {
                     return;
                 }
 
-                _producers[file.Path] = (producer, file);
+                var (first, second) = string.CompareOrdinal(other.Producer, producer) < 0 ? (other.Producer, producer) : (producer, other.Producer);
+                ReportFailure(new BuildError(Name, file.Path, $"step '{Name}' received '{file.Path}' from both '{first}' and '{second}'", null, null));
+                return;
             }
 
             Run.AddFileIn();

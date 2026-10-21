@@ -567,9 +567,13 @@ created with `VirtualFile.FromSource` and read lazily.
 with `MergeAsync(readers)`. While merging it tracks paths in a `Dictionary<FPath, string>`
 (path to producing step) under a lock; a path arriving from two different producers raises
 `BuildError` "step 'write' received '/a/index.html' from both 'render' and 'api'" and fails the
-node, unless it is the same `VirtualFile` instance: a file passed through by two needs (a diamond, such
-as `render` needing `permalink` and `collections` in the default workflow, where `collections` passes
-the non-HTML files through) enters once. Entering files are then split by `Match`: files that match are **consumed** by the step;
+node, unless it is the same file: the same `VirtualFile` instance (a file passed through by two needs,
+a diamond such as `render` needing `permalink` and `collections` in the default workflow, where
+`collections` passes the non-HTML files through), or another instance with the same `FileRef` (a
+replayed unit re-emitting an unchanged file next to a re-executed one in phases 5 and 6, or a step
+returning an equal copy of its input). Such a file enters once, through whichever need delivered it
+first. Identity is checked under the lock; refs are compared outside it, after loading both contents,
+because they are only needed on this rare path. Entering files are then split by `Match`: files that match are **consumed** by the step;
 files that do not match are **passed through** to the node's output unchanged, as soon as they
 arrive, without waiting for the step.
 
