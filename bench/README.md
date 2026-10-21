@@ -85,6 +85,22 @@ Against the targets of section 9.2:
 | aspire data: render the API pages, peak RSS under 2.5 GB | 5.5 GB (4.5 to 5.9) | missed (findings 2 and 3) |
 | Second build, watch mode, tag edit, worker round trip | | phases 3, 5 and 6 |
 
+### Integration of phases 2, 3, 4 and B, 2026-10-21
+
+Same machine, clean builds, `run` against the merge of the four phases (11793f6) and the integrated branch, whose
+default workflow builds collections before pagination and runs Liquid before Markdown:
+
+| Label | HTML pages | Wall (s) | User (s) | Sys (s) | Peak RSS (MB) | Output files | Runs |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| synthetic 32000, 11793f6 | 32101 | 39.12 | 73.21 | 31.84 | 6056 | 32301 | 3 |
+| synthetic 32000, integrated | 32101 | 38.41 | 73.40 | 37.01 | 5621 | 32301 | 3 |
+| aspire API pages, 11793f6 | 19712 | 23.23 | 38.50 | 17.49 | 5142 | 19712 | 1 |
+| aspire API pages, integrated | 19712 | 10.42 | 25.86 | 15.13 | 5218 | 19712 | 1 |
+
+The aspire pages are faster because a paginated template is now in `collections.all` once instead of once per page
+(19,712 pages were collected, sorted and hashed with the shared pagination data of finding 2). Findings 1 to 3 are
+otherwise unchanged.
+
 ## Findings
 
 Measured on the engine of phase 1b. None of these are fixed here (phase B owns only `bench/`); they feed phase 5.
