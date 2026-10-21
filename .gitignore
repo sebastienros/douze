@@ -351,3 +351,7 @@ MigrationBackup/
 
 # Rider
 /.idea/
+
+# Benchmark data and outputs (bench/README.md)
+bench/**/data/
+bench/**/out/

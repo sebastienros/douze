@@ -12,6 +12,11 @@
     <File Path="NuGet.config" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/bench/">
+    <File Path="bench/README.md" />
+    <File Path="bench/fetch-aspire-data.sh" />
+    <Project Path="bench/Douze.Bench/Douze.Bench.csproj" />
+  </Folder>
   <Project Path="Douze.Tests/Douze.Tests.csproj" />
   <Project Path="Douze/Douze.csproj" />
 </Solution>

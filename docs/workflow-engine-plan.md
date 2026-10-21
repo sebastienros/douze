@@ -2049,6 +2049,23 @@ commands:
 
 `bench/README.md` keeps the commands and a results table that implementers fill in per phase.
 
+As implemented (phase B):
+
+- `synthetic` writes layouts `post.html -> base.html`, includes `header`, `nav`, `footer`, and the data files
+  `layout.json` (`"post.html"`), `site.json`, `authors.yml`, `menu.json` and `products.json` (2,000 items).
+  `--nav index` (the nav indexes `collections.all[i]`) and `--nav none` isolate the cost of the nav loop.
+- `aspire-api` builds with the default workflow until phase 2 lands: the JSON files are site data
+  (`_data/pkgs/<slug>.json`, `_data/tsmodules/<slug>.json`), each package folder has its page index as folder data
+  (`pages.json`), and one template per aspire.dev route paginates over it with a size of 1: C# package, type and
+  member kind pages, TypeScript module, item and method pages, 19,712 pages (not 24k: the Markdown twins of some routes
+  are not generated). `--mode data` writes the data and a single page, for the parse target. The workflow of 4.7 is a
+  second variant to add after phase 2.
+- The data lives in `src/frontend/src/data/{pkgs,ts-modules}` of aspire.dev; `bench/fetch-aspire-data.sh` fetches
+  `origin` and extracts both folders of `origin/main` with `git archive`, so the checkout is never touched.
+- `run` takes `--label` and passes the options after `--` to douze; `--incremental` waits for phase 5.
+  `bench/run-all.sh` publishes the AOT binary and prints the whole results table.
+- The results table and the bottlenecks found, with suggested fixes, are in `bench/README.md`.
+
 ### 9.2 Targets
 
 Measured on the published native AOT binary, 8 cores, warm file cache, median of 3 runs.
