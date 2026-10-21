@@ -22,7 +22,7 @@ internal sealed record SiteScope(string Source, NodeObject Values, IReadOnlyDict
         KeySources = original.KeySources;
     }
 
-    public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Source), CanonicalJson.Hash(Values));
+    public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Source), NodeHash.Of(Values));
 }
 
 /// <summary>
@@ -41,7 +41,7 @@ internal sealed record FolderScope(FPath Directory, NodeObject Values, Immutable
         Sources = original.Sources;
     }
 
-    public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Directory.FullName), CanonicalJson.Hash(Values));
+    public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Directory.FullName), NodeHash.Of(Values));
 }
 
 internal enum ScopeKind { Own, Folder, Site, Fallback, None }

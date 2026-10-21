@@ -7,6 +7,10 @@ internal partial class NodeObject : IDictionary<string, Node?>
 {
     private Dictionary<string, Node?>? _dictionary;
 
+    // The hash of the node (Douze.Workflow.NodeHash), cached once computed: nodes are not changed once published, and
+    // every change made while a node is built resets it.
+    internal NodeHashCache HashCache;
+
     /// <summary>
     ///   Adds an element with the provided property name and value to the <see cref="NodeObject"/>.
     /// </summary>
@@ -23,6 +27,7 @@ internal partial class NodeObject : IDictionary<string, Node?>
         InitializeIfRequired();
         Debug.Assert(_dictionary != null);
         _dictionary.Add(propertyName, value);
+        HashCache.Reset();
     }
 
     /// <summary>
@@ -53,6 +58,7 @@ internal partial class NodeObject : IDictionary<string, Node?>
         }
 
         _dictionary.Clear();
+        HashCache.Reset();
     }
 
     /// <summary>
@@ -106,6 +112,7 @@ internal partial class NodeObject : IDictionary<string, Node?>
         Debug.Assert(_dictionary != null);
 
         var success = _dictionary.Remove(propertyName);
+        HashCache.Reset();
 
         return success;
     }

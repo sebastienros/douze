@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Globalization;
 using System.Text.Json;
 using Douze.Nodes;
@@ -6,23 +5,11 @@ using Douze.Nodes;
 namespace Douze.Workflow;
 
 /// <summary>
-/// Writes nodes as canonical JSON (keys sorted ordinally, invariant formatting) to hash them.
-/// Uses <see cref="Utf8JsonWriter"/> directly, so no reflection is involved.
+/// Writes nodes as canonical JSON (keys sorted ordinally, invariant formatting), for configuration hashes and the
+/// metadata given to commands. Uses <see cref="Utf8JsonWriter"/> directly, so no reflection is involved.
 /// </summary>
 internal static class CanonicalJson
 {
-    public static Hash128 Hash(Node? node)
-    {
-        var buffer = new ArrayBufferWriter<byte>(256);
-
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            Write(writer, node);
-        }
-
-        return Hash128.Of(buffer.WrittenSpan);
-    }
-
     public static void Write(Utf8JsonWriter writer, Node? node)
     {
         switch (node)

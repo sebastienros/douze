@@ -4,6 +4,10 @@ internal partial class NodeArray : Node
 {
     private List<Node?>? _list;
 
+    // The hash of the node (Douze.Workflow.NodeHash), cached once computed: nodes are not changed once published, and
+    // every change made while a node is built resets it.
+    internal NodeHashCache HashCache;
+
     /// <summary>
     ///   Initializes a new instance of the <see cref="NodeArray"/> class that is empty.
     /// </summary>
@@ -74,6 +78,7 @@ internal partial class NodeArray : Node
     internal void SetItem(int index, Node? value)
     {
         List[index] = value;
+        HashCache.Reset();
     }
 
     public override T GetValue<T>()
@@ -131,6 +136,7 @@ internal partial class NodeArray : Node
             case MergeArrayHandling.Replace:
 
                 _list = null;
+                HashCache.Reset();
 
                 for (var i = 0; i < node.List.Count; i++)
                 {

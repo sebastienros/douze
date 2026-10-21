@@ -48,6 +48,7 @@ internal partial class NodeObject : Node
         InitializeIfRequired();
         Debug.Assert(_dictionary != null);
         _dictionary[propertyName] = value;
+        HashCache.Reset();
     }
 
     public override T GetValue<T>()

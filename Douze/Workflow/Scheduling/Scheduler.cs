@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Douze.FileSystems;
 using Douze.Tracing;
@@ -525,7 +526,7 @@ internal sealed class Scheduler
             Run.AddUnits(1);
             Run.UnitsFinal = true;
 
-            await RunUnitAsync(new UnitKey(Name, UnitKey.ReduceUnit), [.. files.Select(x => x.Ref)], async (context, ct) =>
+            await RunUnitAsync(new UnitKey(Name, UnitKey.ReduceUnit), Refs(files), async (context, ct) =>
             {
                 var output = await step.ProcessAllAsync(files, context, ct);
 
@@ -588,7 +589,7 @@ internal sealed class Scheduler
 
             await Parallel.ForEachAsync(ordered, options, async (group, ct) =>
             {
-                await RunUnitAsync(new UnitKey(Name, group.Key), [.. group.Files.Select(x => x.Ref)], async (context, ct) =>
+                await RunUnitAsync(new UnitKey(Name, group.Key), Refs(group.Files), async (context, ct) =>
                 {
                     // The partition depends on what the group keys read.
                     context.Dependencies.Add(partitionDependencies);
@@ -603,6 +604,29 @@ internal sealed class Scheduler
                     return output;
                 }, null, ct);
             });
+        }
+
+        /// <summary>
+        /// The refs of the inputs of a unit. The hashes of many files are computed in parallel: a reduce step's input is
+        /// often the whole site, whose metadata nobody hashed yet.
+        /// </summary>
+        private ImmutableArray<FileRef> Refs(IReadOnlyList<VirtualFile> files)
+        {
+            var refs = new FileRef[files.Count];
+
+            if (files.Count < 64)
+            {
+                for (var i = 0; i < refs.Length; i++)
+                {
+                    refs[i] = files[i].Ref;
+                }
+            }
+            else
+            {
+                Parallel.For(0, refs.Length, new ParallelOptions { MaxDegreeOfParallelism = Context.MaxDegreeOfParallelism }, i => refs[i] = files[i].Ref);
+            }
+
+            return ImmutableCollectionsMarshal.AsImmutableArray(refs);
         }
 
         /// <summary>

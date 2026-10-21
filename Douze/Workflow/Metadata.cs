@@ -24,7 +24,7 @@ internal sealed class Metadata
 
         Own = own;
         Directory = directory;
-        _hash = new Lazy<Hash128>(() => Hash128.Combine(CanonicalJson.Hash(Own), Hash128.OfText(Directory.FullName)), LazyThreadSafetyMode.ExecutionAndPublication);
+        _hash = new Lazy<Hash128>(() => Hash128.Combine(NodeHash.Of(Own), Hash128.OfText(Directory.FullName)), LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     /// <summary>

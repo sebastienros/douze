@@ -18,6 +18,7 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     public void Add(Node? item)
     {
         List.Add(item);
+        HashCache.Reset();
     }
 
     /// <summary>
@@ -26,6 +27,7 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     public void Clear()
     {
         List.Clear();
+        HashCache.Reset();
     }
 
     /// <summary>
@@ -57,6 +59,7 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     public void Insert(int index, Node? item)
     {
         List.Insert(index, item);
+        HashCache.Reset();
     }
 
     /// <summary>
@@ -72,6 +75,7 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     {
         if (List.Remove(item))
         {
+            HashCache.Reset();
             return true;
         }
 
@@ -88,6 +92,7 @@ internal sealed partial class NodeArray : Node, IList<Node?>
     public void RemoveAt(int index)
     {
         List.RemoveAt(index);
+        HashCache.Reset();
     }
 
     #region Explicit interface implementation
