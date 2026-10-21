@@ -34,12 +34,12 @@ public abstract class CommandTestBase : StepTestBase, IDisposable
     internal ConcurrentQueue<(LogLevel Level, string? Step, string Message)> Messages { get; } = new();
 
     /// <summary>
-    /// The path of the fake tool, built next to the tests: <c>Douze.Tests.FakeTool/bin/&lt;Configuration&gt;/net10.0/</c>.
+    /// The path of the fake tool, built next to the tests: <c>Douze.Tests.FakeTool/bin/&lt;Configuration&gt;/&lt;TargetFramework&gt;/</c>.
     /// </summary>
     protected static string FakeToolPath { get; } = Path.GetFullPath(Path.Combine(
         AppContext.BaseDirectory, "..", "..", "..", "..", "Douze.Tests.FakeTool", "bin",
         typeof(CommandTestBase).Assembly.GetCustomAttribute<AssemblyConfigurationAttribute>()!.Configuration,
-        "net10.0", "Douze.Tests.FakeTool.dll"));
+        Path.GetFileName(Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory)), "Douze.Tests.FakeTool.dll"));
 
     /// <summary>
     /// A command line that runs the fake tool. The arguments are written as they are: quote them if needed.

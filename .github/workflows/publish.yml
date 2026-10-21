@@ -99,7 +99,9 @@ jobs:
         PROPS="--configuration Release --property:PackTool=true --property:Version=$VERSION --property:ContinuousIntegrationBuild=True --property:PackageOutputPath=${GITHUB_WORKSPACE}/tool-artifacts"
         dotnet pack Douze $PROPS -r any --property:PublishAot=false
         rm -rf Douze/obj Douze/bin
-        dotnet pack Douze $PROPS
+        # Since .NET 11 the pointer package also packs the native AOT packages the host can build, without restoring
+        # their RIDs: the tool-rid jobs already packed them.
+        dotnet pack Douze $PROPS --property:CreateRidSpecificToolPackages=false
 
     - name: NuGet login
       id: nuget-login

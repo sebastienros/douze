@@ -7,6 +7,8 @@ Stupidly simple, blazing fast static site generator
 dotnet tool install -g douze --prerelease
 ```
 
+The package is native AOT on Windows, Linux and macOS (x64 and arm64) and needs no .NET runtime. On other platforms, and for the preview packages of the Feedz feed, which are framework dependent, it runs on the .NET 11 runtime.
+
 # usage
 
 ```

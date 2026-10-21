@@ -18,6 +18,8 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <PublishAot>true</PublishAot>
+    <!-- The tool has no use for its XML documentation, and the .NET 11 SDK's native AOT publish doesn't copy it to bin. -->
+    <PublishDocumentationFile>false</PublishDocumentationFile>
     <ToolPackageRuntimeIdentifiers>win-x64;win-arm64;linux-x64;linux-arm64;osx-x64;osx-arm64;any</ToolPackageRuntimeIdentifiers>
 
     <!-- Fluid's reflection based member access and json filter are covered: see DouzeJsonContext. -->

@@ -5,13 +5,13 @@
 
   <ItemGroup>
     <!-- Global Package References -->
-    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.402" PrivateAssets="all" />
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="11.0.100-rc.2.26504.105" PrivateAssets="all" />
     <!-- Douze -->
     <PackageVersion Include="Fluid.Core" Version="3.0.0-preview-776" />
     <PackageVersion Include="Markdig" Version="1.4.2" />
     <PackageVersion Include="SharpYaml" Version="3.16.0" />
     <PackageVersion Include="Spectre.Console" Version="0.57.2" />
-    <PackageVersion Include="System.IO.Hashing" Version="10.0.13" />
+    <PackageVersion Include="System.IO.Hashing" Version="11.0.0-rc.2.26504.105" />
     <PackageVersion Include="ZString" Version="2.6.0" />
     <!-- Testing -->
     <PackageVersion Include="Spectre.Console.Testing" Version="0.57.2" />

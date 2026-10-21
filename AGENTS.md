@@ -8,7 +8,7 @@ During the workflow engine refactor (`docs/workflow-engine-plan.md`), earlier de
 
 ## Stack
 
-- .NET 10 (`net10.0`), SDK pinned in `global.json`.
+- .NET 11 (`net11.0`), on the release candidate SDK pinned in `global.json` (`allowPrerelease`). Move to the stable .NET 11 SDK when it ships (November 2026): pin it in `global.json`, set `allowPrerelease` back to false, and take the stable `11.0.x` versions of `System.IO.Hashing` and `Microsoft.SourceLink.GitHub`.
 - Main dependencies: Fluid (Liquid templates), Markdig (Markdown), SharpYaml (YAML), Spectre.Console (live progress view), ZString.
 - Fluid is on the 3.0 previews from the Feedz feed (`https://f.feedz.io/sebastienros/fluid/nuget/index.json`), declared in `NuGet.config` with package source mapping so only `Fluid.*` packages come from it. Update to the latest preview when touching Fluid, and move to the stable 3.0 on nuget.org once it ships.
 - Fluid is the maintainer's own library: when a problem or a missing feature is better solved in Fluid (performance, fixes, features) than worked around in Douze, propose the Fluid change. Work in a separate git worktree of the Fluid repository cut from `origin/main` (in a scratchpad, or under `~/github/fluid/.claude/worktrees`), never in the `~/github/fluid` checkout itself, and add tests to Fluid's suite. Validate in Douze with a locally packed Fluid (`dotnet pack` with a version above the current preview) in a local folder used only for local runs, never committed. Commit on the Fluid branch, but don't push or open a Fluid PR: report the branch so the maintainer decides. Douze keeps building against the published preview until the change ships to Feedz.
