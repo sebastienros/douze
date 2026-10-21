@@ -215,21 +215,34 @@ internal sealed class Scheduler
             }
         }
 
+        /// <summary>
+        /// Makes the run final, then reports it, then completes the channel. The needs of the node are reported first:
+        /// a node that stopped early (a failure, a cancellation) waits for them, so that for every edge A -> B the view,
+        /// the trace and the result see A complete before B. Waiting is safe: needs never wait on their dependents,
+        /// and writes to the channels of a node that stopped never block.
+        /// </summary>
         private async Task CompleteAsync(CancellationToken token)
         {
-            Run.State = await GetFinalStateAsync(token);
             Run.StartedAt ??= DateTimeOffset.UtcNow;
             Run.EndedAt = DateTimeOffset.UtcNow;
+
+            await Task.WhenAll(Node.Needs.Select(x => _runners[x.Index].Completed.Task));
+
+            Run.State = GetFinalState(token);
             Run.Seal();
+
+            Context.View.StepCompleted(Run);
 
             Output.Complete(Run.State == StepState.Succeeded ? null : new StepUnavailableException(Name, Run.State));
             _stepCts.Dispose();
 
-            Context.View.StepCompleted(Run);
             Completed.TrySetResult();
         }
 
-        private async Task<StepState> GetFinalStateAsync(CancellationToken token)
+        /// <summary>
+        /// Called once every need is complete.
+        /// </summary>
+        private StepState GetFinalState(CancellationToken token)
         {
             if (Run.Errors.Count > 0)
             {
@@ -242,9 +255,6 @@ internal sealed class Scheduler
             }
 
             // The node stopped early: it is skipped when a need failed or was skipped, cancelled otherwise.
-            // Waiting is safe: needs never wait on their dependents, and they are stopping too.
-            await Task.WhenAll(Node.Needs.Select(x => _runners[x.Index].Completed.Task));
-
             return Node.Needs.Any(x => _runners[x.Index].Run.State is StepState.Failed or StepState.Skipped)
                 ? StepState.Skipped
                 : StepState.Cancelled;

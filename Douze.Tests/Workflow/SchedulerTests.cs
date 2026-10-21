@@ -435,6 +435,78 @@ public class SchedulerTests
             .ToArray();
     }
 
+    [Fact]
+    public async Task StepsCompleteAfterTheStepsTheyNeed()
+    {
+        // For every edge A -> B, A reaches its final state and is reported before B, whatever the states: a dependent
+        // that fails early (shallow-fail) or is skipped is still reported after a slow need.
+        var site = await new FakeSite().WithFilesAsync(Enumerable.Range(0, 8).Select(i => $"/{i}.md").ToArray());
+
+        var workflow = new FakeWorkflow()
+            .Add("slow", d => new FakeMapStep(d) { Before = (f, ct) => Task.Delay(f.Path == "/7.md" ? 30 : Random.Shared.Next(0, 3), ct) }, inputs: ["**"])
+            .Add("fast", d => new FakeMapStep(d), needs: ["slow"])
+            .Add("shallow-fail", d => new FakeMapStep(d) { FailWhen = _ => true }, needs: ["slow"])
+            .Add("skipped", d => new FakeMapStep(d), needs: ["shallow-fail"])
+            .Add("all", d => new FakeReduceStep(d), needs: ["fast", "skipped"])
+            .Add("independent", d => new FakeMapStep(d) { Process = (f, _, _) => new(FileList.Of(f.With(d.Name, path: "/independent" + f.Path.FullName))) }, inputs: ["**"])
+            .Write("write", "fast", "independent");
+
+        var graph = workflow.Build();
+        var edges = graph.Nodes.SelectMany(b => b.Needs.Select(a => (A: a.Definition.Name, B: b.Definition.Name))).ToArray();
+
+        foreach (var policy in new[] { FailurePolicy.Default, FailurePolicy.KeepGoing, FailurePolicy.FailFast })
+        {
+            for (var i = 0; i < 20; i++)
+            {
+                var view = new RecordingView();
+                var result = await site.BuildAsync(graph, policy, view: view);
+
+                var states = $"{policy}: " + string.Join(", ", result.Steps.Select(x => $"{x.Node.Definition.Name}={x.State}")) + " | " + string.Join("; ", result.Errors);
+                Assert.Equal(graph.Nodes.Count, view.Completed.Count);
+                Assert.True(result["shallow-fail"].State == StepState.Failed, states);
+                Assert.True(result["skipped"].State == StepState.Skipped, states);
+                Assert.True(result["all"].State == StepState.Skipped, states);
+                Assert.True(result.Errors.Count > 0 && result.Errors.All(x => x.Step == "shallow-fail"), states);
+
+                foreach (var (a, b) in edges)
+                {
+                    var completed = view.Completed.Select(x => x.Name).ToList();
+                    Assert.True(completed.IndexOf(a) < completed.IndexOf(b), $"{policy}: '{b}' completed before '{a}': {string.Join(", ", completed)}");
+                }
+
+                // The view saw final runs: the state and end time it observed are the ones of the result.
+                foreach (var (name, state, ended) in view.Completed)
+                {
+                    Assert.Equal(result[name].State, state);
+                    Assert.Equal(result[name].EndedAt, ended);
+                    Assert.NotEqual(StepState.Running, state);
+                }
+            }
+        }
+    }
+
+    private sealed class RecordingView : Douze.Console.IProgressView
+    {
+        private readonly Lock _lock = new();
+
+        public List<(string Name, StepState State, DateTimeOffset? Ended)> Completed { get; } = [];
+
+        public void StepCompleted(StepRun run)
+        {
+            lock (_lock)
+            {
+                Completed.Add((run.Node.Definition.Name, run.State, run.EndedAt));
+            }
+        }
+
+        public void BuildStarted(WorkflowGraph graph) { }
+        public void StepStarted(StepRun run) { }
+        public void StepProgress(StepRun run) { }
+        public void Message(Douze.Console.LogLevel level, string? step, string message) { }
+        public void BuildCompleted(BuildResult result) { }
+        public void Dispose() { }
+    }
+
     private static async Task<string[]> ContentsAsync(StepRun run)
     {
         var contents = new List<string>();
