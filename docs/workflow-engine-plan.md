@@ -619,6 +619,13 @@ errors), waits for the nodes it needs to be complete, reports `IProgressView.Ste
 then completes its channel. For every edge A -> B, A is reported before B, whatever the states. A
 node that stopped early is `Skipped` when a need failed or was skipped, `Cancelled` otherwise, so the
 final states do not depend on which of a failure and a cancellation was observed first.
+Publishing the outcome cannot be skipped: `NodeRunner.RunAsync` completes the contribution, the
+channel and `Completed` in a `finally`, because dependents wait for them. An exception outside the
+units and the step's own code (in the view, in the reporting of a failure, an out-of-memory
+exception anywhere) fails the node with that error and cancels the build, which then ends with the
+other nodes skipped or cancelled; before the integration of phases 2 to B it skipped the completion
+and the build hung at 0% CPU (benchmark finding 5, `SchedulerTests.ExceptionOutsideAUnitFailsTheBuild`).
+A map step whose processing loop fails outside a unit also stops reading its inputs at once.
 
 **Skipping.** When a node fails or is skipped, its channel is completed with a
 `StepUnavailableException`; every dependent stops when it reaches it, is marked `Skipped`, completes

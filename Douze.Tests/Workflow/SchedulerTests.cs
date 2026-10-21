@@ -320,6 +320,49 @@ public class SchedulerTests
     }
 
     [Fact]
+    public async Task ExceptionOutsideAUnitFailsTheBuild()
+    {
+        var site = await new FakeSite().WithFilesAsync("/a.md", "/b.md");
+
+        // The view throws when 'first' completes, as an out-of-memory exception can anywhere: the step's channel
+        // must still complete, or 'second' waits for it forever.
+        var view = new ThrowingView("first");
+
+        var graph = new FakeWorkflow()
+            .Add("first", d => new FakeMapStep(d), inputs: ["**"])
+            .Add("second", d => new FakeMapStep(d), needs: ["first"])
+            .Add("other", d => new FakeMapStep(d) { Before = (_, ct) => Task.Delay(Timeout.Infinite, ct) }, inputs: ["**"])
+            .Build();
+
+        var result = await site.BuildAsync(graph, view: view).WaitAsync(GateTimeout, Ct);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("error: first: view failed", Assert.Single(result.Errors).ToString());
+        Assert.Equal(StepState.Failed, result["first"].State);
+        Assert.Equal(StepState.Skipped, result["second"].State);
+
+        // The build stops: a step that would never end is cancelled.
+        Assert.Equal(StepState.Cancelled, result["other"].State);
+    }
+
+    [Fact]
+    public async Task ExceptionInInitializeFailsTheStep()
+    {
+        var site = await new FakeSite().WithFilesAsync("/a.md");
+
+        var graph = new FakeWorkflow()
+            .Add("broken", d => new ThrowingInitializeStep(d), inputs: ["**"])
+            .Add("after", d => new FakeMapStep(d), needs: ["broken"])
+            .Build();
+
+        var result = await site.BuildAsync(graph).WaitAsync(GateTimeout, Ct);
+
+        Assert.Equal("error: broken: initialize failed", Assert.Single(result.Errors).ToString());
+        Assert.Equal(StepState.Failed, result["broken"].State);
+        Assert.Equal(StepState.Skipped, result["after"].State);
+    }
+
+    [Fact]
     public async Task FailFastCancelsIndependentSteps()
     {
         var site = await new FakeSite().WithFilesAsync("/a.md", "/x.txt");
@@ -586,6 +629,33 @@ public class SchedulerTests
                 }
             }
         }
+    }
+
+    private sealed class ThrowingView(string step) : Douze.Progress.IProgressView
+    {
+        public void StepCompleted(StepRun run)
+        {
+            if (run.Node.Definition.Name == step)
+            {
+                throw new InvalidOperationException("view failed");
+            }
+        }
+
+        public void BuildStarted(WorkflowGraph graph) { }
+        public void StepStarted(StepRun run) { }
+        public void StepProgress(StepRun run) { }
+        public void Message(Douze.Progress.LogLevel level, string? step, string message) { }
+        public void BuildCompleted(BuildResult result) { }
+        public void Dispose() { }
+    }
+
+    private sealed class ThrowingInitializeStep(StepDefinition definition) : Step(definition), IMapStep
+    {
+        public override StepShape NativeShape => StepShape.Map;
+
+        public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct) => throw new DouzeException("initialize failed");
+
+        public ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct) => new(FileList.Of(file));
     }
 
     private sealed class RecordingView : Douze.Progress.IProgressView

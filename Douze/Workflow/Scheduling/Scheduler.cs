@@ -156,7 +156,51 @@ internal sealed class Scheduler
 
         private string Name => Node.Definition.Name;
 
+        /// <summary>
+        /// Runs the node and always publishes its outcome: whatever happens, its contribution, its channel and
+        /// <see cref="Completed"/> complete, since its dependents wait for them.
+        /// </summary>
         public async Task RunAsync(IReadOnlyList<VirtualFile> sources)
+        {
+            try
+            {
+                await RunStepAsync(sources);
+            }
+            catch (Exception e)
+            {
+                Fail(e);
+            }
+            finally
+            {
+                ContributionReady.TrySetResult();
+                Output.Complete(Run.State == StepState.Succeeded ? null : new StepUnavailableException(Name, Run.State));
+                Completed.TrySetResult();
+            }
+        }
+
+        /// <summary>
+        /// An exception outside the units and the step's own code, which report their failures: in the scheduler, the
+        /// view or the reporting of a failure, for instance for lack of memory. The step fails and the build stops,
+        /// since the state of the build is not known.
+        /// </summary>
+        private void Fail(Exception e)
+        {
+            try
+            {
+                Run.AddError(BuildError.FromException(Name, null, e));
+            }
+            finally
+            {
+                Run.EndedAt ??= DateTimeOffset.UtcNow;
+                Run.StartedAt ??= Run.EndedAt;
+                Run.State = StepState.Failed;
+                Run.Seal();
+                _span.Dispose();
+                _buildCts.Cancel();
+            }
+        }
+
+        private async Task RunStepAsync(IReadOnlyList<VirtualFile> sources)
         {
             var token = _stepCts.Token;
             var initialized = false;
@@ -214,7 +258,7 @@ internal sealed class Scheduler
         }
 
         /// <summary>
-        /// Makes the run final, then reports it, then completes the channel. The needs of the node are reported first:
+        /// Makes the run final, then reports it; <see cref="RunAsync"/> then completes the channel. The needs of the node are reported first:
         /// a node that stopped early (a failure, a cancellation) waits for them, so that for every edge A -> B the view,
         /// the trace and the result see A complete before B. Waiting is safe: needs never wait on their dependents,
         /// and writes to the channels of a node that stopped never block.
@@ -236,10 +280,8 @@ internal sealed class Scheduler
 
             Context.View.StepCompleted(Run);
 
-            Output.Complete(Run.State == StepState.Succeeded ? null : new StepUnavailableException(Name, Run.State));
+            // RunAsync completes the channel and Completed.
             _stepCts.Dispose();
-
-            Completed.TrySetResult();
         }
 
         /// <summary>
@@ -459,6 +501,12 @@ internal sealed class Scheduler
             try
             {
                 await processing;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // Units report their own failures: this one is the step's, which stops reading its inputs too.
+                _stepCts.Cancel();
+                throw;
             }
             finally
             {
