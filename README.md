@@ -103,7 +103,74 @@ itself have a `layout` in its front matter.
 
 # workflow
 
-Not available yet: `douze.yml` describes a site's own workflow (`site` settings and `steps`).
+`douze.yml` at the root of the source folder, or the file given with `--workflow`, configures a site. Both of its
+sections are optional, and a site without the file builds with the default workflow.
+
+```yaml
+site:
+  content: docs          # default: _content if it exists, else the source folder
+  data: data             # default: _data if it exists, else none
+  includes: templates    # default: _includes if it exists, else the source folder
+  output: public         # relative to the source folder; -o wins
+  url: https://example.com
+  parallelism: 8         # -p wins
+
+steps:
+  site-data: { inputs: "data/*.json", uses: data, with: { scope: site } }
+  pages:     { inputs: "docs/**", needs: site-data, uses: frontmatter }
+  markdown:  { needs: pages, uses: markdown }
+  permalink: { needs: markdown, uses: permalink, with: { root: docs } }
+  layout:    { needs: permalink, uses: layout }
+
+  packages:  { inputs: "data/packages/*.json", uses: parse, with: { as: package } }
+  package-pages:
+    needs: [packages, site-data]
+    uses: liquid
+    group-by: file
+    with: { template: package.liquid, permalink: "packages/{{ group.files[0].data.package.name }}/" }
+
+  write:     { needs: [layout, package-pages], uses: write }
+```
+
+Paths are relative to the source folder. Without `steps`, the default workflow runs with the folders of `site`.
+`douze --print-workflow` prints the steps that a build runs, the default ones included, in the same format.
+
+## steps
+
+`steps` maps step names (lowercase letters, digits and dashes) to steps. Source files enter the steps whose
+`inputs` match them; the files that come out of a step enter the steps that `need` it. A step only consumes the
+entering files that its `match` selects, and the others pass through it unchanged.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `needs` | none | a step name or a list: the steps whose files, and data, enter this step |
+| `inputs` | none | a glob or a list: the source files that enter this step |
+| `match` | the step's own | a glob or a list: the entering files the step consumes |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
+| `with` | none | the options of the built-in step |
+| `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
+| `incremental` | `true` | `false` runs the step on every build |
+| `run`, `mode`, `outputs`, `sources`, `version`, `env`, `cwd`, `timeout`, `stderr`, `shell` | | command steps, see "commands" |
+
+A step has either `uses` or `run`. Steps run as soon as their files are available, in parallel; their order in the
+file does not matter.
+
+Globs: `*` matches within a folder, `**` across folders, `?` one character, `{a,b}` alternatives, `[a-z]` and
+`[!a-z]` character classes, and `\` escapes. A leading `!` excludes: in a list, the last matching glob decides,
+so `["docs/**", "!**/*.yml"]` is every file of `docs` but the YAML files.
+
+Durations (`timeout`) are a number and a unit: `500ms`, `30s`, `5m`, `1h`.
+
+## errors
+
+Every error of the file is reported before the build stops with exit code 2, with the position of the value it is
+about, or of the step's name for the errors about how steps fit together (unknown `needs` or `uses`, cycles,
+options of built-in steps):
+
+```
+douze.yml(12,5): error: unknown field 'if' on step 'render'
+douze.yml(14,3): error: step 'render' needs unknown step 'markdwn'; did you mean 'markdown'?
+```
 
 # commands
 
