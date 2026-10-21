@@ -87,7 +87,7 @@ public class PermalinkStepTests : StepTestBase
 
         Assert.Equal(["/articles/my-post/index.html"], Paths(result));
 
-        // The permalink read site data: the unit depends on the data file.
-        Assert.Contains("/_data/blog.yml", result["permalink"].Results.Single().Dependencies.DataFiles.Select(x => x.FullName));
+        // The permalink read site data: the unit depends on what 'blog' resolves to.
+        Assert.Contains(result["permalink"].Results.Single().Dependencies.Lookups, x => x.Key == "blog" && x.Hash != DependencySet.Absent);
     }
 }

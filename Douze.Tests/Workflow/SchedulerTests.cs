@@ -476,7 +476,7 @@ public class SchedulerTests
         var graph = new FakeWorkflow()
             .Add("data", d => new FakeReduceStep(d)
             {
-                Reduce = (_, _) => new StepOutput(FileList.None, Scope("data", "data"), [new FolderScope("/blog/", new NodeObject { ["layout"] = NodeValue.Create("blog.html") }, ["/data.yml"])]),
+                Reduce = (_, _) => new StepOutput(FileList.None, Scope("data", "data"), [new FolderScope("/blog/", new NodeObject { ["layout"] = NodeValue.Create("blog.html") })]),
             }, inputs: ["**/*.yml"])
             .Add("pages", d => new FakeMapStep(d)
             {
@@ -503,8 +503,7 @@ public class SchedulerTests
         Assert.Equal(["step:near", "data"], result["render"].Scopes.Site.Select(x => x.Source));
         Assert.Equal(["step:near", "data"], result.Scopes.Site.Select(x => x.Source));
         Assert.Equal(["data"], result["data"].Contributions.Site.Select(x => x.Source));
-        Assert.Equal(["data", "step:near"], result["render"].Results[0].Dependencies.Scopes);
-        Assert.Equal(["/data.yml"], result["render"].Results[0].Dependencies.DataFiles.Select(x => x.FullName));
+        Assert.Equal(["data", "layout", "step:near", "title"], result["render"].Results[0].Dependencies.Lookups.Select(x => x.Key));
     }
 
     [Fact]

@@ -26,7 +26,6 @@ public class DataStepTests : StepTestBase
 
         // Keys are not merged into the site: 'title' is under 'site'.
         Assert.Null(SiteValue(result, "title"));
-        Assert.Equal("/_data/site.yml", result.Scopes.Site.Single().KeySources!["site"]);
         Assert.Empty(result["data"].Results.Single().Outputs);
     }
 
@@ -41,9 +40,6 @@ public class DataStepTests : StepTestBase
         var pkgs = Assert.IsType<NodeObject>(SiteValue(result, "pkgs"));
         Assert.Equal(["Aspire.Hosting", "Aspire.Redis"], pkgs.Select(x => x.Key));
         Assert.Equal("Aspire.Hosting", pkgs["Aspire.Hosting"]!["name"]!.GetValue<string>());
-
-        // A key built from a folder is recorded as the folder.
-        Assert.Equal("/_data/pkgs/", result.Scopes.Site.Single().KeySources!["pkgs"]);
     }
 
     [Fact]
@@ -84,7 +80,6 @@ public class DataStepTests : StepTestBase
         var blog = result.Scopes.Folders["/blog/"];
         Assert.Equal("b.html", blog.Values["layout"]!.GetValue<string>());
         Assert.Equal("A", blog.Values["title"]!.GetValue<string>());
-        Assert.Equal(["/blog/a.yml", "/blog/b.yml"], blog.Sources.Select(x => x.FullName));
 
         // The nearest folder wins.
         var page = new Metadata(new NodeObject(), "/blog/2020/");

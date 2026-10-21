@@ -9,7 +9,7 @@ public class ScopeSetTests
 {
     private static NodeObject Values(string key, string value) => new() { [key] = NodeValue.Create(value) };
 
-    private static FolderScope Folder(FPath directory, string key, string value) => new(directory, Values(key, value), [FPath.Combine(directory, "data.yml")]);
+    private static FolderScope Folder(FPath directory, string key, string value) => new(directory, Values(key, value));
 
     private static string? Resolve(ScopeSet scopes, Metadata meta, string key, NodeObject? fallback = null)
     {
@@ -114,7 +114,7 @@ public class ScopeSetTests
         Assert.True(merged.TryResolve(meta, "site", null, deps, out site, out hit));
         Assert.Equal(new ScopeHit(ScopeKind.Site, "step:site-data"), hit);
         Assert.Equal(("https://example.com", "data", "me"), (site!["url"]!.GetValue<string>(), site["title"]!.GetValue<string>(), site["author"]!.GetValue<string>()));
-        Assert.Equal([ScopeSet.SettingsSource, "step:site-data"], deps.ToSet().Scopes.Order(StringComparer.Ordinal));
+        Assert.Equal(merged.ResolveHash("/", "site"), Assert.Single(deps.ToSet().Lookups).Hash);
 
         // The completed object is built once and shared; the data's own object is not modified.
         Assert.True(merged.TryResolve(meta, "site", null, null, out var again, out _));
@@ -125,57 +125,58 @@ public class ScopeSetTests
         Assert.Equal("own.html", Resolve(merged, new Metadata(Values("layout", "own.html"), "/"), "layout"));
         Assert.Equal("settings.html", Resolve(merged, meta, "layout"));
 
-        // Settings are part of the hash.
+        // Settings are part of the hashes: of the set, and of what a key they complete resolves to.
         Assert.NotEqual(ScopeSet.Empty.Hash, settings.Hash);
         Assert.NotEqual(data.Hash, merged.Hash);
+        Assert.NotEqual(data.ResolveHash("/", "site"), merged.ResolveHash("/", "site"));
     }
 
     [Fact]
-    public void RecordsDependenciesForDataKeysStepScopesAndMisses()
+    public void RecordsWhatKeysResolveToBeyondOwn()
     {
         // Resolution order for a file in /blog/: own, the /blog/ folder scope, then "step:collections", then "data".
+        var colors = new NodeArray(NodeValue.Create("red"));
         var scopes = ScopeSet.Empty
-            .WithSite(new SiteScope("data", new NodeObject { ["colors"] = new NodeArray(), ["characters"] = new NodeArray() },
-                new Dictionary<string, string> { ["colors"] = "/_data/colors.json", ["characters"] = "/_data/characters.yml" }))
+            .WithSite(new SiteScope("data", new NodeObject { ["colors"] = colors, ["characters"] = new NodeArray() }))
             .WithSite(new SiteScope("step:collections", new NodeObject { ["collections"] = new NodeObject() }))
-            .WithFolders([new FolderScope("/blog/", Values("layout", "blog.html"), ["/blog/blog.yml"])]);
+            .WithFolders([Folder("/blog/", "layout", "blog.html")]);
 
         var meta = new Metadata(new NodeObject(), "/blog/");
+        var deps = new DependencyTracker();
 
-        // A hit in the data scope records its data file, plus the scopes consulted before it: they could define the
-        // key later and shadow it.
-        var dataKey = new DependencyTracker();
-        Assert.True(scopes.TryResolve(meta, "colors", null, dataKey, out _, out var hit));
-        Assert.Equal(new ScopeHit(ScopeKind.Site, "/_data/colors.json"), hit);
-        Assert.Equal(["/_data/colors.json", "/blog/blog.yml"], dataKey.ToSet().DataFiles.Select(x => x.FullName));
-        Assert.Equal(["step:collections"], dataKey.ToSet().Scopes);
-
-        var stepScope = new DependencyTracker();
-        Assert.True(scopes.TryResolve(meta, "collections", null, stepScope, out _, out hit));
-        Assert.Equal(new ScopeHit(ScopeKind.Site, "step:collections"), hit);
-        Assert.Equal(["step:collections"], stepScope.ToSet().Scopes);
-        Assert.Equal(["/blog/blog.yml"], stepScope.ToSet().DataFiles.Select(x => x.FullName));
-
-        // A folder hit stops before the site scopes.
-        var folder = new DependencyTracker();
-        Assert.True(scopes.TryResolve(meta, "layout", null, folder, out _, out _));
-        Assert.Equal(["/blog/blog.yml"], folder.ToSet().DataFiles.Select(x => x.FullName));
-        Assert.Empty(folder.ToSet().Scopes);
-
-        // A file outside /blog/ never consults the folder scope.
-        var elsewhere = new DependencyTracker();
-        Assert.True(scopes.TryResolve(new Metadata(new NodeObject(), "/docs/"), "collections", null, elsewhere, out _, out _));
-        Assert.Empty(elsewhere.ToSet().DataFiles);
-
-        // A miss depends on every scope that could define the key.
-        var miss = new DependencyTracker();
-        Assert.False(scopes.TryResolve(meta, "missing", null, miss, out _, out _));
-        Assert.Equal(["data", "step:collections"], miss.ToSet().Scopes);
-        Assert.Equal(["/blog/blog.yml"], miss.ToSet().DataFiles.Select(x => x.FullName));
+        Assert.True(scopes.TryResolve(meta, "colors", null, deps, out _, out var hit));
+        Assert.Equal(new ScopeHit(ScopeKind.Site, "data"), hit);
+        Assert.True(scopes.TryResolve(meta, "layout", null, deps, out _, out hit));
+        Assert.Equal(new ScopeHit(ScopeKind.Folder, "/blog/"), hit);
+        Assert.False(scopes.TryResolve(meta, "missing", null, deps, out _, out _));
 
         // Own values are part of the input refs: nothing to record.
-        var own = new DependencyTracker();
-        Assert.True(scopes.TryResolve(new Metadata(Values("colors", "own"), "/blog/"), "colors", null, own, out _, out _));
-        Assert.True(own.ToSet().IsEmpty);
+        Assert.True(scopes.TryResolve(new Metadata(Values("title", "own"), "/blog/"), "title", null, deps, out _, out _));
+
+        Assert.Equal(
+            [("/blog/", "colors", NodeHash.Of(colors)), ("/blog/", "layout", NodeHash.Of(NodeValue.Create("blog.html"))), ("/blog/", "missing", DependencySet.Absent)],
+            deps.ToSet().Lookups.Select(x => (x.Directory.FullName, x.Key, x.Hash)));
+    }
+
+    [Fact]
+    public void ResolveHashChangesOnlyWithWhatTheKeyResolvesTo()
+    {
+        var data = new SiteScope("data", new NodeObject { ["layout"] = NodeValue.Create("site.html"), ["menu"] = new NodeArray() });
+        var scopes = ScopeSet.Empty.WithSite(data);
+        var hash = scopes.ResolveHash("/blog/2020/", "layout");
+
+        // Another key changing, or a folder scope that does not define the key, changes nothing.
+        Assert.Equal(hash, ScopeSet.Empty.WithSite(new SiteScope("data", new NodeObject { ["layout"] = NodeValue.Create("site.html"), ["menu"] = new NodeArray(NodeValue.Create("home")) })).ResolveHash("/blog/2020/", "layout"));
+        Assert.Equal(hash, scopes.WithFolders([Folder("/blog/", "title", "Blog")]).ResolveHash("/blog/2020/", "layout"));
+        Assert.Equal(hash, scopes.WithFolders([Folder("/docs/", "layout", "docs.html")]).ResolveHash("/blog/2020/", "layout"));
+
+        // A folder scope on the path that defines the key shadows the site value, even in a directory that had no
+        // folder scope before; a new value changes the hash too.
+        Assert.NotEqual(hash, scopes.WithFolders([Folder("/blog/", "layout", "blog.html")]).ResolveHash("/blog/2020/", "layout"));
+        Assert.NotEqual(hash, ScopeSet.Empty.WithSite(new SiteScope("data", Values("layout", "other.html"))).ResolveHash("/blog/2020/", "layout"));
+
+        // A step contribution that defines the key later shadows it too.
+        Assert.NotEqual(hash, scopes.WithSite(new SiteScope("step:collections", Values("layout", "step.html"))).ResolveHash("/blog/2020/", "layout"));
+        Assert.Equal(DependencySet.Absent, scopes.ResolveHash("/", "missing"));
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using Douze.FileSystems;
 using Douze.Nodes;
@@ -27,8 +28,8 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     // every page in memory until the build ends (layouts and includes are held by their files).
     private readonly ConcurrentDictionary<Hash128, ParseSlot> _parsed = new();
 
-    // Files of the includes folders by relative path, read once.
-    private readonly ConcurrentDictionary<FPath, Lazy<Task<IncludeFile?>>> _files = new();
+    // Files of the includes folders by relative path, read once, with the paths looked for before them.
+    private readonly ConcurrentDictionary<FPath, Lazy<Task<Resolution>>> _files = new();
 
     // Fluid include names to the content hash of the file they resolved to, for the template cache.
     private readonly ConcurrentDictionary<string, Hash128> _includeHashes = new(StringComparer.Ordinal);
@@ -133,16 +134,11 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     /// </summary>
     public async ValueTask<LoadedTemplate?> LoadAsync(FPath relativePath, DependencyTracker deps, CancellationToken ct)
     {
-        var file = await GetFileAsync(relativePath.ToRelative()).WaitAsync(ct);
+        var resolution = await GetFileAsync(relativePath.ToRelative()).WaitAsync(ct);
 
-        if (file == null)
-        {
-            return null;
-        }
+        resolution.Record(deps);
 
-        deps.RecordTemplate(file.Path, file.ContentHash);
-
-        return file.Loaded.Value;
+        return resolution.File?.Loaded.Value;
     }
 
     /// <summary>
@@ -152,7 +148,7 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     {
         foreach (var entry in _files)
         {
-            var file = entry.Value.IsValueCreated && entry.Value.Value.IsCompletedSuccessfully ? entry.Value.Value.Result : null;
+            var file = entry.Value.IsValueCreated && entry.Value.Value.IsCompletedSuccessfully ? entry.Value.Value.Result.File : null;
 
             // Entries that were not found may resolve to the new file.
             if (file == null || file.Path == sourcePath)
@@ -164,16 +160,16 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
 
     async ValueTask<TemplateSourceInfo> ITemplateFileProvider.GetFileInfoAsync(string subpath, TemplateContext context, CancellationToken cancellationToken)
     {
-        var file = await ResolveIncludeAsync(subpath).WaitAsync(cancellationToken);
-
-        if (file == null)
-        {
-            throw new DouzeException($"include '{subpath}' not found in {string.Join(", ", _includesFolders.Select(x => $"'{x}'"))}");
-        }
+        var resolution = await ResolveIncludeAsync(subpath).WaitAsync(cancellationToken);
 
         if (context.AmbientValues.TryGetValue(AmbientKeys.Dependencies, out var deps) && deps is DependencyTracker tracker)
         {
-            tracker.RecordTemplate(file.Path, file.ContentHash);
+            resolution.Record(tracker);
+        }
+
+        if (resolution.File is not { } file)
+        {
+            throw new DouzeException($"include '{subpath}' not found in {string.Join(", ", _includesFolders.Select(x => $"'{x}'"))}");
         }
 
         _includeHashes[subpath] = file.ContentHash;
@@ -203,32 +199,43 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
         }
     }
 
-    private async Task<IncludeFile?> ResolveIncludeAsync(string subpath)
+    private async Task<Resolution> ResolveIncludeAsync(string subpath)
     {
         var path = new FPath(subpath).ToRelative();
 
         if (string.IsNullOrEmpty(path.GetExtensionWithDot()))
         {
-            return await GetFileAsync(new FPath(path.FullName + ".liquid")) ?? await GetFileAsync(new FPath(path.FullName + ".html"));
+            var liquid = await GetFileAsync(new FPath(path.FullName + ".liquid"));
+
+            if (liquid.File != null)
+            {
+                return liquid;
+            }
+
+            var html = await GetFileAsync(new FPath(path.FullName + ".html"));
+            return html with { Missing = liquid.Missing.AddRange(html.Missing) };
         }
 
         return await GetFileAsync(path);
     }
 
-    private Task<IncludeFile?> GetFileAsync(FPath relativePath)
+    private Task<Resolution> GetFileAsync(FPath relativePath)
     {
-        return _files.GetOrAdd(relativePath, static (path, loader) => new Lazy<Task<IncludeFile?>>(
+        return _files.GetOrAdd(relativePath, static (path, loader) => new Lazy<Task<Resolution>>(
             () => loader.ReadFileAsync(path), LazyThreadSafetyMode.ExecutionAndPublication), this).Value;
     }
 
-    private async Task<IncludeFile?> ReadFileAsync(FPath relativePath)
+    private async Task<Resolution> ReadFileAsync(FPath relativePath)
     {
+        var missing = ImmutableArray.CreateBuilder<FPath>();
+
         foreach (var folder in _includesFolders)
         {
             var path = FPath.Combine(folder, relativePath);
 
             if (!(await _source.GetFileEntryAsync(path)).Exists)
             {
+                missing.Add(path);
                 continue;
             }
 
@@ -241,10 +248,30 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
                 bytes = memory.ToArray();
             }
 
-            return new IncludeFile(this, path, bytes, Hash128.Of(bytes));
+            return new Resolution(new IncludeFile(this, path, bytes, Hash128.Of(bytes)), missing.ToImmutable());
         }
 
-        return null;
+        return new Resolution(null, missing.ToImmutable());
+    }
+
+    /// <summary>
+    /// The file a name resolved to, if any, and the paths looked for before it: a file added at one of them later would
+    /// be used instead, so a unit depends on their absence too.
+    /// </summary>
+    private sealed record Resolution(IncludeFile? File, ImmutableArray<FPath> Missing)
+    {
+        public void Record(DependencyTracker deps)
+        {
+            foreach (var path in Missing)
+            {
+                deps.RecordTemplate(path, DependencySet.Absent);
+            }
+
+            if (File != null)
+            {
+                deps.RecordTemplate(File.Path, File.ContentHash);
+            }
+        }
     }
 
     private sealed class IncludeFile

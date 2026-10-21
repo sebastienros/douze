@@ -24,15 +24,15 @@ public class MetadataValueTests
     public async Task ResolvesThroughAmbientScopes()
     {
         var scopes = ScopeSet.Empty
-            .WithSite(new SiteScope("data", new NodeObject { ["site"] = new NodeObject { ["name"] = NodeValue.Create("Douze") } },
-                new Dictionary<string, string> { ["site"] = "/_data/site.yml" }))
-            .WithFolders([new FolderScope("/blog/", new NodeObject { ["layout"] = NodeValue.Create("blog.html") }, ["/blog/blog.yml"])]);
+            .WithSite(new SiteScope("data", new NodeObject { ["site"] = new NodeObject { ["name"] = NodeValue.Create("Douze") } }))
+            .WithFolders([new FolderScope("/blog/", new NodeObject { ["layout"] = NodeValue.Create("blog.html") })]);
 
         var meta = new Metadata(new NodeObject { ["title"] = NodeValue.Create("Hello") }, "/blog/");
         var deps = new DependencyTracker();
 
         Assert.Equal("Hello Douze blog.html", await RenderAsync("{{ title }} {{ site.name }} {{ layout }}", meta, scopes, deps));
-        Assert.Equal(["/_data/site.yml", "/blog/blog.yml"], deps.ToSet().DataFiles.Select(x => x.FullName));
+        // 'title' is the file's own: only the keys resolved through the scopes are recorded.
+        Assert.Equal([("/blog/", "layout"), ("/blog/", "site")], deps.ToSet().Lookups.Select(x => (x.Directory.FullName, x.Key)));
 
         // Locals shadow the model.
         Assert.Equal("local", await RenderAsync("{% assign title = 'local' %}{{ title }}", meta, scopes));
@@ -57,7 +57,7 @@ public class MetadataValueTests
         // Nested metadata resolves through the same scopes, with its own directory.
         var scopes = ScopeSet.Empty
             .WithSite(new SiteScope("step:collections", new NodeObject { ["collections"] = new NodeObject { ["all"] = new NodeArray(item) } }))
-            .WithFolders([new FolderScope("/articles/", new NodeObject { ["layout"] = NodeValue.Create("articles.html") }, [])]);
+            .WithFolders([new FolderScope("/articles/", new NodeObject { ["layout"] = NodeValue.Create("articles.html") })]);
 
         var meta = new Metadata(new NodeObject(), "/");
 

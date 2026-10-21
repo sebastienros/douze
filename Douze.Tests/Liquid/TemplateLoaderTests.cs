@@ -38,15 +38,20 @@ public class TemplateLoaderTests
             var rendered = await template.Template.RenderAsync(Context(loader, deps, new NodeObject { ["title"] = NodeValue.Create("Hi") }));
 
             Assert.Equal("Header Hi Footer", rendered);
-            Assert.Equal([("/_includes/footer.html", Hash128.OfText("Footer")), ("/_includes/header.liquid", headerHash)], deps.ToSet().Templates.Select(x => (x.Path.FullName, x.Hash)));
+            // 'footer' was looked for as footer.liquid first: a file added there would be used instead.
+            Assert.Equal(
+                [("/_includes/footer.html", Hash128.OfText("Footer")), ("/_includes/footer.liquid", DependencySet.Absent), ("/_includes/header.liquid", headerHash)],
+                deps.ToSet().Templates.Select(x => (x.Path.FullName, x.Hash)));
         }
 
         // Each include file was read once, whatever the number of renders.
         Assert.Equal(2, fs.Opens);
 
         var missing = loader.GetOrParse(Hash128.OfText("missing"), "{% include 'nope' %}", "/page.html");
-        var e = await Assert.ThrowsAsync<DouzeException>(async () => await missing.Template.RenderAsync(Context(loader, new DependencyTracker())));
+        var missingDeps = new DependencyTracker();
+        var e = await Assert.ThrowsAsync<DouzeException>(async () => await missing.Template.RenderAsync(Context(loader, missingDeps)));
         Assert.Equal("include 'nope' not found in '/_includes/'", e.Message);
+        Assert.Equal(["/_includes/nope.html", "/_includes/nope.liquid"], missingDeps.ToSet().Templates.Select(x => x.Path.FullName));
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using Douze.FileSystems;
@@ -6,30 +7,47 @@ using Douze.Nodes;
 namespace Douze.Workflow;
 
 /// <summary>
-/// Site wide values contributed by a step ("step:&lt;name&gt;"), such as the data folder or the collections.
+/// Site wide values contributed by a step ("step:&lt;name&gt;"), such as the data folder or the collections, or the
+/// settings of the workflow file.
 /// </summary>
-// KeySources: Top-level key to the data file that defined it (or the folder, for a key built from a folder of files),
-// for dependency tracking.
-internal sealed record SiteScope(string Source, NodeObject Values, IReadOnlyDictionary<string, string>? KeySources = null)
+internal sealed class SiteScope
 {
+    private readonly NodeObject _values;
+    private readonly ConcurrentDictionary<string, Hash128> _keyHashes = new(StringComparer.Ordinal);
     private Hash128? _hash;
 
-    // 'with' expressions must not copy the cached hash.
-    private SiteScope(SiteScope original)
+    public SiteScope(string source, NodeObject values)
     {
-        Source = original.Source;
-        Values = original.Values;
-        KeySources = original.KeySources;
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(values);
+
+        Source = source;
+        _values = values;
     }
 
-    public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Source), NodeHash.Of(Values));
+    public string Source { get; }
+
+    public NodeObject Values => _values;
+
+    public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Source), NodeHash.Of(_values));
+
+    public bool TryGetValue(string key, out Node? value) => _values.TryGetItem(key, out value);
+
+    public bool ContainsKey(string key) => _values.TryGetItem(key, out _);
+
+    /// <summary>
+    /// The hash of the value of <paramref name="key"/>, which must be defined.
+    /// </summary>
+    public Hash128 KeyHash(string key)
+    {
+        return _keyHashes.GetOrAdd(key, static (key, values) => NodeHash.Of(values.GetItem(key)), _values);
+    }
 }
 
 /// <summary>
 /// Values that apply to the files of a directory and its subdirectories.
 /// </summary>
-// Sources: The data files the values come from, sorted.
-internal sealed record FolderScope(FPath Directory, NodeObject Values, ImmutableArray<FPath> Sources)
+internal sealed record FolderScope(FPath Directory, NodeObject Values)
 {
     private Hash128? _hash;
 
@@ -38,7 +56,6 @@ internal sealed record FolderScope(FPath Directory, NodeObject Values, Immutable
     {
         Directory = original.Directory;
         Values = original.Values;
-        Sources = original.Sources;
     }
 
     public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Directory.FullName), NodeHash.Of(Values));
@@ -46,7 +63,7 @@ internal sealed record FolderScope(FPath Directory, NodeObject Values, Immutable
 
 internal enum ScopeKind { Own, Folder, Site, Fallback, None }
 
-// Source: The directory of a folder scope, the data file or source of a site scope, empty otherwise.
+// Source: The directory of a folder scope, the source of a site scope, empty otherwise.
 internal readonly record struct ScopeHit(ScopeKind Kind, string Source);
 
 /// <summary>
@@ -133,8 +150,7 @@ internal sealed class ScopeSet
                     values[property.Key] = property.Value;
                 }
 
-                var sources = existing.Sources.AddRange(folder.Sources).Distinct().Order().ToImmutableArray();
-                builder[folder.Directory] = new FolderScope(folder.Directory, values, sources);
+                builder[folder.Directory] = new FolderScope(folder.Directory, values);
             }
             else
             {
@@ -176,39 +192,34 @@ internal sealed class ScopeSet
     /// Resolves a top-level key: own metadata, then folder scopes from <c>meta.Directory</c> up to the root,
     /// then site scopes in order, then the settings, then <paramref name="fallback"/>. The first scope that contains
     /// the key wins, except that an object hit is completed with the settings' object of the same key
-    /// (<see cref="FromSettings"/>). Every scope consulted is recorded in <paramref name="deps"/>, hit or miss: a scope
-    /// that does not define the key could define it later and shadow the hit, so the result depends on it too.
+    /// (<see cref="FromSettings"/>). A key the own metadata does not define is recorded in <paramref name="deps"/> with
+    /// what it resolves to in the scopes (<see cref="ResolveHash"/>): a scope that does not define it could define it
+    /// later and shadow the hit, a data file could change its value.
     /// </summary>
     public bool TryResolve(Metadata meta, string key, NodeObject? fallback, DependencyTracker? deps, out Node? value, out ScopeHit hit)
     {
-        deps ??= DependencyTracker.Null;
-
-        if (TryResolveContributed(meta, key, deps, out value, out hit))
+        if (meta.Own.TryGetItem(key, out value))
         {
-            // An object hit depends on the settings: they could complete it.
-            if (_settings != null && value is NodeObject found)
-            {
-                deps.RecordScope(_settings.Source);
+            hit = new ScopeHit(ScopeKind.Own, "");
+            return true;
+        }
 
-                if (_settings.Values.TryGetItem(key, out var setting) && setting is NodeObject defaults)
-                {
-                    value = _completed!.GetValue(found, x => Complete(x, defaults));
-                }
+        deps?.RecordLookup(this, meta.Directory, key);
+
+        if (TryResolveContributed(meta.Directory, key, out value, out hit))
+        {
+            if (_settings != null && value is NodeObject found && _settings.TryGetValue(key, out var setting) && setting is NodeObject defaults)
+            {
+                value = _completed!.GetValue(found, x => Complete(x, defaults));
             }
 
             return true;
         }
 
-        if (_settings != null)
+        if (_settings != null && _settings.TryGetValue(key, out value))
         {
-            if (_settings.Values.TryGetItem(key, out value))
-            {
-                deps.RecordScope(_settings.Source);
-                hit = new ScopeHit(ScopeKind.Site, _settings.Source);
-                return true;
-            }
-
-            deps.RecordScope(_settings.Source);
+            hit = new ScopeHit(ScopeKind.Site, _settings.Source);
+            return true;
         }
 
         if (fallback != null && fallback.TryGetItem(key, out value))
@@ -220,6 +231,28 @@ internal sealed class ScopeSet
         value = null;
         hit = new ScopeHit(ScopeKind.None, "");
         return false;
+    }
+
+    /// <summary>
+    /// The hash of what <paramref name="key"/> resolves to for a file of <paramref name="directory"/> whose own metadata
+    /// does not define it, or <see cref="DependencySet.Absent"/> when no scope defines it. A unit that read the key can
+    /// reuse its result while this hash does not change. When the settings define the key too, the hash combines both
+    /// values: the settings may complete the value found.
+    /// </summary>
+    public Hash128 ResolveHash(FPath directory, string key)
+    {
+        Hash128 hash;
+
+        if (TryResolveContributedHash(directory, key, out var found))
+        {
+            hash = _settings != null && _settings.ContainsKey(key) ? Hash128.Combine(found, _settings.KeyHash(key)) : found;
+        }
+        else
+        {
+            hash = _settings != null && _settings.ContainsKey(key) ? _settings.KeyHash(key) : DependencySet.Absent;
+        }
+
+        return hash;
     }
 
     private static NodeObject Complete(NodeObject found, NodeObject defaults)
@@ -234,31 +267,15 @@ internal sealed class ScopeSet
         return result;
     }
 
-    private bool TryResolveContributed(Metadata meta, string key, DependencyTracker deps, out Node? value, out ScopeHit hit)
+    private bool TryResolveContributed(FPath directory, string key, out Node? value, out ScopeHit hit)
     {
-        if (meta.Own.TryGetItem(key, out value))
-        {
-            hit = new ScopeHit(ScopeKind.Own, "");
-            return true;
-        }
-
         if (!_folders.IsEmpty)
         {
-            for (var directory = meta.Directory; !directory.IsEmpty; directory = directory.GetParentDirectory())
+            for (var d = directory; !d.IsEmpty; d = d.GetParentDirectory())
             {
-                if (!_folders.TryGetValue(directory, out var folder))
+                if (_folders.TryGetValue(d, out var folder) && folder.Values.TryGetItem(key, out value))
                 {
-                    continue;
-                }
-
-                foreach (var source in folder.Sources)
-                {
-                    deps.RecordDataFile(source);
-                }
-
-                if (folder.Values.TryGetItem(key, out value))
-                {
-                    hit = new ScopeHit(ScopeKind.Folder, directory.FullName);
+                    hit = new ScopeHit(ScopeKind.Folder, d.FullName);
                     return true;
                 }
             }
@@ -266,28 +283,42 @@ internal sealed class ScopeSet
 
         foreach (var scope in _site)
         {
-            if (!scope.Values.TryGetItem(key, out value))
+            if (scope.TryGetValue(key, out value))
             {
-                deps.RecordScope(scope.Source);
-                continue;
-            }
-
-            if (scope.KeySources != null && scope.KeySources.TryGetValue(key, out var dataFile))
-            {
-                deps.RecordDataFile(dataFile);
-                hit = new ScopeHit(ScopeKind.Site, dataFile);
-            }
-            else
-            {
-                deps.RecordScope(scope.Source);
                 hit = new ScopeHit(ScopeKind.Site, scope.Source);
+                return true;
             }
-
-            return true;
         }
 
         value = null;
         hit = new ScopeHit(ScopeKind.None, "");
+        return false;
+    }
+
+    private bool TryResolveContributedHash(FPath directory, string key, out Hash128 hash)
+    {
+        if (!_folders.IsEmpty)
+        {
+            for (var d = directory; !d.IsEmpty; d = d.GetParentDirectory())
+            {
+                if (_folders.TryGetValue(d, out var folder) && folder.Values.TryGetItem(key, out var value))
+                {
+                    hash = NodeHash.Of(value);
+                    return true;
+                }
+            }
+        }
+
+        foreach (var scope in _site)
+        {
+            if (scope.ContainsKey(key))
+            {
+                hash = scope.KeyHash(key);
+                return true;
+            }
+        }
+
+        hash = default;
         return false;
     }
 

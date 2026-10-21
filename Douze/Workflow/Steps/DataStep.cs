@@ -60,7 +60,6 @@ internal sealed class DataStep : Step, IReduceStep
     private StepOutput Site(IReadOnlyList<VirtualFile> files, Node?[] values, FPath root)
     {
         var site = new NodeObject();
-        var keySources = new Dictionary<string, string>(StringComparer.Ordinal);
 
         // Which file or folder defined each key, for the duplicate error.
         var definedBy = new Dictionary<string, FPath>(StringComparer.Ordinal);
@@ -101,17 +100,14 @@ internal sealed class DataStep : Step, IReduceStep
                     target = folder;
                 }
             }
-
-            // A key built from a folder of files is recorded as the folder: a replay checks every file under it.
-            keySources[segments[0]] = segments.Length == 1 ? path.FullName : FPath.Combine(root, segments[0] + "/").FullName;
         }
 
-        return new StepOutput(FileList.None, new SiteScope($"step:{Name}", site, keySources));
+        return new StepOutput(FileList.None, new SiteScope($"step:{Name}", site));
     }
 
     private static StepOutput Folders(IReadOnlyList<VirtualFile> files, Node?[] values)
     {
-        var folders = new SortedDictionary<FPath, (NodeObject Values, List<FPath> Sources)>();
+        var folders = new SortedDictionary<FPath, NodeObject>();
 
         // Files are sorted by path: a later file of the same folder overrides the keys of an earlier one.
         for (var i = 0; i < files.Count; i++)
@@ -132,18 +128,16 @@ internal sealed class DataStep : Step, IReduceStep
 
             if (!folders.TryGetValue(directory, out var folder))
             {
-                folders[directory] = folder = (new NodeObject(), []);
+                folders[directory] = folder = new NodeObject();
             }
 
             foreach (var property in obj)
             {
-                folder.Values[property.Key] = property.Value;
+                folder[property.Key] = property.Value;
             }
-
-            folder.Sources.Add(path);
         }
 
-        var scopes = folders.Select(x => new FolderScope(x.Key, x.Value.Values, [.. x.Value.Sources])).ToArray();
+        var scopes = folders.Select(x => new FolderScope(x.Key, x.Value)).ToArray();
 
         return new StepOutput(FileList.None, Folders: scopes);
     }
