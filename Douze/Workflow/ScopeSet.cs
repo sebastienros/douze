@@ -227,27 +227,47 @@ internal sealed class ScopeSet
     /// </summary>
     public bool TryResolve(Metadata meta, string key, NodeObject? fallback, DependencyTracker? deps, out Node? value, out ScopeHit hit)
     {
+        return TryResolve(meta, key, fallback, deps, track: false, out value, out hit, out _);
+    }
+
+    /// <summary>
+    /// Resolves a key like <see cref="TryResolve(Metadata, string, NodeObject?, DependencyTracker?, out Node?, out ScopeHit)"/>,
+    /// for a template: instead of depending on the whole value, the unit depends on what the template reads of it,
+    /// recorded by <paramref name="recorder"/> (null for a value that is not from the scopes, or when nothing is
+    /// recorded).
+    /// </summary>
+    public bool TryResolveTracked(Metadata meta, string key, NodeObject? fallback, DependencyTracker? deps, out Node? value, out AccessRecorder? recorder)
+    {
+        return TryResolve(meta, key, fallback, deps, track: true, out value, out _, out recorder);
+    }
+
+    private bool TryResolve(Metadata meta, string key, NodeObject? fallback, DependencyTracker? deps, bool track, out Node? value, out ScopeHit hit, out AccessRecorder? recorder)
+    {
+        recorder = null;
+
         if (meta.Own.TryGetItem(key, out value))
         {
             hit = new ScopeHit(ScopeKind.Own, "");
             return true;
         }
 
-        deps?.RecordLookup(this, meta.Directory, key);
+        AccessRecorder? tracked = null;
 
-        if (TryResolveContributed(meta.Directory, key, out value, out hit))
+        if (deps != null)
         {
-            if (_settings != null && value is NodeObject found && _settings.TryGetValue(key, out var setting) && setting is NodeObject defaults)
+            if (track)
             {
-                value = _completed!.GetValue(found, x => Complete(x, defaults));
+                tracked = deps.TrackLookup(this, meta.Directory, key);
             }
-
-            return true;
+            else
+            {
+                deps.RecordLookup(this, meta.Directory, key);
+            }
         }
 
-        if (_settings != null && _settings.TryGetValue(key, out value))
+        if (TryResolveBeyondOwn(meta.Directory, key, out value, out hit))
         {
-            hit = new ScopeHit(ScopeKind.Site, _settings.Source);
+            recorder = tracked;
             return true;
         }
 
@@ -282,6 +302,42 @@ internal sealed class ScopeSet
         }
 
         return hash;
+    }
+
+    /// <summary>
+    /// The hash of what <paramref name="access"/> read of the value <paramref name="key"/> resolves to for a file of
+    /// <paramref name="directory"/> whose own metadata does not define it (<see cref="ValueAccess.Project"/>), or
+    /// <see cref="DependencySet.Absent"/> when no scope defines it.
+    /// </summary>
+    public Hash128 ProjectHash(FPath directory, string key, ValueAccess access)
+    {
+        return TryResolveBeyondOwn(directory, key, out var value, out _) ? Hash128.Combine(Present, access.Project(value)) : DependencySet.Absent;
+    }
+
+    private static readonly Hash128 Present = Hash128.OfText("present");
+
+    /// <summary>
+    /// Resolves a key in the folder scopes, the site scopes and the settings, completing an object with the settings'.
+    /// </summary>
+    private bool TryResolveBeyondOwn(FPath directory, string key, out Node? value, out ScopeHit hit)
+    {
+        if (TryResolveContributed(directory, key, out value, out hit))
+        {
+            if (_settings != null && value is NodeObject found && _settings.TryGetValue(key, out var setting) && setting is NodeObject defaults)
+            {
+                value = _completed!.GetValue(found, x => Complete(x, defaults));
+            }
+
+            return true;
+        }
+
+        if (_settings != null && _settings.TryGetValue(key, out value))
+        {
+            hit = new ScopeHit(ScopeKind.Site, _settings.Source);
+            return true;
+        }
+
+        return false;
     }
 
     private static NodeObject Complete(NodeObject found, NodeObject defaults)

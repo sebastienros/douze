@@ -25,7 +25,8 @@ internal sealed class ReplayState
 
     /// <summary>
     /// Whether every dependency of a cached result is unchanged: each template has its hash, each lookup resolves to the
-    /// same value in <paramref name="scopes"/>, each written file is in the output folder as it was written.
+    /// same value in <paramref name="scopes"/> (or the same part of it, for what a template read), each written file is
+    /// in the output folder as it was written.
     /// </summary>
     public async ValueTask<bool> IsUnchangedAsync(string step, ScopeSet scopes, DependencySet dependencies, CancellationToken ct)
     {
@@ -44,9 +45,11 @@ internal sealed class ReplayState
 
     private async Task<bool> CheckAsync(ScopeSet scopes, DependencySet dependencies)
     {
-        foreach (var (directory, key, hash) in dependencies.Lookups)
+        foreach (var lookup in dependencies.Lookups)
         {
-            if (scopes.ResolveHash(directory, key) != hash)
+            var hash = lookup.Access == null ? scopes.ResolveHash(lookup.Directory, lookup.Key) : scopes.ProjectHash(lookup.Directory, lookup.Key, lookup.Access);
+
+            if (hash != lookup.Hash)
             {
                 return false;
             }

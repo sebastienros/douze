@@ -101,6 +101,33 @@ internal sealed class CacheIndex
                 writer.Write((byte)(date?.Kind ?? DateTimeKind.Unspecified));
             }
 
+            // 0: none; otherwise 1, plus 2 for the whole value and 4 for the count, then the members and items read.
+            void Access(ValueAccess? access)
+            {
+                if (access == null)
+                {
+                    writer.Write((byte)0);
+                    return;
+                }
+
+                writer.Write((byte)(1 | (access.IsWhole ? 2 : 0) | (access.CountRead ? 4 : 0)));
+                writer.Write7BitEncodedInt(access.Members.Length);
+
+                foreach (var (key, member) in access.Members)
+                {
+                    String(key);
+                    Access(member);
+                }
+
+                writer.Write7BitEncodedInt(access.Items.Length);
+
+                foreach (var (index, item) in access.Items)
+                {
+                    writer.Write7BitEncodedInt(index);
+                    Access(item);
+                }
+            }
+
             writer.Write7BitEncodedInt(Packs.Count);
 
             foreach (var pack in Packs)
@@ -141,11 +168,12 @@ internal sealed class CacheIndex
 
                 writer.Write7BitEncodedInt(set.Lookups.Length);
 
-                foreach (var (directory, key, lookupHash) in set.Lookups)
+                foreach (var lookup in set.Lookups)
                 {
-                    String(directory.FullName);
-                    String(key);
-                    Hash(lookupHash);
+                    String(lookup.Directory.FullName);
+                    String(lookup.Key);
+                    Hash(lookup.Hash);
+                    Access(lookup.Access);
                 }
 
                 writer.Write7BitEncodedInt(set.Written.Length);
@@ -283,6 +311,37 @@ internal sealed class CacheIndex
 
         Hash128 Hash() => NodeSerializer.ReadHash(reader);
 
+        ValueAccess? Access()
+        {
+            var flags = reader.ReadByte();
+
+            if (flags == 0)
+            {
+                return null;
+            }
+
+            var members = new (string, ValueAccess)[reader.Read7BitEncodedInt()];
+
+            for (var m = 0; m < members.Length; m++)
+            {
+                members[m] = (RequiredString(), Access() ?? throw new InvalidDataException("A member access is missing"));
+            }
+
+            var items = new (int, ValueAccess)[reader.Read7BitEncodedInt()];
+
+            for (var i = 0; i < items.Length; i++)
+            {
+                items[i] = (reader.Read7BitEncodedInt(), Access() ?? throw new InvalidDataException("An item access is missing"));
+            }
+
+            if ((flags & 2) != 0)
+            {
+                return ValueAccess.Whole;
+            }
+
+            return (flags & 4) == 0 && members.Length == 0 && items.Length == 0 ? ValueAccess.Untouched : new ValueAccess(false, (flags & 4) != 0, [.. members], [.. items]);
+        }
+
         DateTime? Date()
         {
             var ticks = reader.ReadInt64();
@@ -331,11 +390,11 @@ internal sealed class CacheIndex
                 templates[t] = (new FPath(RequiredString()), Hash());
             }
 
-            var lookups = new (FPath, string, Hash128)[reader.Read7BitEncodedInt()];
+            var lookups = new Lookup[reader.Read7BitEncodedInt()];
 
             for (var l = 0; l < lookups.Length; l++)
             {
-                lookups[l] = (new FPath(RequiredString()), RequiredString(), Hash());
+                lookups[l] = new Lookup(new FPath(RequiredString()), RequiredString(), Hash(), Access());
             }
 
             var written = new (FPath, long, DateTime)[reader.Read7BitEncodedInt()];

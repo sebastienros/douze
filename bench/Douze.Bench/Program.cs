@@ -9,8 +9,11 @@ const string Usage = """
       aspire-api --data <dir> --out <dir> [--mode full|data]
                  generates a site that renders the aspire.dev API reference pages from its JSON data
                  (bench/fetch-aspire-data.sh fetches the data); --mode data writes the data and a single page
-      run        --site <dir> --out <dir> [--douze <path>] [--repeat 3] [--label <text>] [-- <douze options>]
-                 builds the site with the douze binary (default: tool-out/douze) and prints a Markdown table row
+      run        --site <dir> --out <dir> [--douze <path>] [--repeat 3] [--label <text>] [--cache clean|warm|edit|tag]
+                 [-- <douze options>]
+                 builds the site with the douze binary (default: tool-out/douze) and prints a Markdown table row;
+                 --cache clean (default) deletes the output and the cache before each build, warm builds again without
+                 changes, edit appends a paragraph to one page before each build, tag changes the tags of one page
     """;
 
 try
@@ -43,6 +46,7 @@ try
                 options.Get("douze"),
                 options.Int("repeat", 3),
                 options.Get("label"),
+                options.Get("cache") ?? "clean",
                 options.Rest);
         default:
             Console.Error.WriteLine($"unknown command '{args[0]}'");

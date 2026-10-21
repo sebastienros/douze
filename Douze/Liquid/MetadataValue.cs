@@ -31,9 +31,10 @@ internal sealed class MetadataValue : FluidValue
         var scopes = context.AmbientValues.TryGetValue(AmbientKeys.Scopes, out var s) && s is ScopeSet scopeSet ? scopeSet : ScopeSet.Empty;
         var deps = context.AmbientValues.TryGetValue(AmbientKeys.Dependencies, out var d) ? d as DependencyTracker : null;
 
-        if (scopes.TryResolve(Metadata, name, _fallback, deps, out var node, out _))
+        // The unit depends on what the template reads of a value from the scopes, not on all of it.
+        if (scopes.TryResolveTracked(Metadata, name, _fallback, deps, out var node, out var recorder))
         {
-            return new(NodeValues.ToFluidValue(node));
+            return new(NodeValues.ToFluidValue(node, recorder));
         }
 
         return new(NilValue.Instance);

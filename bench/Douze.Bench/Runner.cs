@@ -5,10 +5,12 @@ using System.Text.RegularExpressions;
 namespace Douze.Bench;
 
 /// <summary>
-/// Builds a site with a douze binary several times, from a clean output folder each time, and prints the median wall
-/// time, user and system CPU, peak RSS and number of output files as a Markdown table row. Peak RSS comes from
-/// <c>/usr/bin/time -l</c> on macOS, <c>/usr/bin/time -v</c> on Linux and <see cref="Process.PeakWorkingSet64"/> on
-/// Windows.
+/// Builds a site with a douze binary several times and prints the median wall time, user and system CPU, peak RSS and
+/// number of output files as a Markdown table row. Peak RSS comes from <c>/usr/bin/time -l</c> on macOS,
+/// <c>/usr/bin/time -v</c> on Linux and <see cref="Process.PeakWorkingSet64"/> on Windows. The cache mode says what each
+/// build starts from: <c>clean</c>, no output folder and no cache; <c>warm</c>, the output and cache of a previous
+/// build of the same site; <c>edit</c> and <c>tag</c>, the same after appending a paragraph to one page, or changing its
+/// tags.
 /// </summary>
 internal static partial class Runner
 {
@@ -17,8 +19,13 @@ internal static partial class Runner
         |---|---:|---:|---:|---:|---:|---:|---:|
         """;
 
-    public static async Task<int> RunAsync(string site, string outDir, string? douze, int repeat, string? label, IReadOnlyList<string> extra)
+    public static async Task<int> RunAsync(string site, string outDir, string? douze, int repeat, string? label, string cache, IReadOnlyList<string> extra)
     {
+        if (cache is not ("clean" or "warm" or "edit" or "tag"))
+        {
+            throw new BenchException($"--cache must be 'clean', 'warm', 'edit' or 'tag', not '{cache}'");
+        }
+
         douze ??= FindDefaultBinary();
 
         if (!File.Exists(douze))
@@ -28,13 +35,33 @@ internal static partial class Runner
 
         var siteDir = Path.GetFullPath(site);
         var output = Path.GetFullPath(outDir);
+        var cacheDir = Path.Combine(siteDir, ".douze");
         var runs = new List<Measurement>();
+
+        if (cache != "clean")
+        {
+            // The build the measured ones start from.
+            DeleteDirectory(output);
+            DeleteDirectory(cacheDir);
+            await MeasureAsync(Path.GetFullPath(douze), ["-s", siteDir, "-o", output, "-q", .. extra]);
+        }
+
+        var page = cache is "edit" or "tag" ? PickPage(siteDir) : null;
 
         for (var i = 0; i < repeat; i++)
         {
-            if (Directory.Exists(output))
+            switch (cache)
             {
-                Directory.Delete(output, recursive: true);
+                case "clean":
+                    DeleteDirectory(output);
+                    DeleteDirectory(cacheDir);
+                    break;
+                case "edit":
+                    File.AppendAllText(page!, $"\nEdited for run {i + 1}.\n");
+                    break;
+                case "tag":
+                    File.WriteAllText(page!, TagLine().Replace(File.ReadAllText(page!), $"tags: [edited-{i + 1}]", 1));
+                    break;
             }
 
             var measurement = await MeasureAsync(Path.GetFullPath(douze), ["-s", siteDir, "-o", output, "-q", .. extra]);
@@ -48,6 +75,36 @@ internal static partial class Runner
             $"| {label ?? Path.GetFileName(siteDir)} | {runs[^1].Pages} | {Median(runs, x => x.Wall):F2} | {Median(runs, x => x.User):F2} | {Median(runs, x => x.System):F2} | {Median(runs, x => x.PeakRss) / 1024 / 1024:F0} | {runs[^1].Files} | {repeat} |"));
         return 0;
     }
+
+    private static void DeleteDirectory(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The page an edit changes: the middle one of the Markdown files of the content, in path order, so that it is
+    /// neither among the first pages that a nav lists nor the last.
+    /// </summary>
+    private static string PickPage(string site)
+    {
+        var pages = Directory.EnumerateFiles(site, "*.md", SearchOption.AllDirectories)
+            .Where(x => !Path.GetRelativePath(site, x).Split(Path.DirectorySeparatorChar).Any(s => s.StartsWith('_') && s != "_content" || s == ".douze"))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        if (pages.Length == 0)
+        {
+            throw new BenchException($"no page to edit in '{site}'");
+        }
+
+        return pages[pages.Length / 2];
+    }
+
+    [GeneratedRegex("^tags: .*$", RegexOptions.Multiline)]
+    private static partial Regex TagLine();
 
     private static string FindDefaultBinary()
     {
