@@ -1,4 +1,5 @@
 using Douze.Progress;
+using Douze.Tracing;
 using Douze.Workflow;
 
 namespace Douze.Cli;
@@ -57,12 +58,6 @@ internal static class BuildCommand
         {
             using var view = ViewSelector.Select(commandLine);
 
-            // TODO(phase 4): write the trace and timeline files.
-            if (commandLine.TracePath != null || commandLine.TimelinePath != null)
-            {
-                view.Message(LogLevel.Warning, null, "--trace and --timeline are not available yet");
-            }
-
             var options = new BuildOptions
             {
                 MaxDegreeOfParallelism = commandLine.Parallelism ?? site.Parallelism ?? Environment.ProcessorCount,
@@ -79,11 +74,46 @@ internal static class BuildCommand
 
             var result = await SiteBuilder.BuildAsync(graph, site, options);
 
-            return result.Cancelled ? ExitCodes.Cancelled : result.Succeeded ? ExitCodes.Success : ExitCodes.BuildErrors;
+            // A failed or cancelled build is traced too: that is when the trace is the most useful.
+            KeyValuePair<string, string>[] otherData = [new("douze", StepDefinition.DouzeVersion), new("site", sourceDirectory)];
+            var traced = WriteTraceFile(view, "trace", commandLine.TracePath, s => ChromeTraceWriter.Write(result.Trace, s, otherData))
+                & WriteTraceFile(view, "timeline", commandLine.TimelinePath, s => TimelineHtmlWriter.Write(result.Trace, s, otherData));
+
+            return result.Cancelled ? ExitCodes.Cancelled : result.Succeeded && traced ? ExitCodes.Success : ExitCodes.BuildErrors;
         }
         finally
         {
             Console.CancelKeyPress -= cancel;
+        }
+    }
+
+    /// <summary>
+    /// Writes <paramref name="path"/> when it is set and reports it. Returns <c>false</c> when the file cannot be written.
+    /// </summary>
+    private static bool WriteTraceFile(IProgressView view, string kind, string? path, Action<Stream> write)
+    {
+        if (path == null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+
+            using (var stream = File.Create(fullPath))
+            {
+                write(stream);
+            }
+
+            view.Message(LogLevel.Info, null, $"{kind} written to {path}");
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            view.Message(LogLevel.Error, null, $"cannot write the {kind} file '{path}': {e.Message}");
+            return false;
         }
     }
 }

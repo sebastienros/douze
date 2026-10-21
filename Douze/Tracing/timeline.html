@@ -1,1 +1,220 @@
-<!-- Placeholder: the timeline page (phase 4). -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Douze timeline</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --band: #f6f8fa;
+  --build: #8c959f; --step: #0969da; --unit: #54aeff; --command: #bf8700; --io: #8250df; --failed: #cf222e;
+  --tip: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --line: #30363d; --band: #161b22;
+    --build: #6e7681; --step: #2f81f7; --unit: #79c0ff; --command: #d29922; --io: #a371f7; --failed: #f85149;
+    --tip: #161b22;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+h1 { font-size: 18px; margin: 0 0 2px; }
+#meta, .hint { color: var(--muted); margin: 0 0 12px; }
+#wrap { position: relative; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+canvas { display: block; width: 100%; cursor: grab; touch-action: none; }
+canvas.drag { cursor: grabbing; }
+#tip { position: absolute; display: none; pointer-events: none; background: var(--tip); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; box-shadow: 0 4px 12px #0003; max-width: 420px; white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+#tip b { display: block; }
+table { border-collapse: collapse; margin-top: 16px; min-width: 50%; }
+th, td { text-align: left; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--line); }
+th { cursor: pointer; user-select: none; color: var(--muted); font-weight: 600; }
+th.on::after { content: " \2193"; }
+th.on.up::after { content: " \2191"; }
+td.n { text-align: right; font-variant-numeric: tabular-nums; }
+td.d { color: var(--muted); }
+.sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h1>Douze build timeline</h1>
+<p id="meta"></p>
+<div id="wrap"><canvas id="c"></canvas><div id="tip"></div></div>
+<p class="hint">Wheel to zoom, drag to pan, double-click to reset.</p>
+<table id="t"><thead><tr><th data-k="name">Span</th><th data-k="start">Start</th><th data-k="dur" class="on">Duration</th><th data-k="units">Units</th><th data-k="args">Details</th></tr></thead><tbody></tbody></table>
+<script>
+"use strict";
+const trace = /*__DOUZE_TRACE__*/null;
+const all = (trace && trace.traceEvents || []).filter(e => e.ph === "X");
+const other = trace && trace.otherData || {};
+const $ = id => document.getElementById(id);
+const canvas = $("c"), tip = $("tip"), ctx = canvas.getContext("2d");
+const LABEL_MAX = 220, BAR = 18, SUB = 6, GAP = 4, AXIS = 24;
+
+// One row per step (and per build or other top level span); the spans of the units of a step are packed in sub-lanes
+// under its bar.
+const rows = [], byKey = new Map();
+const row = (key, label) => {
+  let r = byKey.get(key);
+  if (!r) { r = { label, main: [], subs: [], lanes: [] }; byKey.set(key, r); rows.push(r); }
+  return r;
+};
+const sorted = all.slice().sort((a, b) => a.ts - b.ts || (a.cat > b.cat) - (a.cat < b.cat));
+for (const e of sorted) {
+  if (e.cat === "build" || e.cat === "step") row(e.cat + ":" + e.name, e.name).main.push(e);
+}
+for (const e of sorted) {
+  if (e.cat === "build" || e.cat === "step") continue;
+  const step = e.args && e.args.step;
+  const r = step && byKey.get("step:" + step) || row(e.cat + ":" + e.name, e.name);
+  r.subs.push(e);
+  let lane = r.lanes.findIndex(end => end <= e.ts);
+  if (lane < 0) { lane = r.lanes.length; r.lanes.push(0); }
+  r.lanes[lane] = e.ts + e.dur;
+  e.lane = lane;
+}
+rows.sort((a, b) => (a.main[0] || a.subs[0]).ts - (b.main[0] || b.subs[0]).ts);
+
+const end = all.reduce((m, e) => Math.max(m, e.ts + e.dur), 0) || 1;
+let v0 = 0, v1 = end;
+
+const fmt = us => us === 0 ? "0" : us >= 1e6 ? (us / 1e6).toFixed(2) + " s" : us >= 1e3 ? (us / 1e3).toFixed(us >= 1e5 ? 0 : 1) + " ms" : us.toFixed(0) + " µs";
+const color = e => css(e.args && e.args.state === "failed" ? "--failed" : "--" + (["build", "step", "unit", "command", "io"].includes(e.cat) ? e.cat : "io"));
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+$("meta").textContent = [other.site, all.length ? "total " + fmt(end) : "no spans in this trace", other.douze && "douze " + other.douze].filter(Boolean).join(" · ");
+
+let labelWidth = 80, hits = [];
+
+function layout() {
+  ctx.font = "12px system-ui, sans-serif";
+  labelWidth = Math.min(LABEL_MAX, Math.max(80, ...rows.map(r => ctx.measureText(r.label).width + 24)));
+  let y = AXIS;
+  for (const r of rows) { r.y = y; y += BAR + (r.lanes.length ? r.lanes.length * (SUB + 1) + 2 : 0) + GAP; }
+  return y + GAP;
+}
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1, width = canvas.clientWidth, height = layout();
+  canvas.width = width * dpr; canvas.height = height * dpr; canvas.style.height = height + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = css("--bg"); ctx.fillRect(0, 0, width, height);
+
+  const plot = width - labelWidth - 12, x = t => labelWidth + (t - v0) / (v1 - v0) * plot;
+
+  // Axis: about one tick per 100 pixels, on 1, 2 or 5 times a power of ten.
+  const raw = (v1 - v0) / Math.max(1, plot / 100), pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map(m => m * pow).find(s => s >= raw);
+  ctx.strokeStyle = css("--line"); ctx.fillStyle = css("--muted"); ctx.lineWidth = 1;
+  for (let t = Math.ceil(v0 / step) * step; t <= v1; t += step) {
+    const px = Math.round(x(t)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(px, AXIS - 6); ctx.lineTo(px, height); ctx.stroke();
+    if (px + 3 + ctx.measureText(fmt(t)).width < width) ctx.fillText(fmt(t), px + 3, AXIS / 2);
+  }
+
+  hits = [];
+  rows.forEach((r, i) => {
+    const h = BAR + (r.lanes.length ? r.lanes.length * (SUB + 1) + 2 : 0);
+    if (i % 2) { ctx.fillStyle = css("--band"); ctx.globalAlpha = 0.6; ctx.fillRect(0, r.y - GAP / 2, width, h + GAP); ctx.globalAlpha = 1; }
+    ctx.fillStyle = css("--fg");
+    ctx.save(); ctx.beginPath(); ctx.rect(0, r.y, labelWidth - 8, BAR); ctx.clip();
+    ctx.fillText(r.label, 8, r.y + BAR / 2); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(labelWidth, 0, plot + 12, height); ctx.clip();
+    for (const e of r.main) bar(e, r.y, BAR);
+    for (const e of r.subs) bar(e, r.y + BAR + 2 + e.lane * (SUB + 1), SUB);
+    ctx.restore();
+  });
+
+  function bar(e, y, h) {
+    const x0 = x(e.ts), w = Math.max(1, x(e.ts + e.dur) - x0);
+    if (x0 > width || x0 + w < labelWidth) return;
+    ctx.fillStyle = color(e);
+    ctx.fillRect(x0, y, w, h);
+    hits.push([x0, y, w, h, e]);
+    if (h === BAR && w > 50) {
+      ctx.fillStyle = "#fff";
+      ctx.fillText(fmt(e.dur), Math.max(x0, labelWidth) + 4, y + h / 2);
+    }
+  }
+}
+
+function hit(ev) {
+  const b = canvas.getBoundingClientRect(), px = ev.clientX - b.left, py = ev.clientY - b.top;
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const [x, y, w, h, e] = hits[i];
+    if (px >= x - 1 && px <= x + w + 1 && py >= y && py <= y + h) return { e, px, py };
+  }
+  return null;
+}
+
+function showTip(ev) {
+  const found = hit(ev);
+  if (!found) { tip.style.display = "none"; return; }
+  const { e, px, py } = found;
+  const args = Object.entries(e.args || {}).map(([k, v]) => k + ": " + v).join("\n");
+  tip.innerHTML = "";
+  const b = document.createElement("b"); b.textContent = e.name; tip.appendChild(b);
+  tip.appendChild(document.createTextNode(e.cat + " · " + fmt(e.dur) + " · at " + fmt(e.ts) + (args ? "\n" + args : "")));
+  tip.style.display = "block";
+  const wrap = $("wrap").clientWidth;
+  tip.style.left = Math.min(px + 12, Math.max(0, wrap - tip.offsetWidth - 4)) + "px";
+  tip.style.top = py + 16 + "px";
+}
+
+let drag = null;
+canvas.addEventListener("wheel", ev => {
+  ev.preventDefault();
+  const b = canvas.getBoundingClientRect(), plot = b.width - labelWidth - 12;
+  const at = v0 + Math.max(0, ev.clientX - b.left - labelWidth) / plot * (v1 - v0);
+  const range = Math.min(end, Math.max(1, (v1 - v0) * Math.exp(ev.deltaY * 0.002)));
+  v0 = at - (at - v0) / (v1 - v0) * range; v1 = v0 + range;
+  clamp(); draw(); showTip(ev);
+}, { passive: false });
+canvas.addEventListener("pointerdown", ev => { drag = { x: ev.clientX, v0, v1 }; canvas.setPointerCapture(ev.pointerId); canvas.classList.add("drag"); });
+canvas.addEventListener("pointermove", ev => {
+  if (!drag) { showTip(ev); return; }
+  const plot = canvas.clientWidth - labelWidth - 12, dt = (ev.clientX - drag.x) / plot * (drag.v1 - drag.v0);
+  v0 = drag.v0 - dt; v1 = drag.v1 - dt; clamp(); draw();
+});
+canvas.addEventListener("pointerup", () => { drag = null; canvas.classList.remove("drag"); });
+canvas.addEventListener("pointerleave", () => { tip.style.display = "none"; });
+canvas.addEventListener("dblclick", () => { v0 = 0; v1 = end; draw(); });
+function clamp() { const r = v1 - v0; if (v0 < 0) { v0 = 0; v1 = r; } if (v1 > end) { v1 = end; v0 = Math.max(0, end - r); } }
+
+// The table lists the top level spans, with the number of unit spans each one contains.
+const items = rows.flatMap(r => (r.main.length ? r.main : r.subs).map(e => ({
+  e, name: e.name, start: e.ts, dur: e.dur, units: r.main.length ? r.subs.length : 0,
+  args: Object.entries(e.args || {}).map(([k, v]) => k + ": " + v).join(", ")
+})));
+let key = "dur", up = false;
+function table() {
+  items.sort((a, b) => (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0) * (up ? 1 : -1));
+  const body = $("t").tBodies[0];
+  body.textContent = "";
+  for (const it of items) {
+    const tr = body.insertRow();
+    const name = tr.insertCell(), sw = document.createElement("span");
+    sw.className = "sw"; sw.style.background = color(it.e);
+    name.append(sw, it.name);
+    for (const [text, cls] of [[fmt(it.start), "n"], [fmt(it.dur), "n"], [it.units || "", "n"], [it.args, "d"]]) {
+      const td = tr.insertCell(); td.textContent = text; td.className = cls;
+    }
+  }
+  for (const th of $("t").tHead.rows[0].cells) { th.classList.toggle("on", th.dataset.k === key); th.classList.toggle("up", th.dataset.k === key && up); }
+}
+$("t").tHead.addEventListener("click", ev => {
+  const k = ev.target.dataset && ev.target.dataset.k;
+  if (!k) return;
+  up = k === key ? !up : k === "name" || k === "start";
+  key = k; table();
+});
+
+window.addEventListener("resize", draw);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { draw(); table(); });
+draw(); table();
+</script>
+</body>
+</html>
