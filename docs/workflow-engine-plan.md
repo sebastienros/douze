@@ -1299,14 +1299,24 @@ All command steps live in `Douze/Workflow/Commands/`. `CommandStepFactory.Create
 
 - `CommandTemplate` (`CommandTemplate.cs`): parses the `run` string and every `env` value once with
   Fluid and renders them per unit with a model of `inputs`, `outputs`, `site`, `step`, `cwd` and,
-  in filter and worker mode, `file` (`path`, `name`, `dir`, `ext`). Expanded values that are paths
-  are quoted with double quotes when they contain a space; `{{ inputs }}` and `{{ outputs }}` are
-  only valid in batch mode (validation error otherwise).
+  in filter mode, `file` (`path`, `name`, `dir`, `ext`). *As implemented (phase 3):* a value written
+  directly in `run` quotes itself when it contains anything else than letters, digits and `_-./:@+=,`:
+  single quotes for `/bin/sh` (`'\''` for a quote), double quotes for `cmd.exe`, and the quote rules of
+  `ProcessRunner.Split` for `shell: false`; the result of a filter is a plain string, written as it is;
+  `env` values are never quoted. `{{ inputs }}` and `{{ outputs }}` are only valid in batch mode and
+  `{{ file }}` only in filter mode (a worker's `run` is rendered once): validation errors otherwise,
+  found by walking the template with Fluid's `AstVisitor`. Folder paths have no trailing separator, so
+  that a quoted Windows path never ends with `\"`.
 - `ProcessRunner` (`ProcessRunner.cs`): starts the process with `System.Diagnostics.Process`
   (`UseShellExecute = false`, redirected streams, UTF-8), applies `cwd`, `env`, `timeout`, and
-  returns `CommandResult(int ExitCode, string Stderr, TimeSpan Elapsed)`. Each process start and end
-  is a `command` trace span with the command line as an argument. `DOUZE_STEP`, `DOUZE_SITE` and
-  `DOUZE_SOURCE` are always set in the environment.
+  returns `CommandResult(int ExitCode, ReadOnlyMemory<byte> Stdout, string Stderr, TimeSpan Elapsed)`.
+  Each process is a `command` trace span with `command`, `elapsed` and `exitCode` arguments.
+  `DOUZE_STEP`, `DOUZE_SITE` and `DOUZE_SOURCE` are always set in the environment (empty when the
+  site has no folder on disk), after the step's `env`. The shell is `/bin/sh -c <line>` or
+  `%ComSpec% /d /s /c "<line>"` (the line goes in `Arguments` as typed, not `ArgumentList`, which
+  would escape its quotes for the C runtime); `shell: false` splits the line (whitespace, `'...'`
+  literal, `\"` inside `"..."`, backslashes literal elsewhere for Windows paths). A `cwd` that does
+  not exist fails the step before any process starts.
 - Failure rules: a non-zero exit code fails the unit with
   "command exited with code 2 for '/blog/a.md': <last 20 lines of stderr>"; stderr output with
   `stderr: fail` (the default) fails the unit the same way even when the exit code is 0;
@@ -1323,7 +1333,8 @@ One process per consumed file, up to `MaxDegreeOfParallelism` at a time (bounded
 fully as bytes and becomes the new content; the path is unchanged; the content type is derived from
 the path. Environment:
 `DOUZE_PATH` (virtual path), `DOUZE_CONTENT_TYPE`, `DOUZE_METADATA` (the file's Own metadata as
-JSON, omitted when larger than 64 KB, in which case `DOUZE_METADATA_FILE` points to a temp file).
+JSON, omitted when longer than 32,767 characters, the limit of one variable on Windows, in which case
+`DOUZE_METADATA_FILE` points to a temp file deleted after the run).
 Example:
 
 ```yaml
@@ -1341,7 +1352,11 @@ and a manifest `<...>/in/douze-inputs.json` is written:
   { "path": "/blog/a.html", "contentType": "text/html", "metadata": { "title": "A", "url": "/blog/a/" } } ] }
 ```
 
-`{{ outputs }}` expands to `<...>/out/`, created empty. After a successful run, files under `out/`
+`{{ outputs }}` expands to `<...>/out`, created empty. *As implemented (phase 3):* `<unit>` is `all`
+for the reduce unit and the first 16 hex digits of the group key's hash for a group (keys are paths
+or rendered templates, not file names); the manifest's `unit` is `*` or the group key. stdout is
+forwarded as debug messages (shown with `--verbose`). A `douze-outputs.json` entry for a file that
+is not in `out/` is an error. After a successful run, files under `out/`
 matching `outputs` (all files when `outputs` is empty) are read back as `VirtualFile.Derived(step,
 inputs, "/" + relative path, ...)`. An optional `out/douze-outputs.json` with the same shape as the
 inputs manifest attaches metadata to outputs. When the command uses neither `{{ inputs }}` nor
@@ -1356,6 +1371,25 @@ A long-running process handles files over JSON lines on stdin and stdout. `Worke
 (`WorkerProcess.cs`) owns one process per worker step; the step's `InitializeAsync` starts it and
 `DisposeAsync` shuts it down. Concurrency: the worker announces how many requests it accepts in
 flight; the step holds that many `ProcessSlots` at most.
+
+*As implemented (phase 3):* `InitializeAsync` starts the process and sends `hello` without waiting
+for `ready`, so the startup (seconds for twoslash) overlaps with the steps before; the first unit
+waits for the handshake and reports its failure, and `DisposeAsync` reports it when no unit did.
+The scheduler takes one `ProcessSlots` slot per unit, and `WorkerProcess` bounds the requests in
+flight with its own semaphore of `min(ready.concurrency, hello.concurrency)`; a unit waiting for that
+semaphore holds its process slot. `timeout` applies to each request, and a request that times out
+kills the worker. Every failure of the worker (exit or stdout closed before `shutdown`, a line that is
+not JSON, stderr with `stderr: fail`, a timeout) fails every request in flight and every later one
+with the same message, and kills the process tree; one that no request reported is reported by
+`DisposeAsync` (as an error without a file). stderr with `stderr: fail` waits 100 ms for more lines,
+so the message has all of them; when the worker exits, the exit message carries stderr instead
+(`worker exited with code 3: <last 20 lines>`). A worker that does not exit within the grace delay is
+killed with a warning; a non-zero exit code after `shutdown` is an error. A `log` goes to the progress
+view with the step name; a worker's `error` with `line`/`column` is reported as
+`<message> (line 12, column 3)` (and ` in '<file>'` when `file` is another file), because
+`BuildError.FromException` gives a location only to Liquid errors. The messages are written with
+`Utf8JsonWriter` (relaxed escaping) and read with `JsonNode`: no serializer, nothing to source
+generate.
 
 Protocol (`WorkerProtocol.cs`, version 1). Every message is one JSON object per line, UTF-8, `\n`
 terminated, with a `type` field. Douze writes to the worker's stdin, the worker writes to stdout.
@@ -1383,6 +1417,9 @@ omitted; Douze never sends more than `min(ready.concurrency, hello.concurrency)`
 `encoding` is `utf8` for text and `base64` for binary. A `result` may contain zero files (the input
 is dropped), one, or many. Omitted `path` means the input path; omitted `metadata` means the input
 metadata; `metadata` given is merged over Own (top-level keys). An `error` fails that unit only.
+*As implemented (phase 3):* omitted `content` keeps the input content (a worker that only adds
+metadata); omitted `contentType` keeps the input's when the path is unchanged and derives it from
+the new path otherwise.
 
 3. Progress and logs, optional, from the worker at any time:
 
@@ -1401,7 +1438,14 @@ or is killed. A worker that exits or closes stdout before `shutdown` fails every
 5. Unknown message types are ignored by both sides; a line that is not valid JSON fails the step
 ("worker wrote a line that is not JSON: <first 200 chars>").
 
-Node helper `douze-worker.mjs`, embedded as a resource and printed by `douze worker-helper`:
+Node helper `douze-worker.mjs`, embedded as a resource and printed by `douze worker-helper`. The
+sketch below is what the plan started from; the real file (`Douze/Workflow/Commands/douze-worker.mjs`)
+differs: after `shutdown` (or when stdin closes) it waits for the requests in flight and for stdout
+to flush before exiting, instead of `process.exit(0)` at once, which could lose answers written to an
+asynchronous pipe; it sends `contentType` only when the handler gives one (the request's type would
+be wrong for a renamed file); a handler may return a string or a Buffer, an object whose members are
+all optional, an array, or null; a thrown error is reported with its message (its `line`, `column` and
+`file` properties when present), its stack going to a `debug` log.
 
 ```js
 // douze-worker.mjs: minimal helper for Douze worker steps (protocol 1).
@@ -1914,6 +1958,27 @@ the PATH: echo worker through the real helper, binary round trip, error path).
 **Acceptance.** Shared criteria; a fixture workflow with all three modes runs in a test; the README
 documents the protocol with the examples of 5.3.
 
+**As implemented.** Section 5 has the details (marked *As implemented (phase 3)*); in short:
+
+- Files: `CommandStep.cs` is the base class (template, working directory, environment, exit code and
+  stderr rules); the others are as listed in 2.1. `CommandStepFactory` maps the three modes.
+- The fake tool also has `filter-count` (records how many processes run at once), `args`, `env` and
+  `sleep`; `hang` starts a child process and writes both process ids, so the timeout test checks that
+  the whole tree is gone. `worker-echo` handles requests concurrently and reacts to their content
+  (`ERROR`, `LOG`, `EXIT`, `GARBAGE`, `STDERR`, `MANY`, `DROP`, `RENAME`, `META`, `HANG`) and their
+  `delay` metadata, and reports `sequence` and `maxInflight`; `worker-slow` never exits after
+  `shutdown`.
+- Tests: the planned ones plus `FilterCommandStepTests` environment, large metadata, paths with spaces
+  and quotes through every shell, working directory, `with` outside worker mode;
+  `BatchCommandStepTests` failure messages; `WorkerCommandStepTests` not JSON, stderr policies, result
+  shapes (many, none, renamed, metadata only, binary), timeout, a worker that does not start;
+  `WorkerDelayTests` (shutdown grace, handshake timeout; they change static delays, so their collection
+  runs alone); `NodeHelperTests` also checks what `douze worker-helper` prints;
+  `CommandWorkflowTests` builds `Douze.Tests/Fixtures/commands` from and to disk through a filter, a
+  worker and a batch step. The workflow is built in code; phase 2 can give the fixture a `douze.yml`.
+- `BuildContext.TempRoot` is removed by the command steps when they leave it empty; `BuildContext`
+  owning it (deleting it on dispose unless `--verbose`) would be cleaner, left for the integration.
+
 ### Phase 4: progress view, trace file and timeline (Medium)
 
 **Goal.** The live console view, the Chrome trace file, `timeline.html`.
@@ -2160,6 +2225,8 @@ Each item has a recommended answer; implementers use it unless the user decides 
 11. **`with` on command steps.** Section 4.5 forbids `with` without `uses`, but the worker
     handshake carries `options`. Recommended: allow `with` on `run` steps with `mode: worker`
     only; the loader rule becomes "'with' is only valid with 'uses' or with 'mode: worker'".
+    *Resolved in phase 3:* the command steps raise that message (with the step name) for `with` on a
+    filter or batch step, so the rule holds for workflows built in code too.
 
 12. **Group barrier.** Groups wait for the whole input, like reduce, because a group cannot be
     known complete earlier. For `group-by: file` this delays streaming by one step. Recommended:
