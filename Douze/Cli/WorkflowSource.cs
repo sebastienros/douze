@@ -1,11 +1,13 @@
 using Douze.FileSystems;
 using Douze.Workflow;
+using Douze.Workflow.Yaml;
 
 namespace Douze.Cli;
 
 /// <summary>
-/// Finds the site options and the workflow of a build: the folders detected in the source folder, then the workflow
-/// of the file given with <c>--workflow</c>, of <c>douze.yml</c> at the source root, or the default workflow.
+/// Finds the site options and the workflow of a build: the workflow file given with <c>--workflow</c>, or
+/// <c>douze.yml</c> at the source root when it exists; its <c>site</c> section, then detection, for the folders; and
+/// its <c>steps</c>, or the default workflow.
 /// </summary>
 internal static class WorkflowSource
 {
@@ -15,20 +17,52 @@ internal static class WorkflowSource
 
     /// <param name="commandLine">The parsed command line.</param>
     /// <param name="sourceDirectory">The absolute path of the source folder.</param>
-    /// <exception cref="WorkflowValidationException">The workflow file is invalid.</exception>
+    /// <exception cref="WorkflowValidationException">The workflow file is missing or invalid.</exception>
     public static async Task<(WorkflowDefinition Workflow, SiteOptions Site)> LoadAsync(CommandLine commandLine, string sourceDirectory)
     {
-        // TODO(phase 2): the 'site' section of the workflow file sets the folders, the output (when -o is not given)
-        // and the parallelism (when -p is not given).
-        var outputDirectory = Path.GetFullPath(commandLine.Output ?? DefaultOutput);
-        var site = await SiteOptions.DetectAsync(new PhysicalFileSystem(sourceDirectory), new PhysicalFileSystem(outputDirectory), sourceDirectory, outputDirectory);
+        var file = await LoadFileAsync(commandLine, sourceDirectory);
 
-        // TODO(phase 2): load workflow files.
-        if (commandLine.Workflow != null || (await site.Source.GetFileEntryAsync("/" + DefaultFileName)).Exists)
+        // -o is relative to the current folder, site.output to the source folder.
+        var outputDirectory = commandLine.Output != null ? Path.GetFullPath(commandLine.Output)
+            : file?.Site.Output != null ? Path.GetFullPath(file.Site.Output, sourceDirectory)
+            : Path.GetFullPath(DefaultOutput);
+
+        var site = await SiteOptions.DetectAsync(
+            new PhysicalFileSystem(sourceDirectory),
+            new PhysicalFileSystem(outputDirectory),
+            sourceDirectory,
+            outputDirectory,
+            file?.Site);
+
+        return (file?.Workflow ?? DefaultWorkflow.Create(site), site);
+    }
+
+    private static async Task<WorkflowFile?> LoadFileAsync(CommandLine commandLine, string sourceDirectory)
+    {
+        string path;
+
+        if (commandLine.Workflow != null)
         {
-            throw new WorkflowValidationException("workflow files are not available yet");
+            path = Path.GetFullPath(commandLine.Workflow);
+
+            if (!File.Exists(path))
+            {
+                throw new WorkflowValidationException($"the workflow file '{commandLine.Workflow}' does not exist");
+            }
+        }
+        else
+        {
+            path = Path.Combine(sourceDirectory, DefaultFileName);
+
+            if (!File.Exists(path))
+            {
+                return null;
+            }
         }
 
-        return (DefaultWorkflow.Create(site), site);
+        // Locations are relative to the current folder, like the paths of the command line, unless the file is outside it.
+        var fileName = Path.GetRelativePath(Environment.CurrentDirectory, path);
+
+        return await WorkflowLoader.LoadAsync(path, fileName.StartsWith("..", StringComparison.Ordinal) ? path : fileName);
     }
 }
