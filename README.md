@@ -81,7 +81,7 @@ For instance a page can set `layout`, or inherit it from its folder or from `_da
 ```yaml
 ---
 pagination:
-  data: products     # a name, or a path such as collections.post
+  data: products     # a name, or a dotted path into one such as site.products
   size: 2
   alias: items       # optional: the items of the page
   resolve: values    # optional, for objects: paginate the values instead of the keys
@@ -91,8 +91,10 @@ products: [a, b, c]
 
 Each page has `pagination.items`, `pagination.pageNumber`, `pagination.hrefs` (the path of every page),
 `pagination.pages` and `pagination.page.next`, `previous`, `first`, `last` (each one is `items`, `pageNumber` and
-`href`). A `permalink` is rendered for each page, so it can use the alias or `pagination.pageNumber`; without one,
-pages are written to `products/index.html`, `products/1/index.html`...
+`href`). A `permalink` is rendered for each page, so it can use the alias or `pagination.pageNumber` (not the
+`href` values, which come from it); without one, pages are written to `products/index.html`,
+`products/1/index.html`... Pagination runs before collections are built, so `collections.<tag>` cannot be paginated
+by the default workflow.
 
 ## layouts
 

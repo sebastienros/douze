@@ -977,9 +977,12 @@ paged paths of that path. Each page file gets its resolved path right away. All 
 in `pagination.hrefs` (array) so that templates can link pages. `pagination.pages` and
 `pagination.page.next/previous/first/last` are page summaries (`items`, `pageNumber`, `href`) shared
 by every page: linking the full pagination objects as before would form cycles that `Metadata.Hash`
-cannot follow. `pagination.data` may be a dotted path (`collections.post`): the first segment
-resolves through the scopes. `with.root` (default: the content folder) as for `permalink`. Files
-without `pagination` pass through.
+cannot follow. The hrefs are only known once every page's `permalink` is resolved, so a `permalink`
+that reads `pagination.hrefs` or a page's `href` sees them empty. `pagination.data` may be a dotted
+path (`collections.post`, when the step runs after `collect`; see open question 19 for the default
+workflow): the first segment resolves through the scopes. A `pagination.data` that resolves to
+nothing passes the file through unchanged, as before. `with.root` (default: the content folder) as
+for `permalink`. Files without `pagination` pass through.
 
 **`permalink`** (map, default match: all files). Computes the output path with
 `PermalinkResolver.ResolveAsync(file, metadata, context, root)`: renders the `permalink` template
@@ -1562,6 +1565,14 @@ scope, makes the unit depend on every site contribution consulted before it (typ
 Phase 5 may refine the record to key level (a scope *not defining* a key, checked against the
 scope's current key set) if the benchmark shows the coarse record re-runs too much.
 
+Folder scopes are recorded by the data files of every folder scope found on the directory path. A
+folder scope that does not exist yet is not recorded: a data file added later to a directory on the
+path would shadow a hit in a parent folder or in a site scope without any recorded dependency
+noticing. Phase 5 closes this: every unit whose lookups went past Own also depends on the set of
+folder scope directories it walked (recorded as a scope dependency on the folder data step, for
+instance by giving `FolderScope` a `Source` like `SiteScope`), so a new folder data file re-runs the
+units of the files under it. `ScopeSet.cs` is in phase 5's ownership for this.
+
 When tracking is incomplete (a step implementation that reads scopes without going through
 `TryResolve`, which is forbidden by code review, or a command step), the unit records every scope
 of its `ScopeSet` (every site source and every folder data file), so any data change re-runs it:
@@ -1946,7 +1957,8 @@ before executing a unit, compute its key; on a hit, emit the stored outputs with
 lazily from the cache blobs; after executing, compare outputs with the previous result for early
 cutoff), `Douze/Workflow/Scheduling/ReplayState.cs` (previous results by `UnitKey`), command step
 cache keys in `Douze/Workflow/Commands/CommandStep.cs`, `Douze/Cli/BuildCommand.cs` (`--no-cache`,
-`--cache-dir`), `.gitignore` of the Sample and the README (`.douze/`).
+`--cache-dir`), `Douze/Workflow/ScopeSet.cs` (folder scope dependencies, 7.3), `.gitignore` of the
+Sample and the README (`.douze/`).
 
 Refinement of keys (7.3): a unit whose recorded `DependencySet` is complete drops `ScopeSet.Hash`
 from its key and uses the hashes of the recorded data files, templates and step scopes instead.
@@ -2178,6 +2190,16 @@ Each item has a recommended answer; implementers use it unless the user decides 
     only pass through to `write`. Recommended: accept for now and measure in phase B (gap B6 covers
     the data side); if it matters, phase 5 can hash pass-through files by streaming and release
     the content of files already written when not in watch mode.
+
+19. **The default workflow cannot paginate collections.** `paginate` runs before `collect` (4.6), so
+    `pagination.data: collections.post`, the blog index pattern of Eleventy, resolves to nothing and
+    the page passes through unchanged. Reordering to `permalink -> collections -> paginate -> render`
+    would work: `paginate` already resolves each page's `permalink` and path itself and would set
+    `url` too; the paginated source file would then be in `collections.all` once, unpaginated, which
+    is Eleventy's default (`addAllPagesToCollections` off); the barrier before `render` already
+    exists (it needs `collections`), so nothing streams later. The Sample output would not change.
+    Recommended: keep 4.6 during this plan (a `douze.yml` chooses its order from phase 2), and flip
+    the default in a separate change after phase 2, together with open question 3.
 
 ---
 
