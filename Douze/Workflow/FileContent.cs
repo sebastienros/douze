@@ -42,9 +42,17 @@ internal abstract class FileContent
     public abstract long? Length { get; }
 
     /// <summary>
-    /// The hash of the content bytes (UTF-8 for text). Computed once, on first access.
+    /// The hash of the content bytes (UTF-8 for text). Computed once, on first access. For a file that is not loaded
+    /// yet this blocks on the read: the scheduler calls <see cref="LoadAsync"/> on every consumed file before the step
+    /// sees it, so steps never block here.
     /// </summary>
     public Hash128 Hash => _hash.Value;
+
+    /// <summary>
+    /// Reads and retains the bytes of a lazily read file, so that <see cref="Hash"/> and the readers then complete at
+    /// once. Content that is already in memory completes synchronously.
+    /// </summary>
+    public virtual ValueTask LoadAsync(CancellationToken ct) => default;
 
     public abstract ValueTask<string> ReadTextAsync(CancellationToken ct);
 
@@ -159,6 +167,11 @@ internal abstract class FileContent
 
         public override long? Length => _bytes.IsValueCreated && _bytes.Value.IsCompletedSuccessfully ? _bytes.Value.Result.Length : null;
 
+        public override async ValueTask LoadAsync(CancellationToken ct)
+        {
+            await _bytes.Value.WaitAsync(ct);
+        }
+
         public override async ValueTask<string> ReadTextAsync(CancellationToken ct)
         {
             if (_text != null)
@@ -189,7 +202,7 @@ internal abstract class FileContent
 
         protected override Hash128 ComputeHash()
         {
-            // The hash is synchronous; the file systems complete their reads synchronously or on the thread pool.
+            // Blocks only when LoadAsync was not awaited first, which the scheduler always does for consumed files.
             var bytes = _bytes.Value.GetAwaiter().GetResult();
             return Hash128.Of(bytes);
         }

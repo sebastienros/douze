@@ -387,6 +387,10 @@ internal sealed class Scheduler
 
             var processing = Parallel.ForEachAsync(work.Reader.ReadAllAsync(token), options, async (file, ct) =>
             {
+                // Loaded before the slot is taken: the read overlaps with the units that run, and the hash of the
+                // input ref never blocks a thread.
+                await file.Content.LoadAsync(ct);
+
                 await RunUnitAsync(new UnitKey(Name, file.Path.FullName), [file.Ref], async (context, ct) =>
                 {
                     var outputs = await step.ProcessAsync(file, context, ct);
@@ -496,7 +500,7 @@ internal sealed class Scheduler
         }
 
         /// <summary>
-        /// Reads the whole input (the barrier of reduce and group steps), sorted by path.
+        /// Reads the whole input (the barrier of reduce and group steps), sorted by path, with every content loaded.
         /// </summary>
         private async Task<List<VirtualFile>> ReadAllInputsAsync(IReadOnlyList<VirtualFile> sources, CancellationToken token)
         {
@@ -512,6 +516,11 @@ internal sealed class Scheduler
             }, token);
 
             files.Sort(static (a, b) => a.Path.CompareTo(b.Path));
+
+            // Source files that no map step read yet (the data step's inputs) are loaded in parallel.
+            var options = new ParallelOptions { MaxDegreeOfParallelism = Context.MaxDegreeOfParallelism, CancellationToken = token };
+            await Parallel.ForEachAsync(files, options, static (file, ct) => file.Content.LoadAsync(ct));
+
             return files;
         }
 

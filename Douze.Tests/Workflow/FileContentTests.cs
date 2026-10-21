@@ -28,6 +28,27 @@ public class FileContentTests
     }
 
     [Fact]
+    public async Task LoadAsyncReadsOnceAndMakesTheHashImmediate()
+    {
+        var fs = new CountingFileSystem();
+        await fs.WriteTextFileAsync("/a.md", "hello");
+
+        var content = FileContent.FromFile(fs, "/a.md", 5);
+
+        await content.LoadAsync(TestContext.Current.CancellationToken);
+        await content.LoadAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, fs.Opens);
+        Assert.Equal(5, content.Length);
+        Assert.Equal(FileContent.FromText("hello").Hash, content.Hash);
+        Assert.Equal(1, fs.Opens);
+
+        // Content that is already in memory has nothing to load.
+        await FileContent.FromText("text").LoadAsync(TestContext.Current.CancellationToken);
+        await FileContent.FromBytes(new byte[] { 1 }, isText: false).LoadAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task LazyTextHashEqualsFromTextHash()
     {
         var fs = new MemoryFileSystem();

@@ -48,6 +48,38 @@ public class SchedulerTests
     }
 
     [Fact]
+    public async Task ConsumedFilesAreLoadedBeforeTheirStepSeesThem()
+    {
+        // Source files are read lazily; the scheduler loads a consumed file before its unit runs (map) or before the
+        // barrier releases (reduce, group), so that neither the step nor the hash of its input refs waits on I/O.
+        var site = await new FakeSite().WithFilesAsync("/a.md", "/b.md", "/c.txt");
+        var loadedAtMap = new ConcurrentQueue<(FPath Path, bool Loaded)>();
+        FakeReduceStep? reduce = null;
+        FakeGroupStep? group = null;
+
+        var graph = new FakeWorkflow()
+            .Add("pages", d => new FakeMapStep(d)
+            {
+                Process = (f, _, _) =>
+                {
+                    loadedAtMap.Enqueue((f.Path, f.Content.Length != null));
+                    return new(FileList.Of(f));
+                },
+            }, inputs: ["**/*.md"])
+            .Add("data", d => reduce = new FakeReduceStep(d), inputs: ["**/*.txt"])
+            .Add("dirs", d => group = new FakeGroupStep(d), inputs: ["**/*.txt"], groupBy: "dir")
+            .Build();
+
+        var result = await site.BuildAsync(graph);
+
+        Assert.True(result.Succeeded, string.Join("\n", result.Errors));
+        Assert.Equal(2, loadedAtMap.Count);
+        Assert.All(loadedAtMap, x => Assert.True(x.Loaded, $"{x.Path} was not loaded"));
+        Assert.All(reduce!.Received, x => Assert.NotNull(x.Content.Length));
+        Assert.All(group!.Groups.SelectMany(x => x.Files), x => Assert.NotNull(x.Content.Length));
+    }
+
+    [Fact]
     public async Task ReduceSeesAllInputsSorted()
     {
         var site = await new FakeSite().WithFilesAsync("/c.txt", "/a.txt", "/b/1.txt", "/b.txt");
