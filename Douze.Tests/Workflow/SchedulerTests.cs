@@ -122,7 +122,7 @@ public class SchedulerTests
         Assert.Equal(StepShape.Group, run.Node.Step.EffectiveShape);
         Assert.Equal(["/", "/a/", "/b/"], run.Results.Select(x => x.Key.Unit));
         Assert.Equal(["/a/1.txt", "/a/2.txt", "/a/3.md"], run.Results[1].Inputs.Select(x => x.Path.FullName));
-        Assert.Equal("/a/1.txt,/a/2.txt,/a/3.md", await run.Results[1].Outputs[0].Content.ReadTextAsync(Ct));
+        Assert.Equal("/a/1.txt,/a/2.txt,/a/3.md", await run.Results[1].Files[0].Content.ReadTextAsync(Ct));
         Assert.Equal(3, run.Units);
 
         // Any other group-by is a Liquid template with the file in scope.
@@ -257,7 +257,7 @@ public class SchedulerTests
 
         // The passed through file is the same instance, untouched.
         var css = received.First();
-        Assert.Same(Assert.Single(result["pages"].Results, x => x.Key.Unit == "/style.css").Outputs[0], css);
+        Assert.Same(Assert.Single(result["pages"].Results, x => x.Key.Unit == "/style.css").Files[0], css);
         Assert.Equal("/style.css", await css.Content.ReadTextAsync(Ct));
 
         var markdown = result["markdown"];
@@ -566,7 +566,7 @@ public class SchedulerTests
 
         // End to end: every file reached the output file system through the write step.
         Assert.Equal(34, first.Outputs.Count);
-        Assert.Equal(first.Outputs.Select(x => x.Ref), second.Outputs.Select(x => x.Ref));
+        Assert.Equal(first.Outputs, second.Outputs);
         Assert.Equal("/a/00.txt|pages|render", await firstSite.Output.ReadAllTextAsync("/a/00.txt"));
         Assert.Equal(await firstSite.Output.ReadAllTextAsync("/groups/b.txt"), await secondSite.Output.ReadAllTextAsync("/groups/b.txt"));
 
@@ -686,7 +686,7 @@ public class SchedulerTests
 
         foreach (var unit in run.Results)
         {
-            foreach (var file in unit.Outputs)
+            foreach (var file in unit.Files)
             {
                 contents.Add(await file.Content.ReadTextAsync(Ct));
             }

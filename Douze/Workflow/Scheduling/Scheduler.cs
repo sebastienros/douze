@@ -36,7 +36,7 @@ internal sealed class Scheduler
             runners[node.Index] = new NodeRunner(this, node, runners, buildCts);
         }
 
-        var sources = await EnumerateSourcesAsync();
+        var sources = new SourceFiles(await EnumerateSourcesAsync(), _graph.Nodes.Count(x => x.Inputs != null));
 
         await Task.WhenAll(runners.Select(x => x.RunAsync(sources)));
 
@@ -104,6 +104,26 @@ internal sealed class Scheduler
     }
 
     /// <summary>
+    /// The source files, released once every node with <c>inputs</c> has read them, so that their contents do not stay
+    /// in memory until the build ends.
+    /// </summary>
+    private sealed class SourceFiles(IReadOnlyList<VirtualFile> files, int readers)
+    {
+        private IReadOnlyList<VirtualFile>? _files = files;
+        private int _readers = readers;
+
+        public IReadOnlyList<VirtualFile> Files => _files ?? [];
+
+        public void Release()
+        {
+            if (Interlocked.Decrement(ref _readers) == 0)
+            {
+                _files = null;
+            }
+        }
+    }
+
+    /// <summary>
     /// Runs one node: waits for the contributions of its ancestors, reads its entering files, runs its step, and
     /// completes its channel with the outcome.
     /// </summary>
@@ -119,6 +139,7 @@ internal sealed class Scheduler
         private int _started;
         private TraceSpan _span;
         private bool _upstreamUnavailable;
+        private int _sourcesReleased;
 
         public NodeRunner(Scheduler scheduler, GraphNode node, NodeRunner[] runners, CancellationTokenSource buildCts)
         {
@@ -161,7 +182,7 @@ internal sealed class Scheduler
         /// Runs the node and always publishes its outcome: whatever happens, its contribution, its channel and
         /// <see cref="Completed"/> complete, since its dependents wait for them.
         /// </summary>
-        public async Task RunAsync(IReadOnlyList<VirtualFile> sources)
+        public async Task RunAsync(SourceFiles sources)
         {
             try
             {
@@ -173,9 +194,18 @@ internal sealed class Scheduler
             }
             finally
             {
+                ReleaseSources(sources);
                 ContributionReady.TrySetResult();
                 Output.Complete(Run.State == StepState.Succeeded ? null : new StepUnavailableException(Name, Run.State));
                 Completed.TrySetResult();
+            }
+        }
+
+        private void ReleaseSources(SourceFiles sources)
+        {
+            if (Node.Inputs != null && Interlocked.Exchange(ref _sourcesReleased, 1) == 0)
+            {
+                sources.Release();
             }
         }
 
@@ -201,7 +231,7 @@ internal sealed class Scheduler
             }
         }
 
-        private async Task RunStepAsync(IReadOnlyList<VirtualFile> sources)
+        private async Task RunStepAsync(SourceFiles sources)
         {
             var token = _stepCts.Token;
             var initialized = false;
@@ -358,7 +388,7 @@ internal sealed class Scheduler
         /// Reads the entering files (matching source files and the outputs of every need), detects paths coming from two
         /// producers, passes through files the step does not match, and hands the others to <paramref name="consume"/>.
         /// </summary>
-        private async Task ReadInputsAsync(IReadOnlyList<VirtualFile> sources, Action<VirtualFile> consume, CancellationToken token)
+        private async Task ReadInputsAsync(SourceFiles sources, Action<VirtualFile> consume, CancellationToken token)
         {
             var pumps = new List<Task>(Node.Needs.Count + 1);
 
@@ -366,14 +396,21 @@ internal sealed class Scheduler
             {
                 pumps.Add(Task.Run(async () =>
                 {
-                    foreach (var file in sources)
+                    try
                     {
-                        token.ThrowIfCancellationRequested();
-
-                        if (inputs.IsMatch(file.Path))
+                        foreach (var file in sources.Files)
                         {
-                            await AcceptAsync(file, Provenance.SourceStep, consume, token);
+                            token.ThrowIfCancellationRequested();
+
+                            if (inputs.IsMatch(file.Path))
+                            {
+                                await AcceptAsync(file, Provenance.SourceStep, consume, token);
+                            }
                         }
+                    }
+                    finally
+                    {
+                        ReleaseSources(sources);
                     }
                 }, token));
             }
@@ -462,7 +499,7 @@ internal sealed class Scheduler
             }
         }
 
-        private async Task RunMapAsync(IReadOnlyList<VirtualFile> sources, CancellationToken token)
+        private async Task RunMapAsync(SourceFiles sources, CancellationToken token)
         {
             var step = (IMapStep)Node.Step;
             var work = Channel.CreateUnbounded<VirtualFile>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false });
@@ -518,7 +555,7 @@ internal sealed class Scheduler
             await reading;
         }
 
-        private async Task RunReduceAsync(IReadOnlyList<VirtualFile> sources, CancellationToken token)
+        private async Task RunReduceAsync(SourceFiles sources, CancellationToken token)
         {
             var step = (IReduceStep)Node.Step;
             var files = await ReadAllInputsAsync(sources, token);
@@ -545,7 +582,7 @@ internal sealed class Scheduler
             ContributionReady.TrySetResult();
         }
 
-        private async Task RunGroupAsync(IReadOnlyList<VirtualFile> sources, CancellationToken token)
+        private async Task RunGroupAsync(SourceFiles sources, CancellationToken token)
         {
             var step = (IGroupStep)Node.Step;
             var files = await ReadAllInputsAsync(sources, token);
@@ -632,7 +669,7 @@ internal sealed class Scheduler
         /// <summary>
         /// Reads the whole input (the barrier of reduce and group steps), sorted by path, with every content loaded.
         /// </summary>
-        private async Task<List<VirtualFile>> ReadAllInputsAsync(IReadOnlyList<VirtualFile> sources, CancellationToken token)
+        private async Task<List<VirtualFile>> ReadAllInputsAsync(SourceFiles sources, CancellationToken token)
         {
             var files = new List<VirtualFile>();
             var filesLock = new Lock();
@@ -697,7 +734,10 @@ internal sealed class Scheduler
                 }
 
                 Run.AddOut(files.Count);
-                Run.AddResult(new UnitResult(key, inputs, [.. files.AsEnumerable()], deps.ToSet()));
+                Run.AddResult(new UnitResult(key, inputs, [.. files.AsEnumerable().Select(x => x.Ref)], deps.ToSet())
+                {
+                    Files = Context.Options.KeepFiles ? [.. files.AsEnumerable()] : [],
+                });
             }
             finally
             {

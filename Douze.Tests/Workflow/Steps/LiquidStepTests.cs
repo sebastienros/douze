@@ -25,7 +25,7 @@ public class LiquidStepTests : StepTestBase
             Step("render", "liquid", needs: ["pages"])));
 
         var unit = result["render"].Results.Single();
-        Assert.Equal("Hello Douze!", await TextAsync(unit.Outputs.Single()));
+        Assert.Equal("Hello Douze!", await TextAsync(unit.Files.Single()));
         Assert.Equal(["/_includes/greeting.liquid"], unit.Dependencies.Templates.Select(x => x.Path.FullName));
     }
 
@@ -87,7 +87,7 @@ public class LiquidStepTests : StepTestBase
             },
         });
 
-        var result = await SiteBuilder.BuildAsync(graph, await SiteOptions.DetectAsync(Source, Output, null, null), new BuildOptions { View = SilentProgressView.Discard, Trace = NullTraceRecorder.Instance });
+        var result = await SiteBuilder.BuildAsync(graph, await SiteOptions.DetectAsync(Source, Output, null, null), new BuildOptions { KeepFiles = true, View = SilentProgressView.Discard, Trace = NullTraceRecorder.Instance });
 
         Assert.True(result.Succeeded, string.Join("\n", result.Errors));
         Assert.Equal(["<h1>A</h1>", "<h1>B</h1>"], await Task.WhenAll(Outputs(result["render"]).Select(TextAsync)));

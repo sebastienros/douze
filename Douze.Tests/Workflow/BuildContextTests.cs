@@ -35,6 +35,7 @@ public sealed class BuildContextTests : IDisposable
         var result = await SiteBuilder.BuildAsync(graph, site.Options, new BuildOptions
         {
             Verbose = verbose,
+            KeepFiles = true,
             CacheDirectory = _cache,
             Trace = NullTraceRecorder.Instance,
             View = SilentProgressView.Discard,

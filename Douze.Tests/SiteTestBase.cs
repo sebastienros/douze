@@ -31,6 +31,7 @@ public abstract class SiteTestBase
         return await SiteBuilder.BuildAsync(workflow ?? DefaultWorkflow.Create(site), site, options ?? new BuildOptions
         {
             MaxDegreeOfParallelism = 4,
+            KeepFiles = true,
             Trace = NullTraceRecorder.Instance,
             View = SilentProgressView.Discard,
             Cancellation = TestContext.Current.CancellationToken,

@@ -143,6 +143,7 @@ public class WorkflowSourceTests : IDisposable
         var result = await SiteBuilder.BuildAsync(WorkflowGraph.Build(workflow), site, new BuildOptions
         {
             MaxDegreeOfParallelism = site.Parallelism!.Value,
+            KeepFiles = true,
             Trace = NullTraceRecorder.Instance,
             View = SilentProgressView.Discard,
             Cancellation = TestContext.Current.CancellationToken,

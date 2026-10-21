@@ -94,6 +94,7 @@ public abstract class CommandTestBase : StepTestBase, IDisposable
         return BuildAsync(workflow, new BuildOptions
         {
             MaxDegreeOfParallelism = parallelism,
+            KeepFiles = true,
             Verbose = verbose,
             Failure = failure,
             CacheDirectory = Path.Combine(TempFolder, "cache"),

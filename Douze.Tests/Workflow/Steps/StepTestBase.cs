@@ -40,7 +40,7 @@ public abstract class StepTestBase : SiteTestBase
     /// <summary>
     /// The files a step emitted, sorted by path.
     /// </summary>
-    internal static VirtualFile[] Outputs(StepRun run) => [.. run.Results.SelectMany(x => x.Outputs).OrderBy(x => x.Path)];
+    internal static VirtualFile[] Outputs(StepRun run) => [.. run.Results.SelectMany(x => x.Files).OrderBy(x => x.Path)];
 
     internal static Task<string> TextAsync(VirtualFile file) => file.Content.ReadTextAsync(Xunit.TestContext.Current.CancellationToken).AsTask();
 }

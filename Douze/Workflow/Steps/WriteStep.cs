@@ -9,7 +9,8 @@ namespace Douze.Workflow.Steps;
 /// </summary>
 internal sealed class WriteStep : Step, IMapStep
 {
-    private readonly ConcurrentDictionary<FPath, VirtualFile> _written = new();
+    // Output paths and what produced them: not the files, whose contents would stay in memory until the build ends.
+    private readonly ConcurrentDictionary<FPath, string> _written = new();
 
     public WriteStep(StepDefinition definition) : base(definition)
     {
@@ -26,10 +27,9 @@ internal sealed class WriteStep : Step, IMapStep
 
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
-        if (!_written.TryAdd(file.Path, file))
+        if (!_written.TryAdd(file.Path, Describe(file)))
         {
-            var other = _written[file.Path];
-            var (first, second) = Order(Describe(other), Describe(file));
+            var (first, second) = Order(_written[file.Path], Describe(file));
             throw new DouzeException($"output '{file.Path}' is produced by both {first} and {second}");
         }
 

@@ -21,9 +21,11 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     private readonly IReadOnlyList<FPath> _includesFolders;
     private readonly FluidParser _parser;
 
-    // Parsed templates by content hash: identical templates (paginated pages, layouts) are parsed once. A failed parse
-    // is kept too, so the error is reported for every file with that content, each with its own path.
-    private readonly ConcurrentDictionary<Hash128, Lazy<(ParsedTemplate? Template, ParseException? Error)>> _parsed = new();
+    // Parsed templates by content hash: identical templates (paginated pages, layouts) are parsed once while they are in
+    // use. A failed parse is kept too, so the error is reported for every file with that content, each with its own
+    // path. The templates are held weakly: the body of every page is a template, and keeping all of them would keep
+    // every page in memory until the build ends (layouts and includes are held by their files).
+    private readonly ConcurrentDictionary<Hash128, ParseSlot> _parsed = new();
 
     // Files of the includes folders by relative path, read once.
     private readonly ConcurrentDictionary<FPath, Lazy<Task<IncludeFile?>>> _files = new();
@@ -53,28 +55,54 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     /// <exception cref="TemplateParseException">The template is invalid; the exception names <paramref name="displayPath"/>.</exception>
     public ParsedTemplate GetOrParse(Hash128 contentHash, string text, string displayPath)
     {
-        var lazy = _parsed.GetOrAdd(contentHash, static (hash, state) => new Lazy<(ParsedTemplate?, ParseException?)>(
-            () =>
+        var result = _parsed.GetOrAdd(contentHash, static _ => new ParseSlot()).GetOrParse(_parser, contentHash, text);
+
+        if (result.Template == null)
+        {
+            var error = result.Error!;
+            throw new TemplateParseException(displayPath, error.Position?.Line, error.Position?.Column, Reason(error));
+        }
+
+        return result.Template;
+    }
+
+    private sealed record ParseResult(ParsedTemplate? Template, ParseException? Error);
+
+    /// <summary>
+    /// The parse of one content: parsed once while somebody holds the result, again after it was collected.
+    /// </summary>
+    private sealed class ParseSlot
+    {
+        private readonly Lock _lock = new();
+        private WeakReference<ParseResult>? _result;
+
+        public ParseResult GetOrParse(FluidParser parser, Hash128 hash, string text)
+        {
+            if (_result != null && _result.TryGetTarget(out var result))
             {
+                return result;
+            }
+
+            lock (_lock)
+            {
+                if (_result != null && _result.TryGetTarget(out result))
+                {
+                    return result;
+                }
+
                 try
                 {
-                    return (new ParsedTemplate(state.Parser.Parse(state.Text), hash), null);
+                    result = new ParseResult(new ParsedTemplate(parser.Parse(text), hash), null);
                 }
                 catch (ParseException e)
                 {
-                    return (null, e);
+                    result = new ParseResult(null, e);
                 }
-            },
-            LazyThreadSafetyMode.ExecutionAndPublication), (Parser: _parser, Text: text));
 
-        var (parsed, error) = lazy.Value;
-
-        if (parsed == null)
-        {
-            throw new TemplateParseException(displayPath, error!.Position?.Line, error.Position?.Column, Reason(error));
+                _result = new WeakReference<ParseResult>(result);
+                return result;
+            }
         }
-
-        return parsed;
     }
 
     /// <summary>

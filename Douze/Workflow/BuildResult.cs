@@ -6,7 +6,7 @@ namespace Douze.Workflow;
 
 internal sealed class BuildResult
 {
-    public BuildResult(IReadOnlyList<StepRun> steps, IReadOnlyList<BuildError> errors, IReadOnlyList<VirtualFile> outputs, ScopeSet scopes, TraceSession trace, TimeSpan elapsed, bool cancelled)
+    public BuildResult(IReadOnlyList<StepRun> steps, IReadOnlyList<BuildError> errors, IReadOnlyList<FileRef> outputs, ScopeSet scopes, TraceSession trace, TimeSpan elapsed, bool cancelled)
     {
         Steps = steps;
         Errors = errors;
@@ -32,9 +32,9 @@ internal sealed class BuildResult
     public IReadOnlyList<StepRun> Steps { get; }
 
     /// <summary>
-    /// The files that reached <c>write</c> steps, sorted by path.
+    /// The refs of the files that reached <c>write</c> steps, sorted by path.
     /// </summary>
-    public IReadOnlyList<VirtualFile> Outputs { get; }
+    public IReadOnlyList<FileRef> Outputs { get; }
 
     /// <summary>
     /// The merged contributions of every step.

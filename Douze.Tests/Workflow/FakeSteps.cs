@@ -254,6 +254,7 @@ internal sealed class FakeSite
         return SiteBuilder.BuildAsync(graph, Options, new BuildOptions
         {
             MaxDegreeOfParallelism = parallelism,
+            KeepFiles = true,
             Failure = failure,
             Cancellation = cancellation ?? Xunit.TestContext.Current.CancellationToken,
             Trace = trace ?? NullTraceRecorder.Instance,

@@ -14,6 +14,7 @@ internal sealed class BuildOptions
     public IProgressView? View { get; init; }        // null: chosen by Program; SiteBuilder falls back to a silent view
     public ITraceRecorder? Trace { get; init; }      // null: a TraceRecorder honoring TraceUnits
     public string? CacheDirectory { get; init; }     // default: <source>/.douze/
-    public bool UseCache { get; init; } = true;      // --no-cache (phase 5)
+    public bool UseCache { get; init; } = true;      // --no-cache
+    public bool KeepFiles { get; init; }             // keeps the output files of every unit in UnitResult.Files (tests)
     public CancellationToken Cancellation { get; init; }
 }

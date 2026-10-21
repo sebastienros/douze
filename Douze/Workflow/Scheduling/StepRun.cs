@@ -71,7 +71,7 @@ internal sealed class StepRun
     public ScopeSet Contributions { get; internal set; } = ScopeSet.Empty;
 
     /// <summary>
-    /// One result per unit, sorted by unit key once the step is done. Kept in memory for incremental builds.
+    /// One result per unit, sorted by unit key once the step is done: refs and dependencies, not contents.
     /// </summary>
     public IReadOnlyList<UnitResult> Results => _sortedResults ?? [.. _results];
 
@@ -96,6 +96,11 @@ internal sealed class StepRun
 }
 
 /// <summary>
-/// The result of a unit of work: its key, the refs of its inputs, its outputs and what it read besides its inputs.
+/// The result of a unit of work: its key, the refs of its inputs and outputs and what it read besides its inputs. The
+/// output files themselves, with their contents, are kept in <see cref="Files"/> only with
+/// <see cref="BuildOptions.KeepFiles"/>: a build does not hold the contents of every step in memory.
 /// </summary>
-internal sealed record UnitResult(UnitKey Key, ImmutableArray<FileRef> Inputs, ImmutableArray<VirtualFile> Outputs, DependencySet Dependencies);
+internal sealed record UnitResult(UnitKey Key, ImmutableArray<FileRef> Inputs, ImmutableArray<FileRef> Outputs, DependencySet Dependencies)
+{
+    public ImmutableArray<VirtualFile> Files { get; init; } = [];
+}

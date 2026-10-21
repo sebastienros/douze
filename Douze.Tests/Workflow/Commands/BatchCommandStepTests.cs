@@ -109,7 +109,7 @@ public class BatchCommandStepTests : CommandTestBase
         Assert.Equal(["/blog/a.html", "/blog/b.html", "/pid.txt"], blog);
         Assert.Equal(["/docs/c.html", "/pid.txt"], docs);
 
-        var pids = await Task.WhenAll(run.Results.Select(x => TextAsync(x.Outputs.Single(o => o.Path == "/pid.txt"))));
+        var pids = await Task.WhenAll(run.Results.Select(x => TextAsync(x.Files.Single(o => o.Path == "/pid.txt"))));
         Assert.NotEqual(pids[0], pids[1]);
     }
 
