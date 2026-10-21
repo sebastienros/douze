@@ -38,7 +38,7 @@ public class CollectStepTests : StepTestBase
             await Source.WriteTextFileAsync("/a.html", content);
 
             // page.date is part of the metadata: the same date in every build.
-            (await Source.GetFileMetadataAsync("/a.html")).LastWriteTimeUtc = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            Source.SetLastWriteTimeUtc("/a.html", new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
 
             return Contribution(await BuildSuccessfullyAsync(Collect())).Hash;
         }

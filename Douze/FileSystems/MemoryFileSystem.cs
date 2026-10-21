@@ -5,7 +5,7 @@ namespace Douze.FileSystems;
 internal sealed class MemoryFileSystem : IFileSystem
 {
     private readonly ConcurrentDictionary<FPath, FileSystemEntry> _files = new();
-    private readonly ConcurrentDictionary<FPath, MemoryFileStream> _streams = new();
+    private readonly ConcurrentDictionary<FPath, MemoryFile> _contents = new();
 
     /// <summary>
     /// Creates the directory represented by the <paramref name="path"/>.
@@ -49,14 +49,20 @@ internal sealed class MemoryFileSystem : IFileSystem
             _files[path] = new FileEntry(path, this);
         }
 
-        if (!_streams.TryGetValue(path, out var stream))
-        {
-            stream = new MemoryFileStream();
+        // The file is replaced (truncated) when the stream is disposed; until then readers see the previous content.
+        _contents.TryAdd(path, MemoryFile.Empty);
 
-            _streams[path] = stream;
-        }
+        return new WriteStream(this, path);
+    }
 
-        return stream;
+    /// <summary>
+    /// Sets the modification time of a file, as a tool that preserves times would.
+    /// </summary>
+    internal void SetLastWriteTimeUtc(FPath path, DateTime lastWriteTimeUtc)
+    {
+        path = path.ToAbsolute();
+        var file = _contents.TryGetValue(path, out var existing) ? existing : throw new FileNotFoundException(path.FullName);
+        _contents[path] = file with { LastWriteTimeUtc = lastWriteTimeUtc };
     }
 
     public ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath basePath, bool recursive, Predicate<string>? filter)
@@ -106,35 +112,48 @@ internal sealed class MemoryFileSystem : IFileSystem
     {
         path = path.ToAbsolute();
 
-        if (!_files.ContainsKey(path))
+        if (!_files.ContainsKey(path) || !_contents.TryGetValue(path, out var file))
         {
             throw new FileNotFoundException(path.FullName);
         }
 
-        if (!_streams.TryGetValue(path, out var stream))
-        {
-            stream = new MemoryFileStream();
-
-            _streams[path] = stream;
-        }
-
-        return new(stream);
+        // Each reader has its own stream over the content.
+        return new(new MemoryStream(file.Bytes, writable: false));
     }
 
     public ValueTask<FileMetadata> GetFileMetadataAsync(FPath path)
     {
         path = path.ToAbsolute();
 
-        if (!_files.ContainsKey(path))
+        if (!_files.ContainsKey(path) || !_contents.TryGetValue(path, out var file))
         {
             throw new FileNotFoundException(path.FullName);
         }
 
-        if (!_streams.TryGetValue(path, out var stream))
-        {
-            throw new FileNotFoundException(path.FullName);
-        }
+        return new(new FileMetadata(file.Bytes.Length, file.LastWriteTimeUtc, file.LastWriteTimeUtc, file.LastWriteTimeUtc));
+    }
 
-        return new(stream.Metadata);
+    private sealed record MemoryFile(byte[] Bytes, DateTime LastWriteTimeUtc)
+    {
+        public static readonly MemoryFile Empty = new([], DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// Collects what is written and replaces the file's content when disposed.
+    /// </summary>
+    private sealed class WriteStream(MemoryFileSystem fileSystem, FPath path) : MemoryStream
+    {
+        private bool _committed;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && !_committed)
+            {
+                _committed = true;
+                fileSystem._contents[path] = new MemoryFile(ToArray(), DateTime.UtcNow);
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }
