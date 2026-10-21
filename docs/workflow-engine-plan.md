@@ -138,7 +138,7 @@ internal sealed class VirtualFile
     public Metadata Metadata { get; }
     public string? ContentType { get; }        // null means "derive from the extension" (ContentTypes.FromPath)
     public Provenance Provenance { get; }
-    public DateTime? LastWriteTimeUtc { get; } // set for source files only, used for page.date
+    public DateTime? LastWriteTimeUtc { get; } // modification time of the source file this one comes from, kept through With; used for page.date
 
     public Hash128 ContentHash => Content.Hash;
     public Hash128 MetadataHash => Metadata.Hash;
@@ -173,7 +173,8 @@ internal abstract class FileContent
 
     public abstract bool IsText { get; }
     public abstract long? Length { get; }              // null until a lazy file is read
-    public Hash128 Hash { get; }                       // lazy, thread safe (Lazy<Hash128> with ExecutionAndPublication)
+    public Hash128 Hash { get; }                       // lazy, thread safe (Lazy<Hash128> with ExecutionAndPublication); blocks on the read of a file that was not loaded
+    public virtual ValueTask LoadAsync(CancellationToken ct);                        // reads and retains a lazy file; the scheduler awaits it for every consumed file, so steps never block on Hash
 
     public abstract ValueTask<string> ReadTextAsync(CancellationToken ct);           // UTF-8, BOM stripped
     public abstract ValueTask<ReadOnlyMemory<byte>> ReadBytesAsync(CancellationToken ct);
@@ -297,15 +298,14 @@ internal sealed class DependencyTracker
     public DependencySet ToSet();                               // sorted, deduplicated, immutable
 }
 
-internal sealed record DependencySet(ImmutableArray<(FPath Path, Hash128 Hash)> Templates, ImmutableArray<FPath> DataFiles, ImmutableArray<string> Scopes)
-{
-    public Hash128 Hash { get; }
-}
+internal sealed record DependencySet(ImmutableArray<(FPath Path, Hash128 Hash)> Templates, ImmutableArray<FPath> DataFiles, ImmutableArray<string> Scopes);
 ```
 
 The tracker is created per unit of work (one file for `map`, one group for `group`, the whole input
 for `reduce`) and passed through `StepContext.Dependencies`. The Liquid bridge records template reads
-and scope hits into it (sections 2.8 and 7.3).
+and scope lookups into it (sections 2.8 and 7.3). `TryResolve` records every scope it consults, hit
+or miss: a scope that does not define the key could define it later and shadow the hit. The set is
+not hashed and is not part of a result key (section 2.7): it is the record a replay validates.
 
 ### 2.4 Steps
 
@@ -592,17 +592,26 @@ with `file` (`path`, `dir`, `name`, `ext`) and `data` (the file's `MetadataValue
 Outputs of all groups go to the channel as they finish.
 
 **Scopes.** Before a node starts, its `StepContext.Scopes` is
-`ScopeSet.Merge(contributions of every ancestor in descending topological index, base)`, where
-`base` holds the global data from the `data` step marked `scope: site`, when it is an ancestor.
-Descending index means the nearest contributions take precedence. Because a node starts only when
-every `Needs` node has completed its *channel*, and reduce nodes publish their contribution before
-completing the channel, the merged set is always complete when a node begins.
+`ScopeSet.Merge(contributions of every ancestor in descending topological index, ScopeSet.Empty)`;
+the `data` step's contribution is one of them when it is an ancestor. Descending index means the
+nearest contributions take precedence. A node starts once every ancestor has published its
+contribution: only reduce nodes delay that (they publish after their unit ran, before completing
+their channel), map and group nodes publish an empty contribution before they run. So a map node
+downstream of a reduce node starts only after the reduce ran, by construction of the barrier, and a
+chain of map nodes starts immediately and streams, whatever the states of the nodes in between.
 
-Note that a map node downstream of a reduce node starts only after the reduce completed, by
-construction of the barrier. A map node downstream of map nodes starts immediately and streams.
+**Completion order.** A node makes its run final (state, end time, counters, sorted results and
+errors), waits for the nodes it needs to be complete, reports `IProgressView.StepCompleted`, and only
+then completes its channel. For every edge A -> B, A is reported before B, whatever the states. A
+node that stopped early is `Skipped` when a need failed or was skipped, `Cancelled` otherwise, so the
+final states do not depend on which of a failure and a cancellation was observed first.
 
-**Skipping.** When a node fails or is skipped, every dependent is marked `Skipped`, its channel is
-completed empty, and the rest of the graph continues. Independent nodes finish normally.
+**Skipping.** When a node fails or is skipped, its channel is completed with a
+`StepUnavailableException`; every dependent stops when it reaches it, is marked `Skipped`, completes
+its own channel the same way, and the rest of the graph continues. Independent nodes finish
+normally. A streaming dependent may have processed files before the failure and emitted outputs
+downstream: it is `Skipped` all the same, and its `Results` are not reused (section 7.5 replays
+succeeded steps only).
 
 **Failure policy** (`Douze/Workflow/FailurePolicy.cs`, `enum FailurePolicy { Default, FailFast, KeepGoing }`):
 
@@ -646,7 +655,8 @@ complete, which the views show as `done/?`.
 
 Every file carries `Provenance` (2.2). Every unit of work records a `UnitResult` with its `UnitKey`,
 its input refs, its outputs and its dependency set. The result key of a unit, used by the in-memory
-replay (phase 6) and the disk cache (phase 5), is:
+replay (phase 6) and the disk cache (phase 5) to find a previous result, is what is known before the
+unit runs:
 
 `Douze/Workflow/Cache/ResultKey.cs` (created in phase 1, in the `Workflow` folder; the `Cache`
 folder is created in phase 5 and the file moves then)
@@ -654,17 +664,20 @@ folder is created in phase 5 and the file moves then)
 ```csharp
 internal static class ResultKey
 {
-    // Hash128.Combine(stepName, definition.ConfigHash, inputs (sorted by path: path, contentHash, metadataHash), scopes.Hash when the step reads scopes, dependencies.Hash, commandVersion)
-    public static Hash128 Compute(StepDefinition definition, ImmutableArray<FileRef> inputs, Hash128? scopesHash, DependencySet dependencies, Hash128 commandVersion);
+    // Hash128.Combine(stepName, definition.ConfigHash, inputs (sorted by path: path, contentHash, metadataHash), commandVersion)
+    public static Hash128 Compute(StepDefinition definition, ImmutableArray<FileRef> inputs, Hash128 commandVersion);
 }
 ```
 
-- `scopesHash` is included for steps that resolve metadata through scopes (`liquid`, `layout`,
-  `paginate`, `permalink`, `collect`, grouped `liquid`). It is the `ScopeSet.Hash` of the step's
-  context. This is coarse: any data change re-runs these steps. Phase 5 refines it with the recorded
-  `DependencySet` (data file granularity) and drops `scopesHash` from the key when a unit's
-  dependency set was recorded completely (section 7).
 - `commandVersion` is `Hash128.Empty` for built-ins and `Hash128.Combine(hash of definition.Version, hashes of files matching definition.Sources)` for command steps.
+- What the unit read besides its inputs (templates, data files, scopes) is not in the key: it is only
+  known once the unit ran. It is kept with the result as its `DependencySet`, and a previous result is
+  reused only when its key matches **and** every recorded dependency is unchanged: each template has
+  the recorded content hash, each data file has the content hash it had in the run that recorded it
+  (known from the `data` step's input refs), each scope source has the hash it had (known from the
+  contributing step's `Contributions`). A unit that reads scopes without recording (a command step)
+  records every scope of its `ScopeSet` instead, so any data change re-runs it: correctness over
+  minimal rebuilds.
 
 Early cutoff (section 7.2) compares the **output** refs of a unit with its previous result: when
 all outputs are identical, dependents are not re-run for those files.
@@ -911,8 +924,8 @@ contributes scopes.
 
 **`frontmatter`** (map, default match: `**/*.md`, `**/*.html`, `**/*.liquid`). Parses the YAML front
 matter with `FrontMatter.Parse` (today's `FrontMatterHelper`), merges it into Own (arrays replaced,
-as today), strips the header from the content, sets `page.date` to `file.LastWriteTimeUtc` when the
-file is a source file, and sets `ContentType` by extension. Non-text files are not matched by
+as today), strips the header from the content, sets `page.date` to `file.LastWriteTimeUtc` when it
+is set (the date of the source file, kept through `With`), and sets `ContentType` by extension. Non-text files are not matched by
 default. Options: none.
 
 **`parse`** (map, default match: `**/*.json`, `**/*.yml`, `**/*.yaml`, `**/*.xml`). Parses the whole
@@ -1467,9 +1480,12 @@ tested by a unit test that checks the marker replacement and that the output con
 - `UnitResult` per unit with inputs, outputs and the `DependencySet` recorded during the unit.
 - `ResultKey.Compute` and `StepDefinition.ConfigHash`.
 - `DependencyTracker` wired through `StepContext`, the Liquid ambient values, `TemplateLoader`
-  (templates and includes) and `MetadataValue` (scope hits: data file keys through
-  `SiteScope.KeySources`, step contributions such as `collections` through `SiteScope.Source`).
+  (templates and includes) and `MetadataValue` (scope lookups: data file keys through
+  `SiteScope.KeySources`, step contributions such as `collections` through `SiteScope.Source`, and
+  every scope consulted on the way).
 - `StepRun.Results` kept in memory after the build.
+- `FileContent.LoadAsync`: the scheduler loads every consumed file before its unit runs, so hashing
+  input refs never blocks a thread on I/O.
 
 Nothing in phase 1 consumes these. Their cost is one hash per file content (lazy) and per Own
 metadata, and a few allocations per unit.
@@ -1488,16 +1504,24 @@ mode: editing a page body never touches collections unless the page's metadata c
 
 Recorded at render time, per unit:
 - Layouts and includes: exact file and content hash, through `TemplateLoader` (precise).
-- Data files: whole-file granularity, through `SiteScope.KeySources` when a template resolves a key
-  that comes from the data scope.
-- Step contributions (`collections`): the contribution's hash, through `SiteScope.Source`.
+- Data files: whole-file granularity, through `SiteScope.KeySources` when a lookup hits the data
+  scope, and through `FolderScope.Sources` for every folder scope consulted on the file's directory
+  path.
+- Step contributions (`collections`): the contribution's source, through `SiteScope.Source`, when a
+  lookup hits it or consults it before hitting a later scope.
 - `with.template` and `permalink` templates: exact file or string hash.
 
-When a step reads scopes but the recorded dependency set is empty (nothing was resolved from
-scopes), the unit's key does not depend on the scope hash. When tracking is incomplete (a step
-implementation that reads scopes without going through `TryResolve`, which is forbidden by code
-review, or a command step), the step's `ResultKey` includes the full `ScopeSet.Hash`, so any data
-change re-runs it: correctness over minimal rebuilds.
+A lookup records every scope it consults, hit or miss, because a scope that does not define the key
+could define it later and shadow the hit. This is complete and coarse: a miss, or a hit in the data
+scope, makes the unit depend on every site contribution consulted before it (typically
+`step:collect`), so a metadata change anywhere re-renders the pages that looked past that scope.
+Phase 5 may refine the record to key level (a scope *not defining* a key, checked against the
+scope's current key set) if the benchmark shows the coarse record re-runs too much.
+
+When tracking is incomplete (a step implementation that reads scopes without going through
+`TryResolve`, which is forbidden by code review, or a command step), the unit records every scope
+of its `ScopeSet` (every site source and every folder data file), so any data change re-runs it:
+correctness over minimal rebuilds.
 
 ### 7.4 Disk cache (phase 5)
 
@@ -1523,10 +1547,11 @@ A version mismatch in `index.json` discards the cache.
   to virtual paths, with the output folder and `.douze/` ignored.
 - `IncrementalBuilder.RebuildAsync(changes)`: finds the root nodes whose `Inputs` match a changed
   path (added, modified, deleted, renamed as delete plus add), re-enumerates only those files, and
-  runs the scheduler in replay mode: every unit whose key is found in the previous results (or the
-  disk cache) is replayed from the stored outputs instead of executed; units are executed only when
-  their key changed; early cutoff stops propagation. Template, include and data changes are mapped
-  through the recorded dependency sets to the units that used them.
+  runs the scheduler in replay mode: every unit whose key is found in the previous results of a
+  succeeded step (or in the disk cache) and whose recorded dependencies are unchanged (section 2.7)
+  is replayed from the stored outputs instead of executed; the other units are executed; early
+  cutoff stops propagation. Template, include and data changes are mapped through the recorded
+  dependency sets to the units that used them.
 - Deletions and renames: provenance tells which outputs came from a removed source; `write` deletes
   them and removes now empty directories.
 - `write` writes only files whose hash differs from what it wrote last.
@@ -1671,19 +1696,20 @@ tests pass, `SiteBuilder.BuildAsync` runs a graph of fake steps end to end from 
 - `StepRun` also exposes `Scopes` (what the step saw), `FilesPassedThrough` and `UnitsFinal` (the `done/?` case).
   `BuildResult` has a `this[string step]` indexer. `DependencyTracker.Add(DependencySet)` replays the reads of
   group keys into each group's tracker.
-- Completion order: a node makes its run final (state, end time, counters), waits for the nodes it needs, calls
-  `IProgressView.StepCompleted`, and only then completes its channel. For every edge A -> B, A is reported
-  before B, whatever the states. A node that stops early is `Skipped` when a need failed or was skipped,
-  `Cancelled` otherwise.
-- A node waits for the contributions of its ancestors (only reduce nodes delay them), not for its needs'
-  channels, so chains of map steps stream.
-- On a miss, `ScopeSet.TryResolve` records every site scope and the consulted folder scopes' data files.
+- Completion order and the wait on ancestors' contributions are as described in 2.6.
+- `ScopeSet.TryResolve` records every scope it consults, hit or miss (7.3).
+- `ResultKey.Compute(definition, inputs, commandVersion)`: the dependency set is not part of the key (2.7).
+- `FileContent.LoadAsync`; the scheduler loads consumed files before their unit runs (2.2).
+- `VirtualFile.With` keeps `LastWriteTimeUtc` (2.2).
+- `TemplateLoader.GetOrParse` caches a failed parse too and reports it under each caller's path.
 - `Douze/Workflow/CanonicalJson.cs` writes nodes as canonical JSON (`Utf8JsonWriter`, no reflection) for
   `Metadata.Hash`, scope hashes and `StepDefinition.ConfigHash`; `NodeValue<Metadata>` is written as its hash.
 - `BuildContext.Cache` is added in phase 5 with `BuildCache`. `BuildContext.MaxDegreeOfParallelism` is the
   normalized value.
 - `Glob.Parse` throws `GlobFormatException : FormatException` with a `Position`; its message is the reason only
   ("unterminated character class"), as the 4.5 messages expect.
+- `StepDefinition.DouzeVersion` reads `AssemblyInformationalVersionAttribute` through reflection (AOT compatible, but
+  the engine is not reachable from `Program` in 1a): phase 1b checks on the AOT publish that it is not empty.
 - `FileContent.IsText` for lazy source files is decided by extension (`FileContent.IsTextPath`).
 - The duplicate path error names both producers in ordinal order, so the message is deterministic.
 - Open question 4 is resolved: `NodeValuesTests.DateTimeRendersLikeTheProcessorPipeline` renders the same with
@@ -2045,6 +2071,13 @@ Each item has a recommended answer; implementers use it unless the user decides 
 
 17. **CLI flags removed** (`-c`, `-d`, `-i`). Recommended: remove now, before any public release,
     and document `site:` in the README.
+
+18. **Every file is retained in memory until the build ends.** A consumed file is loaded to be
+    hashed (its ref is part of every result key) and `StepRun.Results` keeps every output for the
+    replay, so a one-shot build holds the whole site's content, including images and videos that
+    only pass through to `write`. Recommended: accept for now and measure in phase B (gap B6 covers
+    the data side); if it matters, phase 5 can hash pass-through files by streaming and release
+    the content of files already written when not in watch mode.
 
 ---
 
