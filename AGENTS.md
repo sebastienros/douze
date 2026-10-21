@@ -43,4 +43,4 @@ dotnet run --project Douze -- -s Sample -o <output folder>
 ## Releases
 
 - Every push to `main` publishes a framework dependent preview package to Feedz (`build.yml`).
-- Pushing a `v*` tag publishes native AOT tool packages for each platform, plus a CoreCLR fallback, to NuGet (`publish.yml`).
+- Pushing a `v*` tag publishes native AOT tool packages for each platform, plus a CoreCLR fallback, to NuGet (`publish.yml`). Publishing uses NuGet trusted publishing through the `release` environment, so there is no NuGet API key secret.

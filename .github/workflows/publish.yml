@@ -1,9 +1,16 @@
 name: Publish
 
+permissions:
+  contents: read
+
 on:
   push:
     tags:
       - v*
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -65,6 +72,11 @@ jobs:
     if: github.repository == 'sebastienros/douze'
     needs: [build, tool-rid]
     runs-on: ubuntu-latest
+    # NuGet trusted publishing: the API key is exchanged for a GitHub OIDC token
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
     env:
         DOTNET_NOLOGO: true
         DOTNET_CLI_TELEMETRY_OPTOUT: 1
@@ -89,11 +101,21 @@ jobs:
         rm -rf Douze/obj Douze/bin
         dotnet pack Douze $PROPS
 
+    - name: NuGet login
+      id: nuget-login
+      uses: NuGet/login@v1
+      with:
+        user: sebastienros
+
     # RID-specific packages must be available before the top-level pointer package.
     - name: Push RID-specific packages
-      run: dotnet nuget push "tool-artifacts/Douze.[a-z]*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      env:
+        NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+      run: dotnet nuget push "tool-artifacts/Douze.[a-z]*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
     - name: Push pointer package
+      env:
+        NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
       run: |
         VERSION="${GITHUB_REF_NAME#v}"
-        dotnet nuget push "tool-artifacts/Douze.${VERSION}.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push "tool-artifacts/Douze.${VERSION}.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
