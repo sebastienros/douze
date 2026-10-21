@@ -436,7 +436,7 @@ internal sealed class BuildContext : IAsyncDisposable
     public SemaphoreSlim Parallelism { get; }       // CPU work slots for built-in steps, see 2.6
     public SemaphoreSlim ProcessSlots { get; }      // slots for external processes (command steps), same size, see 2.6
     public CancellationToken Cancellation { get; }  // user cancellation (Ctrl+C)
-    public string TempRoot { get; }                 // <cache dir>/tmp/<build id>/ for batch commands
+    public string TempRoot { get; }                 // <cache dir>/tmp/<build id>/ for batch commands, deleted by DisposeAsync (kept with --verbose)
     public BuildCache? Cache { get; }               // null until phase 5
 }
 ```
@@ -2063,6 +2063,8 @@ documents the protocol with the examples of 5.3.
   worker and a batch step. The workflow is built in code; phase 2 can give the fixture a `douze.yml`.
 - `BuildContext.TempRoot` is removed by the command steps when they leave it empty; `BuildContext`
   owning it (deleting it on dispose unless `--verbose`) would be cleaner, left for the integration.
+  *Integration:* `BuildContext.DisposeAsync` deletes the temp root with everything in it, or only when
+  empty with `--verbose`; the command steps no longer clean it.
 
 ### Phase 4: progress view, trace file and timeline (Medium)
 

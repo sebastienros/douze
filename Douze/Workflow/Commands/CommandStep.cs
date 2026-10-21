@@ -37,7 +37,8 @@ internal abstract class CommandStep : Step
     protected string WorkingDirectory => _workingDirectory ?? throw new InvalidOperationException($"step '{Name}' is not initialized");
 
     /// <summary>
-    /// <c>&lt;temp root&gt;/&lt;step&gt;/</c>, the step's temporary folder, created on demand.
+    /// <c>&lt;temp root&gt;/&lt;step&gt;/</c>, the step's temporary folder, created on demand and deleted with the temp
+    /// root at the end of the build.
     /// </summary>
     protected string TempFolder => Path.Combine(Build.TempRoot, Name);
 
@@ -55,18 +56,6 @@ internal abstract class CommandStep : Step
         }
 
         _workingDirectory = directory;
-        return default;
-    }
-
-    public override ValueTask DisposeAsync()
-    {
-        if (_build != null)
-        {
-            // Only empty folders: units delete their own (they are kept with --verbose).
-            DeleteIfEmpty(TempFolder);
-            DeleteIfEmpty(_build.TempRoot);
-        }
-
         return default;
     }
 
@@ -161,18 +150,6 @@ internal abstract class CommandStep : Step
         }
         catch (UnauthorizedAccessException)
         {
-        }
-    }
-
-    private static void DeleteIfEmpty(string path)
-    {
-        try
-        {
-            Directory.Delete(path, recursive: false);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            // Missing, or not empty: another step's folder, or a unit kept with --verbose.
         }
     }
 }

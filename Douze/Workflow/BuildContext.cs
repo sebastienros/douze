@@ -61,13 +61,28 @@ internal sealed class BuildContext : IAsyncDisposable
     public SemaphoreSlim Parallelism { get; }       // CPU work slots for built-in steps
     public SemaphoreSlim ProcessSlots { get; }      // slots for external processes (command steps)
     public CancellationToken Cancellation { get; }  // user cancellation (Ctrl+C)
-    public string TempRoot { get; }                 // <cache dir>/tmp/<build id>/ for batch commands, created on demand
+    public string TempRoot { get; }                 // <cache dir>/tmp/<build id>/ for batch commands, created on demand, deleted by DisposeAsync
     public ScopeSet BaseScopes { get; }             // the site settings templates see (site.url), below every contribution
 
+    /// <summary>
+    /// Releases the slots and deletes <see cref="TempRoot"/>, unless <c>--verbose</c> asked to keep what the batch
+    /// commands left in it (their units delete their own folders otherwise).
+    /// </summary>
     public ValueTask DisposeAsync()
     {
         Parallelism.Dispose();
         ProcessSlots.Dispose();
+
+        try
+        {
+            Directory.Delete(TempRoot, recursive: !Options.Verbose);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Never created, kept with --verbose (not empty), or a file still open by a process that outlived its
+            // command: the next build uses another folder.
+        }
+
         return default;
     }
 }
