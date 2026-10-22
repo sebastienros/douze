@@ -1,5 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- Opt-in Satori GC (experimental, third party runtime build; version in global.json): faster, more memory.
+       dotnet publish Douze -c Release -p:UseSatoriGC=true (bench/README.md, finding 9). -->
+  <Import Project="Sdk.props" Sdk="PublishWithSatoriGC" Condition="'$(UseSatoriGC)' == 'true'" />
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>douze</AssemblyName>
@@ -49,4 +53,11 @@
     <PackageReference Include="System.IO.Hashing" />
     <PackageReference Include="ZString" />
   </ItemGroup>
+
+  <PropertyGroup Condition="'$(UseSatoriGC)' == 'true'">
+    <!-- Satori replaces the runtime packs of a runtime identifier, which a native AOT publish otherwise infers later. -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <Import Project="Sdk.targets" Sdk="PublishWithSatoriGC" Condition="'$(UseSatoriGC)' == 'true'" />
 </Project>

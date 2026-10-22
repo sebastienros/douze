@@ -377,6 +377,21 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    GB on the synthetic site against 1.08). Worth deciding on its own: it trades the memory margin of 9.2 for speed on
    data heavy sites.
 
+9. **Satori GC is faster still, for more memory.** The experimental Satori GC, published with the `PublishWithSatoriGC`
+   MSBuild SDK (`-p:UseSatoriGC=true`, see `AGENTS.md`; it replaces the native AOT compiler and runtime with a third party
+   build tracking .NET 11 `main`), produces byte identical sites. Interleaved with the default and Server GC on the head of
+   the bounded channels change (median of 3, wall and peak RSS):
+
+   | Scenario | non concurrent workstation | Server GC (DATAS) | Satori |
+   |---|---|---|---|
+   | synthetic 32000, clean, no cache | 6.44 s, 1.07 GB | 6.26 s, 1.41 GB | 5.53 s, 1.88 GB |
+   | aspire API pages, clean, no cache | 4.41 s, 1.20 GB | 3.35 s, 1.09 GB | 2.88 s, 1.40 GB |
+   | synthetic 32000, one page edited | 1.51 s, 0.58 GB | 1.04 s, 0.65 GB | 1.05 s, 0.70 GB |
+
+   It misses the synthetic site's 1.5 GB target, so it stays opt-in. A native AOT binary cannot switch to it at run time:
+   the compiler emits Satori's write barriers into the code. A binary linked with the Server GC, though, runs as
+   workstation with `DOTNET_gcServer=0` (6.5 s, 1.11 GB on the synthetic site) and as Server GC without it.
+
 Suggested order for phase 5: finding 2 (hash caching, it also makes cache keys cheap), then 3 (results and content
 retention, which the disk cache design decides anyway), then 4 and 5. Finding 1 is a Fluid change and can land at any
 time.
