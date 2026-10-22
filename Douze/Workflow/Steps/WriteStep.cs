@@ -8,7 +8,9 @@ namespace Douze.Workflow.Steps;
 /// it. Two files with the same output path are an error, unless they are the same file (path, content and metadata): an
 /// image variant used by two pages is produced by both, and written once. A file whose unit is replayed is not written
 /// again: it is in the output folder as written. What a previous build wrote and this one does not is deleted once the
-/// build succeeded (<see cref="StaleOutputs"/>).
+/// build succeeded (<see cref="StaleOutputs"/>). A written file is passed on with its content read from the output
+/// folder (<see cref="FileContent.FromWritten"/>), not kept in memory: a step after <c>write</c> (a search indexer)
+/// receives every file of the site, and would otherwise hold every content until <c>write</c> is done.
 /// </summary>
 internal sealed class WriteStep : Step, IMapStep, IReplayObserver
 {
@@ -34,20 +36,29 @@ internal sealed class WriteStep : Step, IMapStep, IReplayObserver
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
         var writing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var output = context.Build.Output;
+        long? length = null;
 
         if (Register(file, writing.Task) is { } written)
         {
             // The same file, written by another unit.
             await written.WaitAsync(ct);
         }
+        else if (file.Content.IsReadFrom(output, file.Path))
+        {
+            // Written there by a write step before this one: writing it again would truncate what it reads.
+            writing.SetResult();
+        }
         else
         {
             try
             {
                 // Creates the directory too.
-                await using (var stream = await context.Build.Output.CreateFileAsync(file.Path))
+                await using (var stream = await output.CreateFileAsync(file.Path))
                 {
-                    await file.Content.CopyToAsync(stream, ct);
+                    using var bytes = await file.Content.RentBytesAsync(ct);
+                    await stream.WriteAsync(bytes.Memory, ct);
+                    length = bytes.Memory.Length;
                 }
 
                 writing.SetResult();
@@ -67,7 +78,13 @@ internal sealed class WriteStep : Step, IMapStep, IReplayObserver
             context.Dependencies.RecordWritten(file.Path, info.Length, info.LastWriteTimeUtc);
         }
 
-        return FileList.Of(file);
+        if (file.Content.IsReadFrom(output, file.Path))
+        {
+            return FileList.Of(file);
+        }
+
+        length ??= file.Content.Length ?? (await output.GetFileMetadataAsync(file.Path)).Length;
+        return FileList.Of(file.With(Name, content: FileContent.FromWritten(output, file.Path, length.Value, file.Content)));
     }
 
     /// <summary>

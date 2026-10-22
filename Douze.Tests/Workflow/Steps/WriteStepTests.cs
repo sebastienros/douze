@@ -23,6 +23,30 @@ public class WriteStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task WrittenFilesArePassedOnWithTheirContentReadFromTheOutput()
+    {
+        await Source.WriteTextFileAsync("/a.md", "héllo");
+
+        var result = await BuildSuccessfullyAsync(Workflow(
+            Step("pages", "markdown", inputs: ["**"]),
+            Step("write", "write", needs: ["pages"]),
+            Step("again", "write", needs: ["write"])));
+
+        var rendered = Outputs(result["pages"]).Single();
+        var written = Outputs(result["write"]).Single();
+
+        // The same file, whose content is not the one in memory: it is read from the output folder.
+        Assert.Equal(rendered.Ref, written.Ref);
+        Assert.NotSame(rendered.Content, written.Content);
+        Assert.True(written.Content.IsReadFrom(Output, written.Path));
+        Assert.Equal("<p>héllo</p>\n", await written.Content.ReadTextAsync(TestContext.Current.CancellationToken));
+
+        // A second write step does not write it onto itself (which would truncate what it reads).
+        Assert.Equal("<p>héllo</p>\n", await Output.ReadAllTextAsync("/a.html"));
+        Assert.Equal(written.Ref, Outputs(result["again"]).Single().Ref);
+    }
+
+    [Fact]
     public async Task DirectoriesCreated()
     {
         await Source.WriteTextFileAsync("/blog/2020/post.md", "post");

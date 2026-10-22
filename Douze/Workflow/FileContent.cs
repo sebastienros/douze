@@ -56,6 +56,19 @@ internal abstract class FileContent
     public static FileContent FromLoader(Hash128 hash, long length, bool isText, Func<CancellationToken, ValueTask<byte[]>> load) => new LoadedContent(hash, length, isText, load);
 
     /// <summary>
+    /// The content of a file written to <paramref name="fs"/> at <paramref name="path"/> from <paramref name="written"/>,
+    /// whose bytes are not kept: the file is read again on each access. A file passed on by <c>write</c> does not hold
+    /// its content until the steps after it are done.
+    /// </summary>
+    public static FileContent FromWritten(IFileSystem fs, FPath path, long length, FileContent written) => new WrittenContent(fs, path, length, written.IsText, written.Hash);
+
+    /// <summary>
+    /// Whether the content is read from <paramref name="path"/> of <paramref name="fs"/> (<see cref="FromWritten"/>):
+    /// writing it there again would truncate what it reads.
+    /// </summary>
+    public virtual bool IsReadFrom(IFileSystem fs, FPath path) => false;
+
+    /// <summary>
     /// Whether a file is treated as text, based on its extension.
     /// </summary>
     public static bool IsTextPath(FPath path) => TextExtensions.Contains(path.GetExtensionWithDot());
@@ -292,6 +305,34 @@ internal abstract class FileContent
             await stream.CopyToAsync(memory);
             return memory.ToArray();
         }
+    }
+
+    /// <summary>
+    /// A file of the output folder as <c>write</c> wrote it: its hash and length are known, its bytes are read on each
+    /// access and not kept.
+    /// </summary>
+    private sealed class WrittenContent(IFileSystem fileSystem, FPath path, long length, bool isText, Hash128 hash) : FileContent(hash)
+    {
+        public override bool IsText { get; } = isText;
+
+        public override long? Length => length;
+
+        public override bool IsReadFrom(IFileSystem fs, FPath path1) => ReferenceEquals(fs, fileSystem) && path1 == path;
+
+        public override async ValueTask<string> ReadTextAsync(CancellationToken ct) => DecodeText((await ReadBytesAsync(ct)).Span);
+
+        public override async ValueTask<ReadOnlyMemory<byte>> ReadBytesAsync(CancellationToken ct)
+        {
+            await using var stream = await fileSystem.OpenFileAsync(path);
+            var bytes = new byte[length];
+            await stream.ReadExactlyAsync(bytes, ct);
+            return bytes;
+        }
+
+        public override async ValueTask<Stream> OpenReadAsync(CancellationToken ct) => await fileSystem.OpenFileAsync(path);
+
+        // The hash is known: it is never computed.
+        protected override Hash128 ComputeHash() => throw new InvalidOperationException("The hash of written content is known");
     }
 
     /// <summary>
