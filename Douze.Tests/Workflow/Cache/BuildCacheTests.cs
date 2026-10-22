@@ -254,6 +254,57 @@ public sealed class BuildCacheTests : IDisposable
     }
 
     [Fact]
+    public void Memos()
+    {
+        var a = Hash128.OfText("a");
+        var b = Hash128.OfText("b");
+        var c = Hash128.OfText("c");
+
+        using (var cache = Open())
+        {
+            Assert.False(cache.TryGetMemo("twoslash", a, out _));
+            cache.PutMemo("twoslash", a, "result a"u8);
+            cache.PutMemo("twoslash", b, "result b"u8);
+            cache.PutMemo("other", c, "result c"u8);
+
+            // Readable in the build that stored them.
+            Assert.True(cache.TryGetMemo("twoslash", a, out var value));
+            Assert.Equal("result a"u8.ToArray(), value);
+            cache.Save(succeeded: true);
+        }
+
+        // A build in which the step reads only a keeps a, and the memos of the steps that did not run.
+        using (var cache = Open())
+        {
+            Assert.True(cache.TryGetMemo("twoslash", a, out var value));
+            Assert.Equal("result a"u8.ToArray(), value);
+            cache.Save(succeeded: true);
+        }
+
+        using (var cache = Open())
+        {
+            Assert.True(cache.TryGetMemo("twoslash", a, out _));
+            Assert.False(cache.TryGetMemo("twoslash", b, out _));
+            Assert.True(cache.TryGetMemo("other", c, out var value));
+            Assert.Equal("result c"u8.ToArray(), value);
+
+            // A build in which no step reads a memo (its units were replayed) keeps them all.
+            cache.Save(succeeded: true);
+        }
+
+        using (var cache = Open())
+        {
+            cache.Save(succeeded: true);
+        }
+
+        using (var cache = Open())
+        {
+            Assert.True(cache.TryGetMemo("twoslash", a, out _));
+            Assert.True(cache.TryGetMemo("other", c, out _));
+        }
+    }
+
+    [Fact]
     public void ACacheInUseIsNotShared()
     {
         using var first = Open();

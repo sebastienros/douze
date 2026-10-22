@@ -219,7 +219,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write` |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `twoslash`, `csharp`, `go`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -575,6 +575,110 @@ with text laid out over it.
   `height` default to 1200 and 630.
 - The step passes every page through unchanged and adds the image to the page's outputs: it sits in the page chain,
   not on a branch. A layout computes the url with the same template: `{{ page | social_image_url: "og/{{ slug }}.png" }}`.
+
+# twoslash
+
+The `twoslash` step computes the type information of TypeScript code fences, as
+[twoslash](https://twoslash.netlify.app) does, without Node: with the language server of TypeScript 7, Microsoft's
+native compiler, which Douze downloads.
+
+````yaml
+  twoslash: { needs: markdown, uses: twoslash,
+              with: { files: { "modules/sdk.mts": data/types/sdk.d.ts },
+                      compiler: { moduleResolution: bundler, lib: [es2022, dom] }, handbook: { noErrorValidation: true } } }
+````
+
+Every fence of an HTML page that the `markdown` step wrote with a language of `languages` (`ts`, `tsx`, `typescript`)
+and the word `twoslash` in its meta (```` ```ts twoslash ````) gets a `data-twoslash` attribute: twoslash's result for
+its code, `{ "code": ..., "nodes": [...] }`, the code without its notations and the hovers, `^?` queries, errors,
+`^^^` highlights, `^|` completions and custom tags with their offsets, lines and characters. A highlighter renders the
+popups from it instead of running twoslash (with Expressive Code, a `twoslasher` that returns it). The fence itself is
+unchanged.
+
+- Notations: `// @errors: 2322`, `// @noErrors`, `// @noErrorValidation` and the other handbook options, compiler
+  options (`// @strict: false`, `// @target: es2015`), `// ---cut---` (`-before`, `-after`, `-start`, `-end`),
+  `// @filename: a.ts` for several files, and the tags of `tags` (`annotate`, `log`, `warn`, `error` by default).
+  `showEmit` is not supported.
+- `compiler`: tsconfig compiler options over twoslash's defaults (`strict`, `module` and `target` `esnext`, `allowJs`,
+  `skipLibCheck`, `moduleDetection: force`). `files`: files placed next to every snippet, a path to a file of the
+  source folder (a declaration file the snippets import). `handbook`: handbook options for every snippet.
+- `trim` (true): the code is checked as highlighters render it, without trailing spaces and blank lines around it.
+  `tab-width` replaces tabs first.
+- A snippet that twoslash would reject (an error its `// @errors` does not list, a query that finds nothing) fails the
+  build, naming its page, the fence's number on the page and its first line. With `errors: warn` it is a warning, and
+  the fence keeps its result when it has one (the errors are rendered). `handbook: { noErrorValidation: true }` renders
+  unexpected errors without a warning.
+
+All the snippets of a build are checked at once: the snippets that share their compiler options are the files of one
+project (each in its own folder, the `files` shared), checked by one language server whose requests are sent in
+parallel; `processes` (4) language servers run at once, `timeout` (300 seconds) each. Each result is kept in the cache
+by its code and what the step depends on (the engine and its version, the options, the content of `files`): a build
+checks only new snippets, and starts no language server when there is none.
+
+The engine is downloaded on first use from the npm registry (`registry`), the package of the platform, verified
+against its integrity (the one Douze pins for its default version), into `<cache>/tools/<engine>/<version>/<platform>/`;
+later builds use it offline. `engine` is `typescript` (TypeScript 7, `@typescript/typescript-<platform>`, for Windows,
+macOS and Linux; 7.0.2 by default) or `tsrs` ([tsrs](https://github.com/oxc-project/tsrs), a port of TypeScript 7 to
+Rust with the same protocol, for macOS on Apple silicon and Linux; it gives the same results with less memory).
+`version` picks another release; `path` (relative to the source folder) uses a binary instead, for offline machines.
+
+The hover texts are TypeScript 7's, which prints some types differently from TypeScript 5: no `(+1 overload)` after
+a signature resolved at a call, no `import x` line under an alias, union members in another order
+(`bench/twoslash.md` has a comparison).
+
+# csharp
+
+The `csharp` step does the same for C# fences with the Roslyn language server: every fence of `languages` (`csharp`,
+`cs`, `c#`; only those whose meta has the `trigger` word when it is set) gets a `data-twoslash` attribute with the hovers
+of its symbols (signature and documentation) and its errors, in the shape of the `twoslash` step's results, so that the
+same renderer shows them.
+
+````yaml
+  csharp: { needs: markdown, uses: csharp,
+            with: { errors: warn, projects: { web: { sdk: Microsoft.NET.Sdk.Web, titles: [Program.cs],
+                                                     packages: { Some.Package: "1.2.3" }, usings: [Some.Namespace] } } } }
+````
+
+- Snippets compile in generated projects: `projects` maps names to their `sdk` (`Microsoft.NET.Sdk`), `framework`
+  (`net10.0`), `packages` (ids to versions), `usings` (global usings), `properties` (MSBuild properties), `files`
+  (shared files of the source folder, such as stubs), `context` (a class of a shared file whose fields are the variables
+  that fragments use without declaring them), `titles` and `patterns`. A fence uses the project of its meta's
+  `project=name`, else the first whose `titles` end its `title`, else the first whose `patterns` match its code, else
+  `default`.
+- A snippet can be top-level statements, type declarations or class members: each is wrapped in a namespace of its own,
+  so that the snippets of a project don't see each other.
+- A snippet with errors fails the build, naming its page, the fence's number and its first line; with `errors: warn` it
+  is a warning and the errors are rendered. `ignore` lists diagnostic codes that are neither reported nor rendered.
+- The server (`roslyn-language-server.<rid>` from nuget.org, `registry`; `version`, or `path` to its
+  `Microsoft.CodeAnalysis.LanguageServer.dll`) is downloaded on first use into `<cache>/tools/roslyn/<version>/<rid>/`.
+  It needs the .NET SDK (10 or later), which also restores the projects: `dotnet`, or `DOTNET_HOST_PATH`, or the
+  `PATH`'s.
+
+Outcomes, errors included, are kept in the cache like the `twoslash` step's. `docs/code-hover-steps.md` has the design,
+the costs and the plan for other languages.
+
+# go
+
+The `go` step does the same for Go fences with gopls: every fence of `languages` (`go`, `golang`; only those whose meta
+has the `trigger` word when it is set) gets a `data-twoslash` attribute with the hovers of its symbols and its errors.
+
+````yaml
+  go: { needs: markdown, uses: go,
+        with: { errors: warn, ignore: [UnusedVar],
+                modules: { default: { requires: { github.com/redis/go-redis/v9: v9.7.0 } } } } }
+````
+
+- Each snippet is a package of its own (`s<n>/main.go`, or the file name of its `title`) in a generated module: a
+  snippet without a `package` clause gets `package main`, and statements outside a function go in `func _() { ... }`.
+- `modules` maps names to their `requires` (module paths to versions, for third-party imports, added with `go get`),
+  `files` (shared files of the source folder: a package of stubs at `api/api.go` is imported as `snippets/api`),
+  `titles` and `patterns`. A fence uses the module of its meta's `module=name`, else the first whose `titles` end its
+  `title`, else the first whose `patterns` match its code, else `default`.
+- Errors fail the build, or warn with `errors: warn`; `ignore` lists diagnostic codes (`UnusedVar`, `UnusedImport`,
+  `BrokenImport`...) that are neither reported nor rendered.
+- gopls has no prebuilt binaries: on first use, `go install golang.org/x/tools/gopls@<version>` builds it into
+  `<cache>/tools/gopls/<version>/` (`version`, or `path` to a gopls). It needs Go (`go`, or the `PATH`'s), which also
+  adds the requirements and loads the packages; the Go version is part of the outcomes' key.
 
 # commands
 

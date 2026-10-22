@@ -920,6 +920,18 @@ exact markup of its highlighter. A C# highlighter (TextMateSharp needs a native 
 grammars) would be weaker and would still not do twoslash. The worker mode makes the cost one process for the build,
 started while the earlier steps run.
 
+**Twoslash without Node (TypeScript 7).** The `twoslash` built-in step (README, "twoslash") computes twoslash's
+results with the language server of TypeScript 7 (Microsoft's native compiler, or tsrs, its Rust port), which Douze
+downloads (an npm platform package fetched over HTTP, its integrity pinned): the step runs after `markdown`, before the code worker, and adds `data-twoslash` (twoslash's
+`{ code, nodes }`) to every twoslash fence. The worker keeps its highlighter and its twoslash plugin, and gives the
+plugin a `twoslasher` that returns the attribute's result for the fence instead of compiling (the worker passes the
+results by code to it before rendering a page): no TypeScript package, no compilation in Node. All the snippets of a
+build are checked at once, one language server per set of compiler options, and each result is memoized in the
+disk cache, so a build checks only new snippets. Measured on the target site's 397 twoslash fences
+(`bench/twoslash.md`): the same hovers at the same positions, the rendered HTML byte identical once the hover texts are
+the same, the texts TypeScript 7's (74% of the hovers identical to TypeScript 6's; the others differ by TypeScript 7's
+printing: overload counts, alias lines, union order).
+
 ### 3.8 Images and social images
 
 **What the site needs.** About 680 images imported by the articles (550 PNG, 110 SVG, a few GIF and WebP),
