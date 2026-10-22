@@ -38,9 +38,12 @@ internal sealed class WriteStep : Step, IMapStep, IReplayObserver
         }
 
         // The result is reused while the file is in the output folder as written, and the next build deletes it if it
-        // does not write it again (StaleOutputs).
-        var info = await context.Build.Output.GetFileMetadataAsync(file.Path);
-        context.Dependencies.RecordWritten(file.Path, info.Length, info.LastWriteTimeUtc);
+        // does not write it again (StaleOutputs). Without the cache, a one-shot build has no next build to tell.
+        if (context.Build.Cache != null || context.Build.Options.RecordWritten)
+        {
+            var info = await context.Build.Output.GetFileMetadataAsync(file.Path);
+            context.Dependencies.RecordWritten(file.Path, info.Length, info.LastWriteTimeUtc);
+        }
 
         return FileList.Of(file);
     }

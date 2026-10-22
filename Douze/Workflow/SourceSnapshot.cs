@@ -136,11 +136,6 @@ internal sealed class SourceSnapshot
     {
         try
         {
-            if (!(await source.GetFileEntryAsync(path)).Exists)
-            {
-                return null;
-            }
-
             var info = await source.GetFileMetadataAsync(path);
             return (info.Length, info.LastWriteTimeUtc);
         }

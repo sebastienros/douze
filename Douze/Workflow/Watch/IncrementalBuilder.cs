@@ -130,6 +130,7 @@ internal sealed class IncrementalBuilder : IDisposable
             Cache = _cache,
             Templates = _templates,
             PreviousWritten = _cache == null ? _previousWritten : null,
+            RecordWritten = true,
             Sources = _sources,
             Cancellation = ct,
         };
