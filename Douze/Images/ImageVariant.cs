@@ -36,6 +36,12 @@ internal readonly record struct ImageVariant(int? Width, string Format, int Qual
 internal sealed record ProcessedImage(ReadOnlyMemory<byte> Bytes, int Width, int Height);
 
 /// <summary>
+/// Decoded pixels: sRGB with an alpha channel, 8 bits per band, row by row, and their resolution in pixels per
+/// millimeter (the <c>pHYs</c> of a PNG made from them).
+/// </summary>
+internal sealed record Raster(byte[] Pixels, int Width, int Height, double XResolution, double YResolution);
+
+/// <summary>
 /// The size and format of a source image, as displayed (EXIF orientation applied).
 /// </summary>
 internal readonly record struct ImageInfo(int Width, int Height, string Format, bool HasAlpha);

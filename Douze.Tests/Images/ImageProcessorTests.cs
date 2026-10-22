@@ -97,8 +97,9 @@ public class ImageProcessorTests
         var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"63\"><rect width=\"120\" height=\"63\" fill=\"#204080\"/></svg>";
 
         var background = images.Rasterize(svg, 1200, 630);
-        Assert.Equal((1200, 630, "pngload_buffer", 4), TestImages.Describe(background));
-        Assert.Equal([32, 64, 128, 255], TestImages.Pixel(background, 600, 300));
+        Assert.Equal((1200, 630, 1200 * 630 * 4), (background.Width, background.Height, background.Pixels.Length));
+        Assert.Equal([32, 64, 128, 255], background.Pixels.AsSpan((300 * 1200 + 600) * 4, 4).ToArray());
+        Assert.Same(background, images.Rasterize(svg, 1200, 630));
 
         var font = TestImages.FontFile();
         var blocks = new List<TextBlock>
