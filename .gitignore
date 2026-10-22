@@ -352,3 +352,7 @@ bench/**/out/
 
 # Douze cache and temporary files
 .douze/
+
+# The native AOT publish and smoke test folders of AGENTS.md
+/tool-out/
+/site-out/
