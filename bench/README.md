@@ -379,12 +379,12 @@ measured apart from the worker and the indexer) and the unit time per step from 
 
 Outputs are byte identical (59k files compared by hash, the search index left out; `rss.xml` dates "now").
 
-- **Locale copies share the units of their page** (finding 10). 6,563 of the 7,546 copies take the render of their page;
+- **Locale copies share the units of their page** (finding 11). 6,563 of the 7,546 copies take the render of their page;
   the 983 others read their locale (translated strings, links) and render. `markdown`, `headings` and `replace` share
   too (about 6,900 each). `layout` reads the locale on every page of this site and runs per copy, as it must.
-- **The source scan lists only the folders the `inputs` can match** (finding 11): the site folder holds 236k files, of
+- **The source scan lists only the folders the `inputs` can match** (finding 12): the site folder holds 236k files, of
   which `.douze/` (a worker cache, 168k), a stale output folder (61k) and `node_modules` (6k) are never sources.
-- **`write` no longer keeps contents alive** (finding 12): 20 GB of peak RSS was the search indexer's input.
+- **`write` no longer keeps contents alive** (finding 13): 20 GB of peak RSS was the search indexer's input.
 
 The CPU of the douze process does not drop with the render time: the spans of a unit measure wall time, and on this
 machine most of a unit's time was spent waiting (the worker's queue, the thread pool, contention with the indexer and
@@ -532,7 +532,7 @@ Suggested order for phase 5: finding 2 (hash caching, it also makes cache keys c
 retention, which the disk cache design decides anyway), then 4 and 5. Finding 1 is a Fluid change and can land at any
 time.
 
-10. *Fixed: variants (`FileVariant`) and own reads (`Step.RecordsOwnReads`).* **Locale fallback copies redid every
+11. *Fixed: variants (`FileVariant`) and own reads (`Step.RecordsOwnReads`).* **Locale fallback copies redid every
    step.** `localize` copies each untranslated page into every other locale with only `locale`, `lang`, `dir`, `url`,
    `fallback` and `original_url` changed, and every map step after it ran one unit per copy: on the target site 213 s
    of `render`'s 229 s and 195 s of the code worker's 210 s were copies. A page and its copies are now variants, and a
@@ -544,14 +544,14 @@ time.
    Which variant leads is a race, so the count of shared units can vary by a few between builds when a page reads a key
    only some copies have (`fallback`); the outputs do not.
 
-11. *Fixed: `SourceScope`.* **The source scan listed and stat'ed the whole source folder.** On the target site that is
+12. *Fixed: `SourceScope`.* **The source scan listed and stat'ed the whole source folder.** On the target site that is
    236k files for about 3k sources, 2 to 4 s before the first unit (the cache folder was excluded only when it was the
    default `.douze/cache`, so `--cache-dir` elsewhere let the worker caches under `.douze/` in). The scan now walks the
    folders the `inputs` patterns start with, never `.douze/` nor the output and cache folders, and prunes them instead of
    listing their files; command `sources:` are listed the same way. A watch session rescans when the workflow reads a
    folder its snapshot does not cover.
 
-12. *Fixed: `FileContent.FromWritten`.* **A step after `write` held every content of the site.** The search indexer of
+13. *Fixed: `FileContent.FromWritten`.* **A step after `write` held every content of the site.** The search indexer of
    the target site `needs: write`, so it receives all 70k written files, and holds them until `write` is done: 20 GB of
    peak RSS (17.9 GB of GC heap; 2 to 3 GB without the indexer). `write` now passes a written file on with its content
    read back from the output folder on each access (same hash and length, so the same ref), and a later `write` step
