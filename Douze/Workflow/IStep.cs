@@ -53,6 +53,16 @@ internal abstract class Step : IAsyncDisposable
     public virtual bool ReadsContent => true;
 
     /// <summary>
+    /// Whether the units of the step record every key of their file's own metadata they read, defined or not
+    /// (<see cref="ScopeSet.TryResolve"/> records the keys it resolves, a step reading <see cref="Metadata.Own"/> from C#
+    /// calls <see cref="DependencyTracker.RecordOwn(string)"/>), and whether a result depends on the path of the file
+    /// beyond output paths that keep its folders and name (<see cref="DependencyTracker.RecordPath"/>). The scheduler then
+    /// shares the result of a unit between the variants of a file (<see cref="FileVariant"/>) that did not read what
+    /// makes them differ, instead of running a unit per variant. A map step only.
+    /// </summary>
+    public virtual bool RecordsOwnReads => false;
+
+    /// <summary>
     /// Called once before the step receives its first unit: parse options, start workers.
     /// </summary>
     public virtual ValueTask InitializeAsync(BuildContext context, CancellationToken ct) => default;

@@ -10,7 +10,7 @@ namespace Douze.Workflow;
 /// </summary>
 internal sealed class VirtualFile
 {
-    public VirtualFile(FPath path, FileContent content, Metadata metadata, string? contentType, Provenance provenance, DateTime? lastWriteTimeUtc = null, FPath? sourcePath = null)
+    public VirtualFile(FPath path, FileContent content, Metadata metadata, string? contentType, Provenance provenance, DateTime? lastWriteTimeUtc = null, FPath? sourcePath = null, FileVariant? variant = null)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -28,6 +28,7 @@ internal sealed class VirtualFile
         Provenance = provenance;
         LastWriteTimeUtc = lastWriteTimeUtc;
         SourcePath = sourcePath;
+        Variant = variant;
     }
 
     public FPath Path { get; }
@@ -56,6 +57,14 @@ internal sealed class VirtualFile
     public FPath? SourcePath { get; }
 
     /// <summary>
+    /// The group of variants this file belongs to (the locale fallback copies of a page and the page), kept through
+    /// <see cref="With"/>; null for most files. A hint for the scheduler, which shares the result of a unit between
+    /// variants that did not read what makes them differ (<see cref="Scheduling.VariantSharing"/>). Not part of
+    /// <see cref="Ref"/>.
+    /// </summary>
+    public FileVariant? Variant { get; }
+
+    /// <summary>
     /// <see cref="ContentType"/>, or the content type of the extension when it is null.
     /// </summary>
     public string EffectiveContentType => ContentType ?? ContentTypes.FromPath(Path);
@@ -78,8 +87,14 @@ internal sealed class VirtualFile
             contentType ?? ContentType,
             new Provenance(step, [Ref]),
             LastWriteTimeUtc,
-            SourcePath);
+            SourcePath,
+            Variant);
     }
+
+    /// <summary>
+    /// This file as a member of the group of variants <paramref name="variant"/>.
+    /// </summary>
+    public VirtualFile WithVariant(FileVariant? variant) => new(Path, Content, Metadata, ContentType, Provenance, LastWriteTimeUtc, SourcePath, variant);
 
     /// <summary>
     /// Creates a file derived from several inputs (group and reduce steps).
@@ -126,3 +141,10 @@ internal sealed class VirtualFile
 }
 
 internal readonly record struct FileRef(FPath Path, Hash128 ContentHash, Hash128 MetadataHash);
+
+/// <summary>
+/// A file of a group of variants: files that differ only by the values of <paramref name="Keys"/> in their own metadata
+/// and by the <paramref name="Prefix"/> of their paths (a page and its copies in other locales, each under the prefix of
+/// its locale, "" for the page). <paramref name="Members"/> is the number of files of the group.
+/// </summary>
+internal sealed record FileVariant(string Prefix, ImmutableArray<string> Keys, int Members);

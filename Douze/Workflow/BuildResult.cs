@@ -72,6 +72,11 @@ internal sealed class BuildResult
     /// </summary>
     public int UnitsReplayed => Steps.Sum(x => x.UnitsReplayed);
 
+    /// <summary>
+    /// The units that took the result of another variant of their file, in every step.
+    /// </summary>
+    public int UnitsShared => Steps.Sum(x => x.UnitsShared);
+
     public StepRun this[string step] => Steps.First(x => x.Node.Definition.Name == step);
 
     /// <summary>

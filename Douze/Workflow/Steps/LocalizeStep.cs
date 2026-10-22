@@ -17,7 +17,9 @@ namespace Douze.Workflow.Steps;
 /// <remarks>
 /// Runs after <c>permalink</c> and <c>collect</c>. A page depends on the presence of the urls it looked for in
 /// <c>collections.urls</c> only (<see cref="ScopeSet.TryResolveTracked"/>): adding a translation runs the localize units
-/// of the pages of that url again, and no other.
+/// of the pages of that url again, and no other. A page and its copies are variants (<see cref="FileVariant"/>): a later
+/// step that records what its units read (<see cref="Step.RecordsOwnReads"/>) renders a page that does not read its
+/// locale once for all of them.
 /// </remarks>
 internal sealed class LocalizeStep : Step, IMapStep
 {
@@ -117,17 +119,27 @@ internal sealed class LocalizeStep : Step, IMapStep
             return new(FileList.Of(page));
         }
 
-        var outputs = new List<VirtualFile> { page };
+        var copies = new List<Locale>();
 
         for (var i = 1; i < locales.All.Length; i++)
         {
-            if (exists[i])
+            if (!exists[i])
             {
-                continue;
+                copies.Add(locales.All[i]);
             }
+        }
 
-            var other = locales.All[i];
+        if (copies.Count == 0)
+        {
+            return new(FileList.Of(page));
+        }
 
+        // The page and its copies are variants: they differ by their locale keys and the prefix of their paths only.
+        var members = copies.Count + 1;
+        var outputs = new List<VirtualFile>(members) { page.WithVariant(new FileVariant("", VariantKeys, members)) };
+
+        foreach (var other in copies)
+        {
             var copy = localized.With(own =>
             {
                 SetLocale(own, other);
@@ -136,11 +148,16 @@ internal sealed class LocalizeStep : Step, IMapStep
                 own["original_url"] = NodeValue.Create(url);
             });
 
-            outputs.Add(file.With(Name, path: new(other.Prefix + file.Path.FullName), metadata: copy));
+            outputs.Add(file.With(Name, path: new(other.Prefix + file.Path.FullName), metadata: copy).WithVariant(new FileVariant(other.Prefix, VariantKeys, members)));
         }
 
         return new(FileList.Of(outputs));
     }
+
+    /// <summary>
+    /// The keys whose values differ between a page and its fallback copies.
+    /// </summary>
+    private static readonly System.Collections.Immutable.ImmutableArray<string> VariantKeys = ["locale", "lang", "dir", "url", "fallback", "original_url"];
 
     private static void SetLocale(NodeObject own, Locale locale)
     {

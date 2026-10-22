@@ -284,4 +284,42 @@ public class EarlyCutoffTests : CacheTestBase
         Assert.Equal("ガイド", await OutputAsync("/ja/guide/index.md"));
         Assert.True(first.UnitsExecuted > result.UnitsExecuted);
     }
+
+    [Fact]
+    public async Task SharedResultsOfCopiesAreCachedAndFollowTheirPage()
+    {
+        await Source.WriteTextFileAsync("/_content/docs/guide.md", "guide");
+        await Source.WriteTextFileAsync("/_content/docs/index.md", "{{ locale }}");
+
+        Site = await SiteOptions.DetectAsync(Source, Output, null, null, Douze.Workflow.Yaml.WorkflowLoader.Load(
+            "site:\n  locales: { default: en, root: docs, fallback: true, languages: { ja: { lang: ja }, de: { lang: de } } }\n", "douze.yml").Site);
+
+        var workflow = new WorkflowDefinition([
+            new StepDefinition { Name = "pages", Inputs = ["_content/**"], Uses = "frontmatter" },
+            new StepDefinition { Name = "permalink", Needs = ["pages"], Uses = "permalink" },
+            new StepDefinition { Name = "collections", Needs = ["permalink"], Uses = "collect" },
+            new StepDefinition { Name = "localize", Needs = ["permalink", "collections"], Uses = "localize" },
+            new StepDefinition { Name = "render", Needs = ["localize"], Uses = "liquid" },
+            new StepDefinition { Name = "write", Needs = ["render"], Uses = "write" },
+        ], null);
+
+        // The guide renders once for its three locales; the home page, which reads its locale, three times.
+        var first = await BuildCachedAsync(workflow);
+        Assert.Equal(2, first["render"].UnitsShared);
+        Assert.Equal(4, first["render"].UnitsExecuted);
+        Assert.Equal("de", await OutputAsync("/de/index.md"));
+
+        // The shared results are cached like the others.
+        var second = await BuildCachedAsync(workflow);
+        Assert.Equal(0, second["render"].UnitsShared);
+        Assert.Equal(0, second["render"].UnitsExecuted);
+
+        await Source.WriteTextFileAsync("/_content/docs/guide.md", "guide 2");
+        var third = await BuildCachedAsync(workflow);
+
+        Assert.Equal(2, third["render"].UnitsShared);
+        Assert.Equal("guide 2", await OutputAsync("/guide/index.md"));
+        Assert.Equal("guide 2", await OutputAsync("/ja/guide/index.md"));
+        Assert.Equal("guide 2", await OutputAsync("/de/guide/index.md"));
+    }
 }

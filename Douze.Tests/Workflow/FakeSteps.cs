@@ -39,6 +39,11 @@ internal sealed class FakeMapStep : Step, IMapStep
 
     public override bool ReadsContent => Contents;
 
+    /// <summary>Whether the step claims to record the own keys it reads.</summary>
+    public bool OwnReads { get; init; }
+
+    public override bool RecordsOwnReads => OwnReads;
+
     public ConcurrentQueue<FPath> Started { get; } = new();
 
     public ConcurrentQueue<FPath> Done { get; } = new();
