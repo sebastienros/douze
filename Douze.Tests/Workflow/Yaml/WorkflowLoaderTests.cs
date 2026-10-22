@@ -271,7 +271,7 @@ public class WorkflowLoaderTests
         AssertError("""
             site:
               contnt: docs
-            """, "unknown key 'contnt' in 'site'; expected 'content', 'data', 'includes', 'output', 'url' or 'parallelism'", 2, 3);
+            """, "unknown key 'contnt' in 'site'; expected 'content', 'data', 'includes', 'output', 'url', 'parallelism' or 'locales'", 2, 3);
     }
 
     [Theory]
@@ -687,5 +687,63 @@ public class WorkflowLoaderTests
     public void DurationsUseTheLargestUnit(int milliseconds, string expected)
     {
         Assert.Equal(expected, WorkflowSchema.FormatDuration(TimeSpan.FromMilliseconds(milliseconds)));
+    }
+
+    // site.locales
+
+    [Fact]
+    public void Locales()
+    {
+        var locales = Load("""
+            site:
+              locales:
+                default: en
+                root: docs
+                fallback: true
+                strings: strings
+                languages:
+                  en: { label: English }
+                  ja: { label: 日本語, lang: ja }
+                  ar: { lang: ar, dir: rtl }
+                  fr:
+            """).Site.Locales!;
+
+        Assert.True(locales.IsEnabled);
+        Assert.Equal(new Locale("en", "English", "en", "ltr", ""), locales.Default);
+        Assert.Equal(
+            [new Locale("ja", "日本語", "ja", "ltr", "/ja"), new Locale("ar", "ar", "ar", "rtl", "/ar"), new Locale("fr", "fr", "fr", "ltr", "/fr")],
+            locales.Languages);
+        Assert.True(locales.Fallback);
+        Assert.Equal("strings", locales.Strings);
+        Assert.Equal(new FPath("/content/docs/"), locales.WithContentFolder("/content/").Root);
+        Assert.Equal(new FPath("/content/"), Load("site:\n  locales: { default: en }\n").Site.Locales!.WithContentFolder("/content/").Root);
+    }
+
+    [Fact]
+    public void LocalesDefaults()
+    {
+        var locales = Load("site:\n  locales: { default: en }\n").Site.Locales!;
+
+        Assert.Equal(new Locale("en", "en", "en", "ltr", ""), locales.Default);
+        Assert.Empty(locales.Languages);
+        Assert.False(locales.Fallback);
+        Assert.Equal("i18n", locales.Strings);
+        Assert.Same(LocaleSet.None, SiteSettings.None.Locales ?? LocaleSet.None);
+    }
+
+    [Theory]
+    [InlineData("locales: [en]", "'locales' must be a mapping", 2, 12)]
+    [InlineData("locales: { root: docs }", "'site.locales' needs 'default', the locale whose pages have no url prefix", 2, 12)]
+    [InlineData("locales: { default: en, langs: {} }", "unknown key 'langs' in 'site.locales'; expected 'default', 'root', 'fallback', 'languages' or 'strings'", 2, 27)]
+    [InlineData("locales: { default: en/us }", "'default' must be a locale folder name", 2, 23)]
+    [InlineData("locales: { default: en, root: ../docs }", "'root' must be a folder inside the content folder", 2, 33)]
+    [InlineData("locales: { default: en, fallback: maybe }", "'fallback' must be true or false", 2, 37)]
+    [InlineData("locales: { default: en, languages: [ja] }", "'languages' must be a mapping of locale folders to settings", 2, 38)]
+    [InlineData("locales: { default: en, languages: { ja: { label: J, rtl: true } } }", "unknown key 'rtl' in 'site.locales.languages.ja'; expected 'label', 'lang' or 'dir'", 2, 56)]
+    [InlineData("locales: { default: en, languages: { ar: { dir: right } } }", "'dir' must be 'ltr' or 'rtl'", 2, 51)]
+    [InlineData("locales: { default: en, languages: { ja: J } }", "the settings of locale 'ja' must be a mapping of 'label', 'lang' and 'dir'", 2, 44)]
+    public void InvalidLocales(string setting, string message, int line, int column)
+    {
+        AssertError($"site:\n  {setting}\n", message, line, column);
     }
 }

@@ -101,7 +101,7 @@ public class EarlyCutoffTests : CacheTestBase
         Assert.Equal(["*"], Executed(result, "collections"));
         Assert.Equal(["/index.md", "/posts/b/index.md"], Executed(result, "render"));
         Assert.Equal(["/posts/b/index.html"], Executed(result, "layout"));
-        Assert.Equal(["featured", "post"], result.Scopes.Site.Single(x => x.Source == "step:collections").Values["collections"]!.AsObject().Select(x => x.Key).Where(x => x != "all").Order(StringComparer.Ordinal));
+        Assert.Equal(["featured", "post"], result.Scopes.Site.Single(x => x.Source == "step:collections").Values["collections"]!.AsObject().Select(x => x.Key).Where(x => x is not ("all" or "urls")).Order(StringComparer.Ordinal));
 
         // A title among the first two pages changes the nav, so every layout.
         await EditAsync("/_content/about.md", "---\ntitle: About us\ndate: 2020-01-02\n---\n{% for m in menu %}{{ m }} {% endfor %}", keepDate: true);
@@ -205,5 +205,42 @@ public class EarlyCutoffTests : CacheTestBase
 
         Assert.Equal(["write"], StepsThatRan(result));
         Assert.Contains("a body", await OutputAsync("/posts/a/index.html"));
+    }
+
+    [Fact]
+    public async Task AddingATranslationRerunsOnlyThePagesOfItsUrl()
+    {
+        await Source.WriteTextFileAsync("/_content/docs/index.md", "home");
+        await Source.WriteTextFileAsync("/_content/docs/guide.md", "guide");
+        await Source.WriteTextFileAsync("/_content/docs/start.md", "start");
+        await Source.WriteTextFileAsync("/_content/docs/ja/start.md", "start ja");
+        await Source.WriteTextFileAsync("/_content/about.md", "about");
+
+        Site = await SiteOptions.DetectAsync(Source, Output, null, null, Douze.Workflow.Yaml.WorkflowLoader.Load(
+            "site:\n  locales: { default: en, root: docs, fallback: true, languages: { ja: { lang: ja } } }\n", "douze.yml").Site);
+
+        var workflow = new WorkflowDefinition([
+            new StepDefinition { Name = "pages", Inputs = ["_content/**"], Uses = "frontmatter" },
+            new StepDefinition { Name = "permalink", Needs = ["pages"], Uses = "permalink" },
+            new StepDefinition { Name = "collections", Needs = ["permalink"], Uses = "collect" },
+            new StepDefinition { Name = "localize", Needs = ["permalink", "collections"], Uses = "localize" },
+            new StepDefinition { Name = "render", Needs = ["localize"], Uses = "liquid" },
+            new StepDefinition { Name = "write", Needs = ["render"], Uses = "write" },
+        ], null);
+
+        await Source.WriteTextFileAsync("/_content/docs/guide.md", "{% for a in alternates %}{{ a.url }} {% endfor %}");
+        var first = await BuildCachedAsync(workflow);
+        Assert.Equal("/guide/ ", await OutputAsync("/guide/index.md"));
+        Assert.Equal("/guide/ ", await OutputAsync("/ja/guide/index.md"));
+
+        await Source.WriteTextFileAsync("/_content/docs/ja/guide.md", "ガイド");
+        var result = await BuildCachedAsync(workflow);
+
+        // The new page, and the page whose url it translates; not the other pages, which looked for other urls.
+        Assert.Equal(["/guide/index.md", "/ja/guide/index.md"], Executed(result, "localize"));
+        Assert.Equal(["/guide/index.md", "/ja/guide/index.md"], Executed(result, "render"));
+        Assert.Equal("/guide/ /ja/guide/ ", await OutputAsync("/guide/index.md"));
+        Assert.Equal("ガイド", await OutputAsync("/ja/guide/index.md"));
+        Assert.True(first.UnitsExecuted > result.UnitsExecuted);
     }
 }

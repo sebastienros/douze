@@ -23,7 +23,8 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 
 - `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`), `WorkflowSource` (finds the site options and the workflow), `ViewSelector`.
 - `Douze/Workflow/`: the engine. `WorkflowGraph` validates a `WorkflowDefinition` and instantiates its steps; `SiteBuilder` runs it with the `Scheduling/Scheduler`, which streams files between steps by shape (`map`, `group`, `reduce`). `DefaultWorkflow` is the workflow of a site without a workflow file.
-- `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write`).
+- `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write`).
+- `Douze/Workflow/LocaleSet.cs`: `site.locales` (`BuildContext.Locales`, `LocaleSet.None` without the section), also exposed to templates as `site.locales` in the settings scope.
 - `Douze/Workflow/Cache/`: the disk cache (`<source>/.douze/cache/`, `--no-cache`, `--cache-dir`). `BuildCache` stores the
   result of every unit by `ResultKey` (step, configuration, input refs) with its dependency set, in pack files
   (`PackFile`) under a binary index (`CacheIndex`); `NodeSerializer` writes metadata and nodes keeping their types. The
@@ -36,6 +37,7 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
   markup: raw regions (`RawRegionExtension`), asides (`AsideExtension`), code fences (`CodeFenceRenderer`), `.md`
   links (`LinkRewriter`). `HeadingScanner` and `Slugger` give the `headings` step the headings of rendered HTML.
 - `Douze/Liquid/`: the Fluid bridge. `TemplateLoader` parses templates once per content hash and serves includes; `MetadataValue` is the model of every render.
+- `Douze/Liquid/Filters/`: Douze's filters (`DataFilters`, `OutputFilters`, `LocaleFilters`, `NavigationFilters`), each with a static `Register` called by `LiquidOptions.Create`; `FilterHelpers` resolves names like a template does.
 - `Douze/Progress/`: the views of a build: `PlainProgressView` (a line per step), `SpectreProgressView` (live table and summary with a timeline), `SilentProgressView`; `StepSummary` formats what they share.
 - `Douze/Tracing/`: `TraceRecorder` records build, step, command and (with `--trace-units`) unit spans; `ChromeTraceWriter` writes them for Perfetto (`--trace`), `TimelineHtmlWriter` into the self-contained `timeline.html` (`--timeline`).
 - `Douze.Tests.FakeTool/`: the fake external tool of the command step tests, launched with `dotnet Douze.Tests.FakeTool.dll <mode>`; it is in `Douze.slnx` so that it builds in the configuration of the tests.
@@ -49,6 +51,9 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 - Data is never copied into files. Folder and site data live in scopes, and steps read metadata only through `ScopeSet.TryResolve`, which records what a unit depends on: a unit is replayed from the cache only while every key it resolved beyond a file's own metadata resolves to the same value (or, for templates, to the same part of it: `ValueAccess`). A step that cannot record what it reads must not be incremental. `NodeHash` caches the hash of objects and arrays once computed: never change a node after it is published.
 - Data files are keyed by file name: `_data/colors.json` is `colors`. The nearest scope wins: own data, folder data (nearest folder first), site data, the `site:` settings of `douze.yml` (`site.url`, whose `site` object is completed rather than hidden by a `site` data object), then the front matter of layouts.
 - Collection items (`collections.all`, `collections.<tag>`) are sorted by date ascending, using front matter `date` if defined, or `page.date` (the file date) otherwise, then by path (ordinal). This matches Eleventy.
+- `collections.urls` keys pages by normalized url (`LocaleSet.NormalizeUrl`: no trailing `index.html`); the navigation and locale filters compare urls the same way.
+- Filters read page and site data through the model (`FilterHelpers.ResolveAsync`, member by member), never from the scopes directly, so that a render depends on what it read; a filter that uses a whole value reads it whole (`NodeArrayValue.ReadAll`), and one that uses the locales reads `site.locales` (`FilterHelpers.GetLocalesAsync`). A step that looks values up from C# records its member reads on the `AccessRecorder` that `ScopeSet.TryResolveTracked` returns (`LocalizeStep`).
+- `permalink` removes the locale root (`site.locales.root`) from the paths under it, so that locale folders are url prefixes (`/ja/x/`).
 - Pagination pages (`pagination.pages`, `page.next`, ...) only link pages generated from the same template.
 
 ## Build and test

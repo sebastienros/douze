@@ -72,11 +72,14 @@ workflow:
 2. Moves the YAML front matter of `.md`, `.html` and `.liquid` files into their data, and sets `page.date` to the
    file's modification time.
 3. Computes output paths: `blog/post.html` and `blog/post.md` are written to `blog/post/index.html`, `index.html`
-   and `index.md` stay in place, `permalink` overrides the path, and `permalink: false` skips the file. The content
-   folder is removed from the path, and `url` holds the result (`/blog/post/index.html`).
-4. Builds `collections.all` and `collections.<tag>` from the `tags` of every page.
+   and `index.md` stay in place, `sitemap.xml.liquid` is written to `sitemap.xml`, `permalink` overrides the path,
+   and `permalink: false` skips the file. The content folder is removed from the path, and `url` holds the result
+   (`/blog/post/index.html`).
+4. Builds `collections.all` and `collections.<tag>` from the `tags` of every page, and `collections.urls`, the
+   same pages by url (`collections.urls["/blog/post/"]`, without `index.html`).
 5. Expands paginated pages, which can paginate a collection (`pagination.data: collections.post`).
-6. Renders every Markdown, HTML and JSON file as a Liquid template, unless its `liquid` is `false`.
+6. Renders every Markdown, HTML, JSON, XML and text file, and every `.liquid` file, as a Liquid template, unless
+   its `liquid` is `false`.
 7. Renders Markdown to HTML.
 8. Applies layouts.
 9. Writes every file to the output folder. Files that no step claims (images, stylesheets, scripts) are copied as
@@ -179,6 +182,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `inputs` | none | a glob or a list: the source files that enter this step |
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -255,6 +259,139 @@ page, whatever produced its headings:
   heading (`anchor-class`, `anchor-label`).
 
 A layout renders the tree with the `toc` filter, as nested lists: `{{ toc | toc: class: "toc", max-depth: 3 }}`.
+# outputs
+
+Feeds, sitemaps and text exports are templates: `sitemap.xml.liquid`, `feed.xml.liquid` or `llms.txt.liquid` in the
+content folder are rendered like pages and written without `.liquid`, or to their `permalink`. They are not in the
+collections, and layouts apply to HTML files only.
+
+```liquid
+---
+permalink: /sitemap.xml
+---
+<?xml version="1.0" encoding="utf-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{%- for p in collections.all %}
+  <url><loc>{{ p.data.url | replace: 'index.html', '' | absolute_url }}</loc><lastmod>{{ p.data.page.date | date_to_xmlschema }}</lastmod></url>
+{%- endfor %}
+</urlset>
+```
+
+| Filter | Result |
+|---|---|
+| `xml_escape` | `&`, `<`, `>`, `"` and `'` as entities |
+| `absolute_url` | `site.url` followed by the url |
+| `relative_url` | the url after the path of `site.url` (`/blog/x/` for `https://example.com/blog`) |
+| `strip_html` | the text without tags, comments, scripts and styles |
+| `date_to_xmlschema`, `date_to_rfc822` | `2020-01-02T03:04:05+00:00`, `Thu, 02 Jan 2020 03:04:05 +0000` |
+| `where_exp: "item", "item.data.draft != true"` | the items for which the expression is true |
+| `group_by_exp: "item", "item.data.date \| date: '%Y'"` | `{ name, items, size }` per value, in order of appearance |
+| `sort_by: "data.title"`, `sort_by: "data.date", "desc"` | the items sorted by the value at a path, missing values last |
+| `index_by: "data.url"` | an object of the items by the value at a path |
+| `jsonify` | `json` |
+
+The `collect` step options:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `name` | `collections` | the name of the collections, so that a second `collect` step does not hide the first |
+| `content` | `false` | items also have `content`, the text of the page at that point of the workflow; the step then runs again when a body changes, and holds every body in memory |
+
+```yaml
+collect-docs: { needs: markdown, uses: collect, match: "docs/**/*.html", with: { name: docs, content: true } }
+```
+
+`uses: fork` passes each file through and adds a copy, for instance the Markdown twin of every page, after Liquid:
+
+```yaml
+twins:    { needs: render, uses: fork, match: "docs/**/*.md", with: { permalink: "{{ url | replace: 'index.html', 'page.md' }}", data: { twin: true } } }
+markdown: { needs: twins, uses: markdown, match: ["**/*.md", "!**/page.md"] }
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `permalink` | | the copy's path, a template over the file's data; without an extension, a folder (`index.html` is added) |
+| `data` | none | merged over the copy's data; the copy's `url` is its path |
+| `content` | the file's | a template over the file's data, with the file's text as `content` |
+| `strip-regions` | `true` | removes the lines that are a single U+001E character (the markers of raw HTML regions) |
+
+`uses: replace` replaces literal tokens everywhere in a page, code blocks included, before Liquid:
+
+```yaml
+versions: { needs: pages, uses: replace, with: { tokens: { "%VERSION%": "{{ versions.current }}" }, skip: "docs/release-notes/**" } }
+```
+
+Each value is a template rendered with the page's data, only in the pages that contain its token: a version change
+renders those pages again. The default `match` is `**/*.md` and `**/*.html`.
+
+# navigation
+
+A sidebar is site data, such as `_data/sidebar.yml`: a list of items, each a url, or an object with a `label`, a
+`link`, `items` (a group), and anything the layout reads (`icon`, `badge`, `collapsed`, `external`). A `label` is a
+string, or an object of labels by locale.
+
+```yaml
+- label: { en: Guides, fr: Guides pratiques }
+  link: /docs/
+  items:
+    - label: Get started
+      items:
+        - { label: Install, link: /docs/install/, badge: { text: New } }
+        - /docs/first-app/          # labeled with the page's title, from collections.urls
+```
+
+| Filter | Result |
+|---|---|
+| `sidebar \| nav_active: url` | the sidebar with `active: true` on the url's item and `open: true` on its ancestors |
+| `sidebar \| nav_prev_next: url` | `{ prev, next }`: the items next to the url's in the same group; nil when the url is not in the sidebar |
+| `sidebar \| nav_breadcrumbs: url` | the items from the top of the sidebar to the url's |
+| `sidebar \| nav_flatten` | the items with a link and no items, in order |
+| `sidebar \| nav_section: url` | the top-level item that contains the url |
+| `item \| nav_label` | the label in the page's `locale` (or the one given), else the default locale's |
+
+Links and urls are compared without `index.html`, and a locale prefix (`/ja/x/`) is removed from the url when no link
+of the sidebar has one. Each sidebar is indexed once per build. A page that shows a sidebar depends on all of it: a
+sidebar edit renders every such page again. Front matter `prev: false` or `next: false` is for the layout to read.
+
+# locales
+
+```yaml
+site:
+  locales:
+    default: en           # the locale whose pages have no url prefix
+    root: docs            # the folder of the content folder whose subfolders are locales; default: the content folder
+    fallback: true        # copy untranslated pages under every locale (default false)
+    strings: i18n         # the data of the UI strings: _data/i18n/en.yml, _data/i18n/ja.yml; default i18n
+    languages:            # locale folders
+      en: { label: English }             # the default locale's settings
+      ja: { label: 日本語, lang: ja }
+      ar: { label: العربية, lang: ar, dir: rtl }
+```
+
+A page of `docs/ja/` is a page of `ja`, any other page under `docs` is a page of `en`. `permalink` removes the
+`root` folder from paths and keeps the locale folder: `docs/ja/guide.md` is `/ja/guide/`, `docs/guide.md` is
+`/guide/`. `lang` defaults to the key and `dir` to `ltr`. Templates see the settings in `site.locales`, with
+`site.locales.languages`, the list of every locale (`locale`, `label`, `lang`, `dir`, `prefix`), default first.
+
+`uses: localize`, after `collect`, sets on every page under `root`: `locale`, `lang`, `dir`, `locale_url` (its url
+in every locale: `/guide/`) and `alternates`, the `{ locale, lang, url }` of the locales that have a page at that
+url, for `hreflang` links and language switchers. With `fallback: true`, a page of the default locale is copied under
+each locale that does not translate it, with the locale's `locale`, `lang`, `dir` and url, `fallback: true` and
+`original_url`, so that the layout renders it in the locale with a notice. Copies are not in the collections.
+
+```yaml
+localize: { needs: [permalink, collections], uses: localize }
+```
+
+A page depends on the urls it looked for only: adding `docs/ja/guide.md` builds `/guide/` again, not the other
+pages.
+
+| Filter | Result |
+|---|---|
+| `"search.label" \| t` | the string in `i18n.<locale>` (a key with dots, or nested keys), else in the default locale's, else the key, with a warning; named arguments replace placeholders: `"count" \| t: n: 3` replaces `{n}` |
+| `url \| locale_url: "ja"` | the url in another locale, whether or not a page exists there (`/ja/guide/`); no argument: without its prefix |
+| `url \| locale_of` | the locale of a url |
+| `collections.all \| locale_pages` | every page of every locale as `{ locale, lang, url, fallback, data }`, fallback copies included: for sitemaps |
 
 # commands
 

@@ -21,7 +21,8 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
     /// </summary>
     public const string OptOutKey = "liquid";
 
-    private static readonly GlobSet Templates = GlobSet.Parse(["**/*.html", "**/*.md", "**/*.json"]);
+    // Pages, and output templates such as sitemap.xml.liquid, before or after their permalink.
+    private static readonly GlobSet Templates = GlobSet.Parse(["**/*.html", "**/*.md", "**/*.json", "**/*.liquid", "**/*.xml", "**/*.txt"]);
 
     private readonly FPath? _template;
     private readonly string? _permalink;

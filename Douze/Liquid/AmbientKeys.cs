@@ -13,4 +13,10 @@ internal static class AmbientKeys
 
     /// <summary>The <see cref="Workflow.VirtualFile"/> being rendered.</summary>
     public const string File = "douze:file";
+
+    /// <summary>The <see cref="Workflow.LocaleSet"/> of the site (<c>site.locales</c>).</summary>
+    public const string Locales = "douze:locales";
+
+    /// <summary>The <see cref="Workflow.StepContext"/> of the unit being rendered, for filters that report messages.</summary>
+    public const string StepContext = "douze:step-context";
 }

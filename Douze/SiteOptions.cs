@@ -1,5 +1,6 @@
 using Douze.FileSystems;
 using Douze.Markdown;
+using Douze.Workflow;
 using Douze.Workflow.Yaml;
 
 namespace Douze;
@@ -23,6 +24,7 @@ internal sealed class SiteOptions
     public string? Url { get; init; }                   // site.url
     public int? Parallelism { get; init; }              // site.parallelism, used when -p is not given
     public MarkdownOptions Markdown { get; init; } = MarkdownOptions.None;   // the markdown section of douze.yml
+    public LocaleSet Locales { get; init; } = LocaleSet.None;  // site.locales, its root resolved in the content folder
 
     /// <summary>
     /// Uses the folders of <paramref name="settings"/> (the <c>site</c> section of the workflow file), and for the ones
@@ -34,18 +36,21 @@ internal sealed class SiteOptions
     {
         settings ??= SiteSettings.None;
 
+        var contentFolder = settings.ContentFolder ?? await DetectAsync(source, DefaultContentFolder);
+
         return new SiteOptions
         {
             Source = source,
             Output = output,
             SourceDirectory = sourceDir,
             OutputDirectory = outputDir,
-            ContentFolder = settings.ContentFolder ?? await DetectAsync(source, DefaultContentFolder),
+            ContentFolder = contentFolder,
             DataFolder = settings.DataFolder ?? await DetectAsync(source, DefaultDataFolder),
             IncludesFolder = settings.IncludesFolder ?? await DetectAsync(source, DefaultIncludesFolder),
             Url = settings.Url,
             Parallelism = settings.Parallelism,
             Markdown = markdown ?? MarkdownOptions.None,
+            Locales = settings.Locales?.WithContentFolder(contentFolder) ?? LocaleSet.None,
         };
 
         static async Task<FPath> DetectAsync(IFileSystem source, FPath folder)
