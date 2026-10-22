@@ -55,6 +55,11 @@ internal sealed class BuildResult
     /// </summary>
     public IReadOnlyList<FPath> Deleted { get; init; } = [];
 
+    /// <summary>
+    /// The snapshot of the source folder the build used: a watch session updates it for the next build.
+    /// </summary>
+    public SourceSnapshot? Sources { get; init; }
+
     public TimeSpan Elapsed { get; }
 
     /// <summary>

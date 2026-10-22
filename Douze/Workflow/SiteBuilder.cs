@@ -79,6 +79,7 @@ internal static class SiteBuilder
         {
             Written = written,
             Deleted = deleted,
+            Sources = result.Sources,
         };
 
         view.BuildCompleted(buildResult);

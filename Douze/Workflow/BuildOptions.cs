@@ -22,5 +22,6 @@ internal sealed class BuildOptions
     public BuildCache? Cache { get; init; }          // a cache kept open across builds (watch mode): committed, not saved, not disposed
     public TemplateLoader? Templates { get; init; }  // a template loader kept across builds (watch mode), invalidated by its owner
     public IReadOnlyList<(FPath Path, long Length, DateTime LastWriteTimeUtc)>? PreviousWritten { get; init; }  // what the previous build wrote, when there is no cache to tell
+    public SourceSnapshot? Sources { get; init; }    // the source files, kept up to date by the caller (watch mode); null: the build scans the source folder
     public CancellationToken Cancellation { get; init; }
 }
