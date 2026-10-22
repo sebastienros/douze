@@ -130,13 +130,14 @@ Douze/
     Tags/CacheTag.cs             {% cache %} (3.15)
     Tags/ImageTag.cs             {% image %} (3.8)
     Filters/MarkdownFilters.cs   markdownify, strip_markdown, excerpt (3.4)
-    Filters/HtmlFilters.cs       strip_html, xml_escape, absolute_url, relative_url, toc (3.3, 3.12)
+    Filters/HtmlFilters.cs       url, toc, strip_html, xml_escape, absolute_url, relative_url (3.3, 3.5, 3.12)
     Filters/NavigationFilters.cs nav_active, nav_prev_next, nav_breadcrumbs, nav_flatten (3.5)
     Filters/LocaleFilters.cs     t, locale_url, locale_of, format_date, format_number (3.6)
     Filters/AssetFilters.cs      asset_url, asset_inline (3.9)
     Filters/DataFilters.cs       where_exp, group_by_exp, sort_by, index_by (3.5, 3.12)
     Filters/ImageFilters.cs      image_url, image_size (3.8)
     ShortcodeModel.cs            the FluidValue a shortcode renders with (args, body, source)
+    DouzeParser.cs               FluidParser subclass exposing the argument list parser to the shortcode tags (3.1)
   Images/
     ImageProcessor.cs            NetVips bridge: resize, convert, read size, strip metadata (3.8)
     ImageVariant.cs              a requested output (width, format, quality) and its file name
@@ -159,8 +160,6 @@ Douze/
     Steps/MarkdownStep.cs        (changed) uses BuildContext.Markdown, raw regions, markdown: false (3.2)
     Steps/FrontMatterStep.cs     (changed) with.require (3.14)
     StepContext.cs               (changed) AddOutput (2.2)
-    IStep.cs                     (changed) Step.StateHash (2.2)
-    Cache/ResultKey.cs           (changed) state hash in keys (2.2)
     Steps/WriteStep.cs           (changed) identical duplicates accepted (2.2); watch mode (3.16)
     Watch/*                      phase 6 of the engine plan (3.16)
   Cli/WatchCommand.cs            douze watch, douze serve (3.16)
@@ -174,30 +173,17 @@ docs/
 
 ### 2.2 Engine additions
 
-Three small additions to the engine, all in the first phase (section 5), because several features need them.
+Three small additions to the engine, all in the first phase (section 5), because several features need them, and
+two members: `AmbientKeys.Model` (the `MetadataValue` of the unit's page, set by `StepContext.CreateTemplateContext`,
+for tags that render with the page's names, 2.5) and `DependencyTracker.RecordAbsent(FPath path)` (a source file
+looked for and not found, as `TemplateLoader` records missing include paths; 3.2's link rewriter uses it).
 
-**State hash.** A step whose units depend on something it computed once per build (the git index of 3.10, the
-locale tables of 3.6, the asset map of 3.9 when read by a step rather than a template) exposes it in its result keys:
-
-`Douze/Workflow/IStep.cs`
-
-```csharp
-internal abstract class Step
-{
-    // ... existing members ...
-
-    /// <summary>
-    /// A hash of the state the step computed in <see cref="InitializeAsync"/> that its units read without resolving
-    /// it through the scopes (a git index, a table read from disk). Part of every unit's result key, so a unit replays
-    /// only while that state is the same. <see cref="Hash128.Empty"/> when the step has no such state.
-    /// </summary>
-    public virtual Hash128 StateHash => Hash128.Empty;
-}
-```
-
-`ResultKey.Compute` takes it as a parameter (`Hash128 stateHash`, combined right after `definition.ConfigHash`);
-the scheduler passes `Node.Step.StateHash` (read once per step after `InitializeAsync`, so it is stable for the
-build). `ResultKeyTests.ChangesWithStateHash` covers it.
+**Build-scoped state in result keys.** A step whose units depend on something it computed once per build (the
+git index of 3.10, the locale tables of 3.6, the Markdown configuration read by every rendering step) folds it into
+`Step.CacheVersion`, which the engine already reads after `InitializeAsync` and combines into every unit's result
+key (`Scheduler` passes it to `ResultKey.Compute`; command steps use it for `version` and `sources`). No engine
+change: each such step overrides `CacheVersion` and documents what it hashes; this plan calls that "the step's
+state hash".
 
 **Unit outputs from tags.** A tag or filter that produces a file (an image variant of 3.8, a cached fragment is not a
 file) adds it to the unit it renders in:
@@ -228,10 +214,17 @@ internal sealed class StepContext
 reaches `AddOutput`. The scheduler appends `AddedOutputs` to the unit's outputs (provenance: the unit's step and
 inputs) before writing them to the channel and storing the result.
 
-**Identical duplicates.** `WriteStep.Register` and the scheduler's duplicate path tracking (`EnterOnceAsync`) accept a
-second file for a path when its `FileRef` equals the first (same content and metadata hashes): a content addressed
-image variant referenced by two pages is produced twice and written once. A second file with another content is still
-the error of today. `WriteStepTests.IdenticalDuplicateIsWrittenOnce`, `SchedulerTests.IdenticalFileFromTwoUnitsEntersOnce`.
+**Identical duplicates.** The scheduler's duplicate path tracking (`EnterOnceAsync`) already lets a second file
+with the same `FileRef` enter once; `WriteStep.Register` is changed to accept it too (same content and metadata
+hashes: a content addressed image variant referenced by two pages is produced twice and written once). A second file
+with another content is still the error of today. `WriteStepTests.IdenticalDuplicateIsWrittenOnce`.
+
+**Metadata-only barriers.** A reduce step with `ReadsContent` false (`collect`, `check-links` of 3.11) receives its
+inputs without their contents: the scheduler gives it `VirtualFile`s whose `Content` is a placeholder that throws on
+read (`FileContent.Unloaded`, holding the hash and length only), so that such a barrier holds the metadata of every
+page and not the HTML of the whole site (the bounded channels change of the engine plan made that peak disappear;
+a metadata-only reduce must not bring it back). Such a step emits no files, as the engine requires.
+`SchedulerTests.MetadataOnlyReduceGetsNoContent`.
 
 ### 2.3 Shared services on the build context
 
@@ -245,14 +238,18 @@ public LocaleSet Locales { get; }              // site.locales (3.6); LocaleSet.
 ```
 
 `BuildContext.LiquidOptions` is built after `Shortcodes` scanned the includes folder, since shortcodes are parser
-registrations (`FluidParser`) and `TemplateLoader` holds the parser: `BuildContext`'s constructor creates the parser
-(`LiquidOptions.CreateParser()`), registers the shortcodes on it, then creates the loader and the options. Every
-template of the build is parsed with that one parser.
+registrations (`FluidParser`) and `TemplateLoader` holds the parser. `BuildContext` is created by an async factory
+(`BuildContext.CreateAsync`): it creates the parser (`LiquidOptions.CreateParser()`), reads the front matter of
+every shortcode file and registers every name on the parser **before** parsing any shortcode template (a shortcode
+whose template uses another shortcode must find it registered), then parses the templates, then creates the loader
+and the options. Every template of the build is parsed with that one parser.
 
 ### 2.4 Markdown rendering from tags
 
 Tags and filters render Markdown during a Liquid render (shortcode bodies, `markdownify`, `{% markdown %}`). They
-call `BuildContext.Markdown.Render(string markdown)`, which parses with the pipeline and renders with a pooled
+call `BuildContext.Markdown.Render(markdown, directory, deps, asideTitles)` with the page's directory, tracker and
+localized aside titles taken from the ambient values (an aside or a `.md` link inside a shortcode body renders like
+one in the page), which parses with the pipeline and renders with a pooled
 `HtmlRenderer` (Markdig's renderer is not thread safe; `MarkdownRenderer` keeps a `ConcurrentBag` of renderers over
 `ZStringWriter`s). The result is HTML with raw regions already resolved (3.1): a Markdown render always produces
 final HTML.
@@ -268,7 +265,7 @@ like an include does, with the same dependency recording.
 
 | Package | Why | AOT |
 |---|---|---|
-| `NetVips` (latest stable) and `NetVips.Native.<rid>` per tool package RID | Image resizing and format conversion (3.8), text rendering for social images (3.8) | Verified empirically in 3.8; the native library is loaded at first use, so a tool package without it still builds sites that use no image feature |
+| `NetVips` (latest stable) and `NetVips.Native.<rid>` per tool package RID | Image resizing and format conversion (3.8), text rendering for social images (3.8) | Verified empirically in 3.8; a missing native library is recorded by the module initializer and reported by the first image call, so a tool package without it still builds sites that use no image feature |
 
 No other package. HTML scanning (headings, links, code fences) is done with small hand written scanners over the
 regular markup Markdig emits, not an HTML parser: the input is Markdig's output and the layouts of a site, never
@@ -311,7 +308,7 @@ Syntax, in a page:
 
 ```liquid
 {% tabs sync: "lang" %}
-{% tab "C#" icon: "seti:c-sharp" %}
+{% tab "C#", icon: "seti:c-sharp" %}
 Some **Markdown** with a fence:
 
 ```csharp
@@ -321,23 +318,27 @@ var x = 1;
 {% tab "TypeScript" %}...{% endtab %}
 {% endtabs %}
 
-Install it with {% badge "v2" variant: "note" %} or see {% learnmore "/docs/x/" %}.
+Install it with {% badge "v2", variant: "note" %} or see {% learnmore "/docs/x/" %}.
 ```
 
-Arguments follow Fluid's argument list (`FluidParser.ArgumentsListParser`): positional expressions and `name: value`
-pairs, with any Liquid expression as a value (`{% tab page.title %}` works). In the shortcode template, a named
+Arguments follow Fluid's argument list (the protected `ArgumentsList` parser of `FluidParser`, reached by
+subclassing it as `DouzeParser`): positional expressions and `name: value` pairs separated by commas, with any Liquid
+expression as a value (`{% tab page.title %}` works). In the shortcode template, a named
 argument is a variable of that name, a positional one is `args[i]` and, when the front matter names it, a variable
 too; `args` is the array of positional values. `body` is the rendered body, `source` its Liquid output before Markdown
 rendering (below). The page's names (`page`, `url`, data, `collections`, `site`) resolve as in an include (2.5).
 
 **Rendering a block shortcode.** The tag's render (Fluid `RegisterParserBlock`) does, in order:
 
-1. Renders the body statements to a string with the page's context (`RenderStatementsAsync`): nested shortcodes and
-   every other tag in the body run now, with the page's variables, and nested block shortcodes produce raw regions
-   (step 4) in that string.
+1. Renders the body statements to a string with the page's context (`RenderStatementsAsync` into an
+   `IFluidOutput`): nested shortcodes and every other tag in the body run now, with the page's variables, and nested
+   block shortcodes produce raw regions (step 4) in that string. The fence placeholders of the page (below) are
+   restored in that string first (the placeholder table travels in `AmbientKeys.Fences`), so a fence inside a tab
+   reaches the inner Markdown pass as a fence.
 2. When the file being rendered is Markdown (`AmbientKeys.File`'s content type is `text/markdown`), renders the string
-   to HTML with the site's pipeline (2.4): `body` is HTML, `source` the string. For an HTML page or a template,
-   `body` is the string as it is.
+   to HTML with the site's pipeline (2.4, the full overload: the page's directory, tracker and aside titles): `body`
+   is HTML, `source` the string. A paired shortcode with `display: inline` renders its body in inline mode (no `<p>`
+   wrapper, like `markdownify: inline: true`). For an HTML page or a template, `body` is the string as it is.
 3. Renders the shortcode template with the `ShortcodeModel`.
 4. When `display` is `block` and the file is Markdown, writes the result wrapped as a **raw region**; otherwise writes
    it as it is.
@@ -347,10 +348,13 @@ A raw region is the HTML of a block shortcode, delimited for Markdig so that the
 shortcode's output as Markdown). `RawRegionExtension` (`Douze/Markdown/RawRegionExtension.cs`) adds a block parser
 whose opening character is `U+001E` (the record separator, which no text contains): a line that is exactly `\u001E`
 opens a region, the lines up to the next line that is exactly `\u001E` are its content, and the renderer writes the
-content without escaping or processing, followed by a newline. The tag writes `\n\u001E\n<html>\n\u001E\n`. Regions
-nest trivially: an inner shortcode's region was already resolved by the inner Markdown pass of step 2, so the outer
-region's content is final HTML. `MarkdownRenderer.Render` strips any `\u001E` left in its input before parsing (a
-region opened and not closed is a bug of a tag, reported as an error naming the tag).
+content without escaping or processing, followed by a newline. The tag writes `\n\u001E\n<html>\n\u001E\n`, each
+line prefixed with the indentation of the line the tag started on (a block shortcode inside a list item or a block
+quote must stay inside its container, so the marker lines carry the container's prefix: the tag reads the text before
+it on its line from the template source through its statement position), and the parser accepts a marker line with
+leading whitespace or a `>` prefix. Regions nest trivially: an inner shortcode's region was already resolved by the
+inner Markdown pass of step 2, so the outer region's content is final HTML. A marker left unmatched after parsing is
+removed from the output with a warning naming the page (a region opened and not closed is a bug of a tag).
 
 An inline shortcode's output goes in the text as it is: CommonMark passes inline HTML through, and a tag whose output
 starts a line without ending it (`<span class="badge">New</span> text`) is not an HTML block. A tag whose output is a
@@ -374,7 +378,9 @@ built-in tag; rename the file`.
 time (GitHub Actions `${{ }}`, Helm, Go templates). The `liquid` step, for a Markdown file, replaces every fenced
 code block (lines from an opening fence of 3 or more backticks or tildes to the matching closing fence, CommonMark
 rules, indentation up to 3 spaces) with a placeholder `\u001F<n>\u001F` before parsing the content as a template, and
-restores the blocks in the output. `with.protect: fences | none` (default `fences`) turns it off. Inline code spans
+restores the blocks in the output, and in every string a tag hands to an inner Markdown pass (3.1 step 1, 3.4):
+the table of protected blocks is in `AmbientKeys.Fences` for the render. `with.protect: fences | none` (default
+`fences`) turns it off. Inline code spans
 are not protected (they are short and rarely hold Liquid; a page uses `{% raw %}` for them). The replacement is on
 the content given to `GetOrParse`, so the template cache keys on the protected text; positions reported by Fluid are
 mapped back to the original lines (the placeholder keeps the line count: it is followed by as many newlines as the
@@ -404,17 +410,20 @@ internal sealed class ShortcodeRegistry
 ```csharp
 internal static class ShortcodeTag
 {
-    public static ValueTask<Completion> RenderBlockAsync(ShortcodeDefinition shortcode, IReadOnlyList<FilterArgument> args, IReadOnlyList<Statement> body, TextWriter writer, TextEncoder encoder, TemplateContext context);
-    public static ValueTask<Completion> RenderTagAsync(ShortcodeDefinition shortcode, IReadOnlyList<FilterArgument> args, TextWriter writer, TextEncoder encoder, TemplateContext context);
+    public static ValueTask<Completion> RenderBlockAsync(ShortcodeDefinition shortcode, IReadOnlyList<FilterArgument> args, IReadOnlyList<Statement> body, IFluidOutput output, TextEncoder encoder, TemplateContext context);
+    public static ValueTask<Completion> RenderTagAsync(ShortcodeDefinition shortcode, IReadOnlyList<FilterArgument> args, IFluidOutput output, TextEncoder encoder, TemplateContext context);
     public const char RawRegionMarker = '\u001E';
     public const char FencePlaceholderMarker = '\u001F';
 }
 ```
 
 A render records the shortcode file as a template dependency (`DependencyTracker.RecordTemplate(path, hash)`), so
-editing `tabs.liquid` re-renders the pages that use `{% tabs %}` and no other.
+editing `tabs.liquid` re-renders the pages that use `{% tabs %}` and no other; `ShortcodeRegistry.Hash` is only the
+key of the registry's own parse (watch mode rescans when it changes, 3.16), not a dependency of renders.
 
 **Tests** (`Douze.Tests/Liquid/Tags/ShortcodeTests.cs`): block shortcode with a Markdown body renders the body to HTML;
+a fence inside a tab body is rendered as a fence with its meta; a block shortcode inside a list item stays in the
+item; an inline paired shortcode's body has no `<p>`; a shortcode template using another shortcode;
 inline shortcode in a paragraph stays inline; nested blocks (a tab in tabs in a pivot) produce the inner HTML inside
 the outer; positional and named arguments, expressions as arguments, `args` names from front matter; a shortcode
 reads `page.title` and site data; a fence inside a body is rendered by the inner pass, with its meta (3.2); a block
@@ -459,16 +468,18 @@ internal sealed record MarkdownOptions
     public static readonly ImmutableArray<string> DefaultExtensions = ["pipetables", "footnotes", "tasklists", "definitionlists", "attributes", "autolinks", "alerts", "customcontainers"];
 }
 
-internal sealed record AsideOptions(string Tag, string ClassPrefix, ImmutableArray<string> Kinds, IReadOnlyDictionary<string, string> Titles, string? TitlesFrom)
+internal sealed record AsideOptions(string Tag, string Class, ImmutableArray<string> Kinds, IReadOnlyDictionary<string, string> Titles, string? TitlesFrom, IReadOnlyDictionary<string, string> Icons)
 {
-    // Default: <aside class="aside aside-note" aria-label="Note"><p class="aside-title">Note</p>...</aside>; kinds note, tip, caution, danger.
+    // BEM markup from Class (default "aside"): <aside aria-label="Note" class="aside aside--note"><p class="aside__title" aria-hidden="true">{icon}Note</p><div class="aside__content">...</div></aside>
+    // Kinds: note, tip, caution, danger. Icons: kind -> inline SVG written before the title (empty by default).
     // TitlesFrom: a data key ("i18n") under which <locale>.aside.<kind> gives the default title of each kind in the page's
     // locale (3.6); the markdown step resolves them per page through the scopes (recorded) and passes them to the render.
 }
 ```
 
 `MarkdownPipelineFactory.Create(MarkdownOptions)` builds a `MarkdownPipelineBuilder`, calls `Configure` with the
-extension names (Markdig's registry: `advanced` expands as today), then adds Douze's extensions in this order:
+extension names (Markdig's registry; `advanced` is rejected like `autoidentifiers`, which it contains: list the
+extensions wanted), then adds Douze's extensions in this order:
 `RawRegionExtension` (always), `AsideExtension` (when `alerts` or `customcontainers` is in the list: it replaces the
 HTML renderers of Markdig's `CustomContainer` and alert blocks by one that writes the aside markup with the kind and
 the optional title, `:::note[Title]` syntax parsed from the container's info string), `CodeFenceRenderer` (always),
@@ -489,9 +500,10 @@ highlighter contract of 3.7 is this markup.
 
 **Links.** `LinkRewriteExtension` runs on `LinkInline` and `LinkReferenceDefinition` urls: a relative url ending in
 `.md` (with optional `#fragment`) becomes the url of that page (`other.md` -> `other/`, `index.md` -> `./`,
-`../a/b.md` -> `../a/b/`), resolved against the page's directory when the url is relative, and left as is when the
-target does not exist in the source tree (checked through the source file system; the lookup records a dependency on
-the path, `DependencyTracker.RecordAbsent`, so creating the file later re-renders the page). Absolute urls, mailto and
+`../a/b.md` -> `../a/b/`; urls are the normalized form of 3.5, without `index.html`), resolved against the page's
+directory when the url is relative, and left as is when the target does not exist in the source tree (checked through
+the source file system; the lookup records a dependency on the path, `DependencyTracker.RecordAbsent` (2.2), so
+creating the file later re-renders the page). Absolute urls, mailto and
 anchors are untouched. The extension reads the page's directory from `MarkdownRenderer.Render(markdown, FPath? directory)`.
 
 `Douze/Markdown/MarkdownRenderer.cs`
@@ -594,8 +606,8 @@ and rendering Markdown from data (descriptions of a catalog, glossary terms) in 
   render, below the page's), and writes the Liquid output **as Markdown source** into the page: the page's own
   Markdown pass renders it, so its headings join the page's and nothing is rendered twice. Fences inside the include
   are protected like the page's (3.1). In an HTML page or a layout, the output is rendered to HTML first (the page has
-  no Markdown pass). The tag records a template dependency on the file (`RecordTemplate`), and the page re-renders when
-  it changes. Named arguments become variables: `{% include_markdown "x.md", version: "2.0" %}`. A missing file is an
+  no Markdown pass). Fence placeholders of the page are restored before an inner render (3.1). The tag records a
+  template dependency on the file (`RecordTemplate`), and the page re-renders when it changes. Named arguments become variables: `{% include_markdown "x.md", version: "2.0" %}`. A missing file is an
   error: `include_markdown: 'x.md' not found in '/docs/'`. Recursion deeper than 16 is an error naming the chain.
 - `{% markdown %}...{% endmarkdown %}`: renders its body as Markdown to HTML, for Markdown written inside HTML pages,
   layouts and shortcodes. In a Markdown page it is the same as writing the Markdown (and emits a raw region).
@@ -634,8 +646,7 @@ generated per package from data (3.12, `cache`). Rendering the sidebar on 8k pag
 keyed by file name), with this shape, which the filters understand:
 
 ```yaml
-- label: Foundations                      # a topic: a top-level group with an icon and a root link
-  label_translations: { fr: Fondations }  # or label: { en: ..., fr: ... }; a string is the default locale's
+- label: { en: Foundations, fr: Fondations }   # a topic: a top-level group; label is a string (every locale) or an object by locale
   icon: open-book
   link: /docs/
   items:
@@ -643,10 +654,16 @@ keyed by file name), with this shape, which the filters understand:
       collapsed: true
       items:
         - { label: Install, link: /get-started/install/, badge: { text: New, variant: tip } }
-        - { label: First app, link: /get-started/first-app/, translations: { fr: Première application } }
+        - { label: { en: First app, fr: Première application }, link: /get-started/first-app/ }
         - /get-started/deploy/              # a bare url: label from the page's title (needs collections)
     - { label: GitHub, link: https://github.com/x/y, external: true }
 ```
+
+**Urls.** `url` in a page's metadata is its output path (`/get-started/install/index.html`). Everything in this
+plan that compares or keys urls uses the **normalized url**: the output path without a trailing `index.html`
+(`/get-started/install/`, `/` for the root). `collections.urls` (3.12) is keyed by it, `locale_url` (3.6) is it
+without the locale prefix, the navigation filters normalize the page url they receive and the links of the tree,
+and the `url` filter (`{{ url | url }}`, `Filters/HtmlFilters.cs`) gives it to templates.
 
 Filters (`Douze/Liquid/Filters/NavigationFilters.cs`), all pure functions of a sidebar value and a url:
 
@@ -659,8 +676,10 @@ Filters (`Douze/Liquid/Filters/NavigationFilters.cs`), all pure functions of a s
 | `nav_section: page.url` | The topic (top-level group) that contains the url, so a layout can show one topic's items |
 | `nav_label: lang` | The label of an item in a locale, falling back to the default locale |
 
-Each filter resolves bare urls through `collections.urls` (3.6) when the tree has them (the page's `title` becomes
-the label), which records a dependency on those entries only.
+Each filter resolves bare urls through `collections.urls` (3.12) when the tree has them (the page's `title` becomes
+the label), which records a dependency on those entries only while the tree has at most 64 of them (`ValueAccess`
+records up to 64 members per value, then the whole value; a sidebar with more bare urls depends on the whole index,
+which the README says).
 
 Performance and dependencies: a filter indexes a sidebar node once per build (`ConditionalWeakTable<NodeArray,
 SidebarIndex>`: the flattened leaf list, a `Dictionary<string url, int index>` and parent links), since published
@@ -709,17 +728,25 @@ site:
     strings: i18n               # data key of the UI strings: _data/i18n/<locale>.json; default i18n
 ```
 
-`LocaleSet` (`Douze/Workflow/LocaleSet.cs`) holds it; `BuildContext.Locales` exposes it; every setting is part of
-`StepDefinition.ConfigHash` of the steps that read it (through `with`, resolved by the step from the settings, or
-through `StateHash`).
+`LocaleSet` (`Douze/Workflow/LocaleSet.cs`: `Default`, `Root`, `Fallback`, `Languages` (sorted by key),
+`Strings`, `TryGetLocale(FPath path, out string locale)`, `Prefix(string locale)`, `Hash`) holds it;
+`BuildContext.Locales` exposes it to steps, and the settings scope exposes it to templates as `site.locales`
+(next to `site.url`, so a language switcher lists `site.locales.languages` with a recorded dependency); every step
+and filter that reads it folds `LocaleSet.Hash` into its `CacheVersion` or reads it through the model.
+
+Url rule: `root` is stripped by `permalink` like the content folder; a page at `<root>/ja/docs/x.md` has the url
+`/ja/docs/x/`, a page at `<root>/docs/x.md` of the default locale has `/docs/x/`; the locale folder is the first
+segment of the url, and `locale_url` is the url without it (`/docs/x/` for both). A fallback copy of `/docs/x/` for
+`ja` has the url `/ja/docs/x/` and the path `/ja/docs/x/index.md`.
 
 `uses: localize` (map, default match `**/*.html`, `**/*.md`; runs after `collect` and before `render`):
 
 - For every page under `root`: sets Own `locale` (the folder's key, or `default`), `lang`, `dir`, `locale_url`
-  (the url without the locale prefix: what the page is called in every locale), and `alternates`: the list of
-  `{ locale, lang, url }` of every locale where a page with the same `locale_url` exists, found through
-  `collections.urls` (a lookup per locale: `urls["/ja" + locale_url]`, which records a dependency on the presence of
-  that one url only; `collect` contributes `collections.urls`, 3.12).
+  (the normalized url without the locale prefix: what the page is called in every locale), and `alternates`: the list
+  of `{ locale, lang, url }` of every locale where a page with the same `locale_url` exists, found through
+  `collections.urls` (a lookup per locale: `urls["/ja" + locale_url]`, made with `ScopeSet.TryResolveTracked` and a
+  member read on the `NodeObjectValue`, which records a dependency on the presence of that one url only; a C# step
+  that used `TryResolve` would depend on the whole index; `collect` contributes `collections.urls`, 3.12).
 - With `fallback: true`, for a page of the default locale and for every locale `L` with no page at `/L<locale_url>`:
   emits `file.With(path: /L/<path>, metadata: Own + { locale: L, lang, dir, url: /L<url>, fallback: true,
   original_url: url })`, the content shared by reference (no copy). The copies flow through `render`, `markdown`
@@ -736,7 +763,7 @@ Filters (`Douze/Liquid/Filters/LocaleFilters.cs`):
 | `locale_url: "ja"` | The url of the page in another locale (`/ja` + `locale_url`), whether or not it exists; `locale_url: "en"` is the root url |
 | `locale_of: url` | The locale key of a url (`default` when it has no prefix) |
 | `locale_pages: collections.all` | Every (locale, page) pair the site serves, including fallbacks when `fallback: true`: for sitemaps and search configuration |
-| `format_date: "long"`, `format_number` | `DateTimeOffset`/number formatting with the page's `lang` culture (`CultureInfo` with `InvariantGlobalization` is on: the AOT publish of the tool keeps ICU off, so formats come from .NET's invariant data plus a small built-in table of month and day names per `lang`, documented as a limitation; see 7.3) |
+| `format_date: "long"`, `format_number` | `DateTimeOffset`/number formatting with the page's `lang` culture (`CultureInfo`; the tool is not published with invariant globalization, so ICU data is used: the system ICU on Linux and macOS, which the README says a Linux container must have (`libicu`), and the bundled data on Windows) |
 
 `t` reads `i18n` through the scopes (`_data/i18n/ja.json` is `i18n.ja`), so a string edit re-renders only the pages
 that read that key (member level dependency).
@@ -782,8 +809,10 @@ The worker receives each HTML page, replaces every `<pre data-lang=...>` by the 
 `docs/code-worker.mjs` in this repository is the reference worker (not shipped in the tool, no dependency on it):
 it uses the Expressive Code engine as a library (`ExpressiveCodeEngine.render({ code, language, meta })`), with its
 plugins (frames, text markers, line numbers, collapsible sections, twoslash), so a site keeps its highlighter's
-exact output and configuration; it emits the engine's base styles and scripts once as files (`/assets/code.css`,
-`/assets/code.js`), and the layouts reference them. Fences are found with a scanner over the regular markup
+exact output and configuration. The engine's base styles and scripts are not emitted by the worker (a worker unit
+is a page, and an asset must not depend on which page ran first): `node scripts/code-worker.mjs --assets {{ outputs }}`
+runs the same script as a `batch` step with no page inputs (`code-assets: { inputs: "ec.config.mjs", run: ..., outputs: "assets/code.*" }`)
+that writes `assets/code.css` and `assets/code.js` before the `assets` step fingerprints them. Fences are found with a scanner over the regular markup
 (`<pre data-lang="..." data-meta="..."><code class="...">escaped</code></pre>`), decoded, rendered, and replaced; a
 fence whose language the engine does not know is left as it is with a `warn` log. The worker answers with
 `concurrency` equal to the cores, twoslash renders serialized inside it as the site does today.
@@ -872,6 +901,10 @@ returns its url, for `og:image` meta or CSS; `image_size` returns `{ width, heig
 
 Work per variant is cached with the page's unit (the outputs are blobs in the pack files): a second build with no
 change processes nothing; a page edit replays the variants from the cache (their refs are in the unit's outputs).
+Within a build, `ImageProcessor` memoizes variants by (source hash, variant) so that the fallback copies of a page
+(15 locales) and other pages using the same image process it once. A `{% cache %}` fragment (3.15) that produced
+outputs keeps them with its dependency set and adds them to every unit that reuses the fragment, so a deleted page
+does not take the variants of a shared fragment with it.
 The hash in the file name means a changed source gets a new name, so `write` never overwrites an image that a cached
 page still references with its old name until that page re-renders.
 
@@ -879,15 +912,17 @@ page still references with its old name until that page re-renders.
 step over image files produces the variants and a map step over HTML rewrites the tags:
 
 ```yaml
-images:  { inputs: "docs/**/*.{png,jpg,jpeg,webp,avif,gif,svg}", uses: images, with: { widths: [640, 1280], formats: [webp], output: assets/images } }
-pictures: { needs: [markdown, images], uses: pictures }    # rewrites <img src> to <picture> with width and height, using the images scope
+images:    { inputs: "docs/**/*.{png,jpg,jpeg,webp,avif,gif,svg}", uses: images, with: { widths: [640, 1280], formats: [webp], output: assets/images } }
+image-map: { needs: images, uses: image-map }               # contributes images[source url]
+pictures:  { needs: [markdown, image-map], uses: pictures }  # rewrites <img src> to <picture> with width and height
 ```
 
 `uses: images` (map): emits the variants of each image (and the original, fingerprinted) and contributes nothing;
-the variants' metadata (`image: { source, width, height, variants: [...] }`) is on each output. A reduce step
-`image-map` (`uses: images, with: { scope: true }`; reduce, `ReadsContent: false` over the variants' metadata)
-contributes `images[source url]` for `pictures` and templates. `uses: pictures` (map over HTML) rewrites `<img
-src="...">` whose source is in `images` into the markup of the tag above and leaves the others. The `image` tag is the
+the variants' metadata (`image: { source, width, height, variants: [...] }`) is on each output. `uses: image-map`
+(reduce over the variants, `ReadsContent: false`, emits nothing) contributes `images[source url]` for `pictures`
+and templates, so the chain is `images -> image-map -> pictures` (`pictures: { needs: [markdown, image-map] }`),
+and `write` needs `images` for the files. `uses: pictures` (map over HTML) rewrites `<img src="...">` whose source
+is in `images` into the markup of the tag above and leaves the others. The `image` tag is the
 primary design (explicit, per use); the steps exist for Markdown image syntax, which the target site's articles use
 little (their images are components).
 
@@ -901,10 +936,12 @@ og: { needs: localize, uses: social-image, match: "docs/**/*.md",
                       { value: "{{ description | strip_markdown | truncate: 160 }}", font: "Outfit 30", fontfile: assets/fonts/Outfit-Regular.ttf, x: 80, y: 400, width: 1040, height: 150, color: "#c8c8d0" } ] } }
 ```
 
-The step consumes pages and emits **images only** (it sits on its own branch of the graph: `needs: localize`, and
-`write` needs it; the pages reach `write` through the rendering chain). A layout computes a page's image url with the
-same `output` template through the `social_image_url` filter (`{{ page | social_image_url: "og{{ locale_url }}index.png" }}`,
-`Filters/ImageFilters.cs`), so the step keeps no per-page metadata. For each page not skipped (`skip` is a Liquid expression rendered with the page's model): renders `template` (a
+The step is **inline** in the page chain (`paginate: { needs: og }` in 4.4): it passes every page through as the
+same instance and adds the image to the unit's outputs with `AddOutput`. It cannot sit on a branch of its own: the
+files it does not match would pass through to `write` unrendered. It sets no per-page metadata: a layout computes a
+page's image url with the same `output` template through the `social_image_url` filter
+(`{{ page | social_image_url: "og{{ locale_url }}index.png" }}`, `Filters/ImageFilters.cs`; `locale_url` is
+normalized, so the result is `/og/docs/x/index.png`). For each page not skipped (`skip` is a Liquid expression rendered with the page's model): renders `template` (a
 Liquid template producing SVG: logos, gradients, badges, anything static or data driven) with the page's model,
 rasterizes it with libvips at `width` x `height` (the SVG is the background; it may reference images of the source
 tree by relative path, which the step inlines as data URIs before rasterizing, recording them as dependencies),
@@ -940,7 +977,8 @@ the page and renames the variant (`EarlyCutoffTests`); second build processes no
 text blocks (checked by size and by sampling a few pixels), `skip`, `output` template, `social_image_url` filter,
 missing font file error; missing libvips gives the install hint and fails only the units that need it.
 
-**Acceptance.** Shared criteria plus: the tool packages for every RID include `NetVips.Native.<rid>`; the `any`
+**Acceptance.** Shared criteria plus: the tool packages for every RID include `NetVips.Native.<rid>` (the library
+is loaded by the module initializer at process start, harmless when missing: the first image call reports it); the `any`
 (CoreCLR) package has no native library and reports the hint; the AOT publish with the Satori GC passes the image
 tests; `bench/README.md` records the variants per second on the benchmark machine. The Sample's docs section uses the
 `image` tag and the `social-image` step.
@@ -1003,7 +1041,7 @@ dates: { needs: pages, uses: git, with: { root: ".", updated: page.updated, crea
 `ProcessRunner`, 5 to 15 seconds on a repository with tens of thousands of commits; `--since` is not used because
 first commit dates need the whole history, and CI checkouts need `fetch-depth: 0`, which the README says), parses it
 into a `Dictionary<string path, (DateTimeOffset Updated, DateTimeOffset Created, string Author)>` following renames
-(`R` entries map the old name to the new), and sets `StateHash` to the hash of the current `HEAD` and of the
+(`R` entries map the old name to the new), and sets `CacheVersion` to the hash of the current `HEAD` and of the
 index's dirty state for the files of the content folder (`git status --porcelain -z`, so an uncommitted edit uses the
 file's modification time with `dirty: true`). `ProcessAsync` sets Own `page.updated`, `page.created`,
 `page.author` (keys configurable in `with`), as `DateTimeOffset` values; a file git does not know (untracked) gets its
@@ -1011,12 +1049,12 @@ modification time and `dirty: true`. The git root is `with.root` relative to the
 `git rev-parse --show-toplevel` from the source folder); without git, or outside a repository, the step warns once
 and passes files through unchanged (`with.required: true` makes it an error).
 
-A `StateHash` keyed on `HEAD` means every page's `git` unit re-runs after a commit (a few microseconds each: a
+A `CacheVersion` keyed on `HEAD` means every page's `git` unit re-runs after a commit (a few microseconds each: a
 dictionary lookup), and the pages whose dates did not change replay downstream by early cutoff (same output refs).
 
 **Tests** (`Steps/GitStepTests.cs`, which create a repository with `git init` in a temp folder, `Assert.Skip` without
 git): updated and created dates, author, rename followed, untracked file dirty with modification time, ignore
-globs, outside a repository, `StateHash` changes with a commit and with a dirty file, downstream replay when dates
+globs, outside a repository, `CacheVersion` changes with a commit and with a dirty file, downstream replay when dates
 are unchanged.
 
 **Acceptance.** Shared criteria; the Sample's docs layout prints `page.updated`.
@@ -1043,11 +1081,11 @@ write:       { needs: [links, redirects, og], uses: write }       # write does n
 line }` with the url as written) and `anchors` (sorted ids). The scanner is the attribute scanner of 3.3 extended
 (quoted attribute values, entity decoding, `<pre>`/`<code>`/`<script>` skipped).
 
-`uses: check-links` (reduce over every page and asset, `ReadsContent: false`: it reads the `links` and `anchors`
-metadata and the paths of every input, so a body edit that changes no link replays it; like `collect`, it emits no
-files and contributes nothing, which is what the engine requires of a step that does not read contents, so it is a
-terminal node of the graph: `write` needs the same steps it needs, and an error reported by the check fails the build
-with exit code 1 whether or not the files were written): resolves each internal
+`uses: check-links` (reduce over every page and asset, `ReadsContent: false`: it receives metadata and paths
+without contents (2.2, metadata-only barriers), reads the `links` and `anchors` metadata, so a body edit that
+changes no link replays it; like `collect`, it emits no files and contributes nothing, so it is a terminal node of
+the graph: `write` needs the same steps it needs, and an error reported by the check fails the build with exit code 1
+whether or not the files were written): resolves each internal
 url (relative to the page's url, query and fragment split, trailing slash and `index.html` normalized) against the
 set of output paths of its inputs (`/a/b/` matches `/a/b/index.html`; `/a/b` matches `/a/b/index.html` and `/a/b.html`
 when `with.extensionless: true`), then the fragment against the target's `anchors` when `anchors: true`. Reports
@@ -1106,12 +1144,15 @@ keeping the original's (a front matter header for agents: `---\ntitle: ...\n---\
 page is possible the same way (`match: "**/*.html"`, after `layout`, with a template that strips the chrome: not
 recommended, the site keeps Markdown sources for that).
 
-**Templates for the rest.** Feeds, sitemaps and text exports are pages (`sitemap.xml`, `rss.xml`, `llms.txt`,
-`llms-full.txt`) written as Liquid templates with `permalink`, `liquid: true`, `layout: false`, rendered after
-`collect` (they are in the default workflow's `render` already). Filters they need (`Filters/HtmlFilters.cs`,
+**Templates for the rest.** Feeds, sitemaps and text exports are **output templates**: files named `<output>.liquid`
+(`sitemap.xml.liquid`, `rss.xml.liquid`, `llms.txt.liquid`) with front matter `permalink: /sitemap.xml` and
+`layout: false`. `frontmatter` matches `**/*.liquid` already; the `liquid` step's default match gains `**/*.liquid`
+(the output's content type comes from the permalink's extension), so they render in the default workflow's `render`
+after `collect`; a template that reads page contents is placed after a `collect` step with `content: true` (the
+`exports` chain of 4.4). Filters they need (`Filters/HtmlFilters.cs`,
 `DataFilters.cs`): `xml_escape`, `absolute_url` (`site.url` + path), `relative_url`, `strip_html`, `date_to_xmlschema`
 (a `date` alias with the RFC 3339 format), `date_to_rfc822`, `where_exp: "item", "item.data.locale == 'default'"`,
-`group_by_exp`, `sort_by: "data.title"`, `index_by: "url"`, `jsonify` (alias of `json`). `locale_pages` (3.6)
+`group_by_exp`, `sort_by: "data.title"`, `index_by: "url"`, `jsonify` (alias of `json`), `url` (3.5). `locale_pages` (3.6)
 expands fallbacks for the sitemap. A text export of every page reads `item.content` of a `collect` step with
 `content: true` (the content after `markdown`, before `layout`, when the collect step runs there: `collect-docs:
 { needs: markdown, uses: collect, match: "docs/**/*.html", with: { content: true, name: docs } }`; `with.name`
@@ -1167,10 +1208,14 @@ fields per folder; warnings that do not fail.
 warning with the page. `frontmatter` gains `with.require: [title, description]` (keys that must resolve for every
 consumed file, through the scopes, so a folder data file can provide them) and `with.schema` is not added (open
 question 7.5). `liquid` gains `with.strict: true` (Fluid's `StrictVariables`: an undefined variable is an error,
-rather than nil; off by default, as Liquid sites expect nil).
+rather than nil; off by default, as Liquid sites expect nil). Since every name resolves through `MetadataValue`,
+which returns nil on a miss, strict mode is implemented there: with `with.strict`, the step sets `AmbientKeys.Strict`
+and `MetadataValue` throws `DouzeException("undefined variable 'x'")` on a miss instead of returning nil.
 
 **Tests**: error tag fails the unit with the page and position, warn tag logs, `require` missing key message
 with the file, satisfied by folder data, `strict` on an undefined variable.
+
+**Acceptance.** Shared criteria; `douze build` on a fixture with `{% error %}` exits 1 with the page and position.
 
 **Where it lives and why.** Tags and options: a few lines each.
 
@@ -1194,7 +1239,11 @@ string per key (the largest sidebar is about 200 KB, 180 packages: 36 MB).
 
 **Tests** (`Tags/CacheTagTests.cs`): rendered once for two pages with the same key (a counter in a fake filter),
 separate keys, dependencies of the fragment propagate to the second page (a data edit re-renders both), key from an
-expression, nested cache blocks, no sharing across templates with different content.
+expression, nested cache blocks, no sharing across templates with different content, added outputs of a fragment
+reach the second unit (3.8).
+
+**Acceptance.** Shared criteria; the benchmark's API reference site renders its package sidebar inside `{% cache %}`
+and the build is not slower than without the sidebar by more than 10%.
 
 **Where it lives and why.** A Liquid tag: it is the Hugo and Jekyll pattern, and the engine's dependency sets make
 it correct for incremental builds.
@@ -1210,17 +1259,19 @@ above need from it:
 
 - **Workers survive rebuilds.** A `worker` command step keeps its process between rebuilds (the highlighter of 3.7
   loads a 6.5 MB declaration file at startup); `InitializeAsync` is called once per watch session and
-  `DisposeAsync` at exit, with a `ReinitializeAsync` when the step's `sources` changed (the script edited: restart the
-  worker). Batch and filter steps are unchanged.
+  `DisposeAsync` at exit, with `Step.ReinitializeAsync(BuildContext context, CancellationToken ct)` (virtual, default:
+  `DisposeAsync` then `InitializeAsync`) called when the step's `CacheVersion` changed (the script edited: restart the
+  worker). Batch and filter steps are unchanged; a step after `write` (3.17) runs on the first build only.
 - **Build-scoped state is rebuilt per rebuild.** `ShortcodeRegistry` rescans when a file of the shortcodes folder
   changed (the parser is recreated, every template re-parsed: a shortcode edit is a full re-render, acceptable);
-  `GitStep` recomputes its `StateHash` (dirty files) per rebuild; the `cache` tag's fragments are per build;
+  `GitStep` recomputes its `CacheVersion` (dirty files) per rebuild; the `cache` tag's fragments are per build;
   `ImageProcessor` stays.
 - **Serve semantics a documentation site needs.** The dev server serves `/a/b/` from `/a/b/index.html`, `/a/b` with a
   redirect to `/a/b/` when the folder exists (the host's behavior), `404.html` for unknown paths when it exists,
   `Content-Type` by extension (the `ContentTypes` table), `Accept: text/markdown` negotiation to the Markdown twin
-  when `with` `serve.markdown: true` in `douze.yml` (4.3), redirects from `redirects.json` when it exists (3.13),
-  and `--open` to open the browser. Live reload: the SSE event lists changed urls; the client reloads when its url
+  with the mapping given by `site.serve.markdown` (`sibling`: `/a/b/` -> `/a/b.md`, or `index`: `/a/b/index.md`;
+  4.1), redirects from `redirects.json` when it exists (3.13), the folders of `site.external` served as they are
+  (written by steps after `write`, which rebuilds skip, 3.17), and `--open` to open the browser. Live reload: the SSE event lists changed urls; the client reloads when its url
   or a stylesheet it uses changed.
 - **Errors in watch mode** are printed and the previous output stays; the next change retries. The live view shows
   `watching N files` between builds.
@@ -1237,7 +1288,12 @@ new fence within a second of saving (manual check noted in the PR).
 Nothing to build (see also 3.18 for token substitution): the pattern is a `batch` command step after `write` (`search: { needs: write, run: "npx pagefind
 --site {{ site }}" }`, engine plan 4.7), with `data-pagefind-body`, `data-pagefind-ignore` and `data-pagefind-meta`
 attributes written by the layouts, and `pagefind: false` pages excluded by the layout omitting the attribute. A site
-that wants its own index writes it from a template over `collections` (3.12, `jsonify`). The README documents both.
+that wants its own index writes it from a template over `collections` (3.12, `jsonify`). The README documents both,
+and says that a step after `write` writes into the output folder behind the engine's back: its output folders are
+listed in `site.external` (4.1) so the dev server serves them and a rebuild's cleanup never deletes them, and watch
+mode runs such steps on the first build only (3.16).
+
+**Acceptance.** The README's example builds the Sample with Pagefind when `npx` is available (manual check).
 
 **Where it lives and why.** Command step: the indexer and its client library are one product; a C# indexer would
 not produce the same client bundle.
@@ -1256,16 +1312,53 @@ versions: { needs: pages, uses: replace, with: { tokens: { "%VERSION%": "{{ vers
 
 Each value is a Liquid template rendered once per unit with the file's model (so a value can depend on the page or
 on data; the lookups are recorded), and every token is replaced in the content with an ordinal search (no regex;
-tokens are literal). A token with no occurrence costs one scan. The step runs before `render` so the twins and the
-Markdown pass see the values; a page that must show the literal token writes it with a zero-width join in the source
-(documented), or the step's `with.skip` glob excludes it.
+tokens are literal). A token with no occurrence costs one scan. The step runs after `render` and before the twins
+and the Markdown pass, so both see the values; a page that must show the literal token writes it with a zero-width
+join in the source (documented), or the step's `with.skip` glob excludes it.
 
 **Tests** (`Steps/ReplaceStepTests.cs`): replacement inside a fence and in prose, value from data with a recorded
 dependency (a version bump re-runs the pages that use the token: `EarlyCutoffTests`), no occurrence passes the
 content instance through, `skip`.
 
-**Where it lives and why.** Built-in: ten lines of logic, and it must see the content before Liquid protects fences.
-Owned by phase S2.
+**Acceptance.** Shared criteria; the Sample's docs section uses a token inside a fence.
+
+**Where it lives and why.** Built-in: ten lines of logic. It runs **after** `render` and before the twins (4.4):
+includes and shortcode templates are read from the source tree during `render`, so their tokens exist only in the
+rendered output; fences are restored by `render`, so the step sees them. Owned by phase S2.
+
+### 3.19 Signatures of the steps and filters above
+
+The steps follow the engine's `Step` pattern (constructor validates `with` through `WithOptions`, `NativeShape`,
+`DefaultMatch`, one of the `I*Step` interfaces):
+
+```csharp
+// Douze/Workflow/Steps/LocalizeStep.cs       uses: localize    map     options: none (settings from BuildContext.Locales); CacheVersion = LocaleSet.Hash
+// Douze/Workflow/Steps/ReplaceStep.cs        uses: replace     map     with.tokens (mapping), with.skip (globs)
+// Douze/Workflow/Steps/ForkStep.cs           uses: fork        map     with.permalink, with.data, with.content, with.strip-regions
+// Douze/Workflow/Steps/HeadingsStep.cs       uses: headings    map     with.anchors, with.anchor-class, with.anchor-label, with.levels
+// Douze/Workflow/Steps/AssetsStep.cs         uses: assets      reduce  with.root, with.output, with.manifest, with.rewrite, with.strict
+// Douze/Workflow/Steps/ImagesStep.cs         uses: images      map     with.widths, with.formats, with.quality, with.output
+// Douze/Workflow/Steps/ImageMapStep.cs       uses: image-map   reduce  ReadsContent false, emits nothing, contributes images
+// Douze/Workflow/Steps/PicturesStep.cs       uses: pictures    map     options: none
+// Douze/Workflow/Steps/SocialImageStep.cs    uses: social-image map    with.template, with.width, with.height, with.output, with.skip, with.text
+// Douze/Workflow/Steps/GitStep.cs            uses: git         map     with.root, with.updated, with.created, with.author, with.ignore, with.required; CacheVersion = HEAD + dirty set
+// Douze/Workflow/Steps/LinksStep.cs          uses: links       map     options: none
+// Douze/Workflow/Steps/CheckLinksStep.cs     uses: check-links reduce  ReadsContent false, emits nothing; with.ignore, with.skip, with.external, with.anchors, with.warn, with.extensionless
+// Douze/Workflow/Steps/RedirectsStep.cs      uses: redirects   reduce  with.data, with.template, with.manifest
+internal sealed class LocalizeStep : Step, IMapStep { public LocalizeStep(StepDefinition definition); public override Hash128 CacheVersion { get; } public ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct); }
+// the others have the same shape with IMapStep or IReduceStep
+
+// Douze/Workflow/LocaleSet.cs
+internal sealed record LocaleLanguage(string Key, string Label, string Lang, string Dir);
+internal sealed class LocaleSet { public static readonly LocaleSet None; public string Default { get; } public FPath Root { get; } public bool Fallback { get; } public ImmutableArray<LocaleLanguage> Languages { get; } public string Strings { get; } public bool TryGetLocale(FPath path, out string locale, out FPath localePath); public string Prefix(string locale); public Hash128 Hash { get; } }
+
+// Douze/Liquid/Tags/CacheTag.cs
+internal static class CacheTag { public static void Register(FluidParser parser); }   // RegisterParserBlock("cache", expression, RenderAsync); fragments in BuildContext.Fragments (ConcurrentDictionary<(Hash128 Template, string Key), Fragment(string Html, DependencySet Dependencies, ImmutableArray<VirtualFile> Outputs)>)
+
+// Douze/Liquid/Filters/*.cs: each is `internal static class XFilters { public static void Register(TemplateOptionsBuilder builder); }`
+// with one `static ValueTask<FluidValue> Name(FluidValue input, FilterArguments arguments, TemplateContext context)` per filter,
+// reading the LocaleSet, the StepContext and the model from context.AmbientValues (AmbientKeys.Locales, StepContext, Model).
+```
 
 ---
 
@@ -1284,8 +1377,9 @@ site:
     strings: i18n
   serve:                                # 3.16
     port: 8080
-    markdown: true                      # Accept: text/markdown negotiation to twins
+    markdown: sibling                   # Accept: text/markdown negotiation: sibling (/a/b/ -> /a/b.md), index (/a/b/index.md) or none
     redirects: redirects.json           # manifest of 3.13, relative to the output folder
+  external: [pagefind]                  # output folders written by steps after write (3.17): never cleaned, served as they are
 ```
 
 `WorkflowSchema.SiteKeys` grows with `shortcodes`, `locales` and `serve`; the loader validates each field with the
@@ -1312,7 +1406,7 @@ markdown:
 `WorkflowSchema.TopLevelKeys` becomes `site`, `markdown`, `steps`; `WorkflowLoader` reads the section into
 `MarkdownOptions` with positions for errors. The section's canonical JSON is part of `BuildContext`'s
 "render configuration hash", which `liquid`, `markdown`, `layout` and every step that renders templates fold into
-their `StateHash` (2.2): a Markdown option change re-renders everything that rendered Markdown, which is right.
+their `CacheVersion` (2.2): a Markdown option change re-renders everything that rendered Markdown, which is right.
 
 ### 4.3 New built-in steps
 
@@ -1334,27 +1428,31 @@ markdown: { extensions: [pipetables, footnotes, tasklists, attributes, autolinks
 steps:
   site-data:   { inputs: "data/**/*.{yml,json}", uses: data, with: { scope: site } }
   folder-data: { inputs: "content/**/*.{yml,json}", uses: data, with: { scope: folder, root: content } }
-  assets:      { inputs: "assets/**", uses: assets, with: { root: assets, output: assets } }
-  pages:       { inputs: ["content/**", "!content/**/*.{yml,json}"], needs: [site-data, folder-data, assets], uses: frontmatter, with: { require: [title] } }
+  code-assets: { inputs: "ec.config.mjs", run: "node scripts/code-worker.mjs --assets {{ outputs }}", outputs: "assets/code.*", sources: ["scripts/code-worker.mjs"] }
+  assets:      { inputs: "assets/**", needs: code-assets, uses: assets, with: { root: assets, output: assets } }
+  pages:       { inputs: ["content/**", "!content/**/*.{yml,json}", "!content/exports/**"], needs: [site-data, folder-data, assets], uses: frontmatter, with: { require: [title] } }
   dates:       { needs: pages, uses: git }
-  versions:    { needs: dates, uses: replace, with: { tokens: { "%VERSION%": "{{ versions.current }}" } } }
-  permalink:   { needs: versions, uses: permalink, with: { root: content } }
-  collections: { needs: permalink, uses: collect, match: "content/docs/**" }
+  permalink:   { needs: dates, uses: permalink, with: { root: content } }
+  collections: { needs: permalink, uses: collect, match: "docs/**" }          # paths are urls here: content/ is stripped
   localize:    { needs: [permalink, collections], uses: localize }
-  paginate:    { needs: localize, uses: paginate }
-  render:      { needs: paginate, uses: liquid }
-  twins:       { needs: render, uses: fork, match: "docs/**/*.md", with: { permalink: "{{ url | replace: 'index.html', 'index.md' }}", data: { markdown: false, layout: false } } }
+  og:          { needs: localize, uses: social-image, match: "docs/**/*.md", with: { template: og/card.svg.liquid, output: "og{{ locale_url }}index.png", ... } }
+  paginate:    { needs: og, uses: paginate }
+  render:      { needs: paginate, uses: liquid }                                # .md, .html, .json and the .liquid output templates
+  versions:    { needs: render, uses: replace, with: { tokens: { "%VERSION%": "{{ versions.current }}" } } }
+  twins:       { needs: versions, uses: fork, match: "docs/**/*.md", with: { permalink: "{{ url | replace: 'index.html', 'index.md' }}", data: { markdown: false, layout: false } } }
   markdown:    { needs: twins, uses: markdown }
   headings:    { needs: markdown, uses: headings, with: { anchors: true } }
+  collect-docs:{ needs: headings, uses: collect, match: "docs/**/*.html", with: { content: true, name: docs } }   # for the full text export
+  exports:     { inputs: "content/exports/*.liquid", needs: collect-docs, uses: frontmatter }   # llms-full.txt.liquid reads docs.all[].content
+  render-exports: { needs: exports, uses: liquid }
   code:        { needs: headings, run: "node scripts/code-worker.mjs", mode: worker, match: "docs/**/*.html", sources: ["scripts/code-worker.mjs"] }
-  og:          { needs: localize, uses: social-image, match: "docs/**/*.md", with: { template: og/card.svg.liquid, output: "og{{ locale_url }}index.png", ... } }
   packages:    { inputs: "data/api/pkgs/*.json", uses: parse, with: { as: package } }
   api:         { needs: [packages, site-data], uses: liquid, group-by: file, with: { template: api/package.liquid, permalink: "reference/api/{{ group.files[0].data.package.slug }}/" } }
-  layout:      { needs: [code, api], uses: layout }
+  layout:      { needs: [code, api, render-exports], uses: layout }
   links:       { needs: layout, uses: links }
   redirects:   { needs: site-data, uses: redirects, with: { data: redirects } }
-  check-links: { needs: [links, og, redirects], uses: check-links, with: { ignore: ["/reference/api/**"] } }
-  write:       { needs: [links, og, redirects], uses: write }
+  check-links: { needs: [links, redirects], uses: check-links, with: { ignore: ["/reference/api/**"] } }
+  write:       { needs: [links, redirects], uses: write }
   search:      { needs: write, run: "npx pagefind --site {{ site }}" }
 ```
 
@@ -1373,10 +1471,12 @@ first phase creates the registration points (one file per feature area) that mak
 engine plan did.
 
 ```
-S1 -> { S2, S3, S4, S5 } -> S6 -> S7
+S1 -> { S2, S3, S4, S5, S6 } -> S7
 ```
 
-S6 can start once S4 is merged (they share `WriteStep.cs` and the scheduler); S2, S3 and S5 need only S1.
+S6 needs S1 only (the scheduler and `WriteStep.cs` changes are S1's) and runs in parallel with S2 to S5; S3 needs
+S1's `collections.urls`. Phases that edit `BuiltInSteps.cs` or `LiquidOptions.cs` only replace a stub line that S1
+created for them.
 
 ### Phase S1: Markdown pipeline, shortcodes, engine additions (High, review)
 
@@ -1389,7 +1489,11 @@ later phase.
 `Douze/Workflow/BuildContext.cs`, `StepContext.cs`, `IStep.cs`, `Cache/ResultKey.cs`, `Scheduling/Scheduler.cs`
 (state hash, added outputs, identical duplicates), `Steps/WriteStep.cs` (identical duplicates only),
 `Steps/LiquidStep.cs`, `Steps/MarkdownStep.cs`, `Steps/FrontMatterStep.cs`, `Yaml/WorkflowSchema.cs`,
-`Yaml/WorkflowLoader.cs`, `Yaml/WorkflowFile.cs` (`markdown:` section, `site.shortcodes`), `Cli/WorkflowSource.cs`,
+`Yaml/WorkflowLoader.cs`, `Yaml/WorkflowFile.cs` (`markdown:` section, `site.shortcodes`, `site.locales`,
+`site.serve`, `site.external`: S1 owns the loader, later phases only read the settings), `Steps/CollectStep.cs`
+(`collections.urls`, `with.content`, `with.name` of 3.12, which S3's `localize` and navigation filters need),
+`Cli/WorkflowSource.cs`, `.github/workflows/pr.yml` (the only phase that edits CI: it adds the Node setup and the
+image tests that S2 and S4 need),
 `README.md` (sections "shortcodes", "markdown", "diagnostics"; placeholders for "headings", "navigation", "locales",
 "code", "images", "assets", "git", "links", "outputs", "redirects", "cache", "search", "watch and serve"), the
 Sample's docs section skeleton (`Sample/_content/docs/`, `Sample/_includes/shortcodes/`, `Sample/douze.yml` with the
@@ -1404,9 +1508,11 @@ factories in files the later phases own (`Steps/HeadingsStep.cs` etc. as stubs t
 `CommandStepFactory` in the engine's phase 1); `Douze/Workflow/LocaleSet.cs` (settings only); `Douze/Images/` folder
 with `ImageProcessor.cs` stub and the `NetVips` package references in `Directory.Packages.props` and `Douze.csproj`
 (so S4 does not edit the project files: the native package per RID is added here, verified by the AOT publish in CI).
+The Sample's `douze.yml` lists the complete workflow of this plan with the steps of later phases as stubs that pass
+files through (`BuiltInSteps` maps each id to a `StubStep` until its phase replaces it).
 
-**Tests.** 3.1, 3.2, 3.4, 3.14 tests; `ResultKeyTests.ChangesWithStateHash`, `SchedulerTests.AddedOutputsAreUnitOutputs`,
-`SchedulerTests.IdenticalFileFromTwoUnitsEntersOnce`, `WriteStepTests.IdenticalDuplicateIsWrittenOnce`,
+**Tests.** 3.1, 3.2, 3.4, 3.14 tests; `SchedulerTests.AddedOutputsAreUnitOutputs`,
+`SchedulerTests.MetadataOnlyReduceGetsNoContent`, `WriteStepTests.IdenticalDuplicateIsWrittenOnce`,
 `WorkflowLoaderTests` for the `markdown:` section and `site.shortcodes` (messages with positions).
 
 **Acceptance.** Shared criteria; the Sample's docs section renders shortcodes (tabs, aside, steps, badge), an
@@ -1419,12 +1525,12 @@ include, a table, an alert, a fence with meta; `scripts/compare-sample.sh` shows
 **Goal.** Sections 3.3, 3.7, 3.12, 3.13, 3.17, 3.18.
 
 **Owns.** `Douze/Markdown/HeadingScanner.cs`, `Slugger.cs`, `Douze/Workflow/Steps/HeadingsStep.cs`,
-`ForkStep.cs`, `RedirectsStep.cs`, `ReplaceStep.cs`, `CollectStep.cs`, `Douze/Liquid/Filters/HtmlFilters.cs`, `DataFilters.cs`,
+`ForkStep.cs`, `RedirectsStep.cs`, `ReplaceStep.cs`, `Douze/Liquid/Filters/HtmlFilters.cs`, `DataFilters.cs`,
 `docs/code-worker.mjs` and `docs/package.json` (the reference worker and its modules, used by the tests),
 `Douze.Tests/Commands/CodeWorkerTests.cs`, the README sections "headings", "code", "outputs", "redirects", "search",
 the Sample's docs layout (`Sample/_includes/docs.html`: table of contents, and `Sample/_content/sitemap.xml`,
-`rss.xml`, `llms.txt` templates; the Sample's `douze.yml` gains `headings`, `twins`, `redirects` and the `code` step
-guarded by a `scripts/code-worker.mjs` copy; CI installs its modules).
+`rss.xml`, `llms.txt` templates; the Sample's `scripts/code-worker.mjs` copy; the worker test skips without Node and
+its modules, which S1's CI change installs).
 
 **Tests.** 3.3, 3.7, 3.12, 3.13 tests.
 
@@ -1436,7 +1542,8 @@ redirect stubs, documented in the PR; the code worker test runs in CI on Linux.
 **Goal.** Sections 3.5 and 3.6.
 
 **Owns.** `Douze/Liquid/Filters/NavigationFilters.cs`, `LocaleFilters.cs`, `Douze/Workflow/Steps/LocalizeStep.cs`,
-`Douze/Workflow/LocaleSet.cs`, the README sections "navigation" and "locales", the Sample's `_data/sidebar.yml`,
+`Douze/Workflow/LocaleSet.cs` (S1 creates it with the settings; S3 adds the rest), the README sections "navigation"
+and "locales", the Sample's `_data/sidebar.yml`,
 `_data/i18n/*.json`, a `docs/ja/` folder with one translated page, and the sidebar and language switcher of the docs
 layout (a separate include file, `Sample/_includes/docs-nav.html`, so S2's layout edits do not conflict).
 
@@ -1453,8 +1560,8 @@ trail and previous and next links.
 `AssetFilters.cs`, `Douze/Workflow/Steps/AssetsStep.cs`, `ImagesStep.cs` (`images`, `image-map`, `pictures`),
 `SocialImageStep.cs`, `GitStep.cs`, `Douze/Workflow/Commands/ProcessRunner.cs` (a `RunAsync` overload for the git
 command's large stdout, streamed), the README sections "images", "assets", "git", `bench/README.md` (the NetVips
-numbers and the tool package sizes), `.github/workflows/pr.yml` and `publish.yml` (the image tests on both OSes, the
-per-RID packages checked for the native library), the Sample's images and `og/card.svg.liquid`.
+numbers and the tool package sizes), `.github/workflows/publish.yml` (the per-RID packages checked for the native
+library), the Sample's images and `og/card.svg.liquid`.
 
 **Tests.** 3.8, 3.9, 3.10 tests.
 
@@ -1467,8 +1574,7 @@ the image numbers; the Sample's docs section has a `<picture>` and a social imag
 **Goal.** Sections 3.11 and 3.15.
 
 **Owns.** `Douze/Workflow/Steps/LinksStep.cs`, `CheckLinksStep.cs`, `Douze/Liquid/Tags/CacheTag.cs`, the README
-sections "links" and "cache", the Sample's `douze.yml` lines for `links` and `check-links` (a one-line addition at a
-marked place, to avoid conflicts with S2 and S3, which add their own lines at their own marks).
+sections "links" and "cache".
 
 **Tests.** 3.11 and 3.15 tests.
 
@@ -1509,17 +1615,17 @@ under 20 s; the native AOT packages of every RID are published to the test feed 
 | Phase | Depends on | Parallel with | Model and effort | Review pass |
 |---|---|---|---|---|
 | S1 Markdown pipeline, shortcodes, engine additions | engine phase 5 and the bounded channels (merged) | | Opus, High | yes |
-| S2 headings, code contract, outputs, redirects | S1 | S3, S4, S5 | Opus, Medium | no |
-| S3 navigation, locales | S1 | S2, S4, S5 | Opus, Medium | no |
-| S4 assets, images, social images, git | S1 | S2, S3, S5 | Opus, High | yes |
-| S5 links, fragment cache | S1 | S2, S3, S4 | Opus, Medium | no |
-| S6 watch and serve | S4 (and S1) | S2, S3, S5 while they are open | Opus, High | yes |
+| S2 headings, code contract, outputs, redirects | S1 | S3, S4, S5, S6 | Opus, Medium | no |
+| S3 navigation, locales | S1 | S2, S4, S5, S6 | Opus, Medium | no |
+| S4 assets, images, social images, git | S1 | S2, S3, S5, S6 | Opus, High | yes |
+| S5 links, fragment cache | S1 | S2, S3, S4, S6 | Opus, Medium | no |
+| S6 watch and serve | S1 | S2, S3, S4, S5 | Opus, High | yes |
 | S7 docs sample, benchmarks, release | S2 to S6 | | Opus, Medium | final review |
 
 ### 5.2 Review passes
 
 The planning model reviews S1, S4 and S6 before dependents start, and the whole at S7. Each review checks: no scope
-read outside `TryResolve`; every tag and filter that reads a file records it; `StateHash` set wherever a step reads
+read outside `TryResolve`; every tag and filter that reads a file records it; `CacheVersion` set wherever a step reads
 build-scoped state; `AddOutput` files have provenance and content addressed names; nothing mutates a published node;
 every reduce input sorted; messages in the engine's format; no reflection the AOT compiler cannot see (the publish
 log); the native library optional at startup; `IncrementalEqualsCleanTests` extended with the features (shortcode
@@ -1567,8 +1673,8 @@ defined in the site's own migration plan; what each needs from Douze is listed h
 |---|---|---|---|---|
 | 1 | S1: Markdown pipeline, shortcodes, engine additions | Douze | engine phase 5 + bounded channels (done) | M0 (site: generator changes: page index, cross-reference map, slugs, pre-highlighted signatures, Markdown twins data), M1 (site: Playwright gate against the current build, structural diff harness) |
 | 2 | S2, S3, S4, S5 in parallel worktrees | Douze | S1 | M2 (site: API reference templates on the `parse` + `liquid group-by` workflow, with the `cache` tag arriving with S5) |
-| 3 | S6: watch and serve | Douze | S4 | M3 (site: chrome port: layouts, includes, styles, client scripts, using S1 to S5 from the preview feed), M4 (site: converter script MDX to Markdown + shortcodes, dry runs) |
-| 4 | S7: docs sample, benchmarks, first release | Douze | S2 to S6 | M5 (site: articles converted, locales, outputs: feeds, twins, social images, search), M6 (site: hosting: redirects manifest, immutable assets, Markdown negotiation unchanged) |
+| 3 | S6: watch and serve | Douze | S1 | M3 (site: chrome port: layouts, includes, styles, client scripts; needs S1, S3, S4 and M2's API pages for the full chrome check), M4 (site: converter script MDX to Markdown + shortcodes, dry runs; needs S1, S2, S4) |
+| 4 | S7: docs sample, benchmarks, first release | Douze | S2 to S6 | M5 (site: articles converted, locales, outputs: feeds, twins, social images, links, search; needs S2 to S5), M6 (site: hosting: redirects manifest, immutable assets, Markdown negotiation unchanged; the dev server switch needs S6) |
 | 5 | Fixes found by the site's parity runs | Douze | S7 | M7 (site: parity: Playwright suite green on Douze output, diff harness, performance in CI) |
 | 6 | | Site | Douze release | M8 (site: cutover: CI builds with Douze, old generator removed) |
 
@@ -1576,7 +1682,8 @@ Douze consumes nothing from the site; the site consumes Douze from the preview f
 first release. The Douze features the site needs first are S1 (the whole article conversion depends on shortcodes)
 and S5's `cache` tag (the API sidebar); S4's images are needed by M3; S6 is needed for authors, not for the cutover
 (CI builds once). Recommended model and effort for the site's phases are in its plan; they follow the same rule
-(Opus Medium by default, High for the chrome port and the converter, review by the planning model after M2, M4 and M7).
+(Opus Medium by default, High for the generators, the API reference, the chrome port and the converter, review by
+the planning model after M0, M2, M3, M4 and M7).
 
 ---
 
@@ -1607,12 +1714,10 @@ Each item has a recommended answer; implementers use it unless the user decides 
    covers presence; types and enums are not checked. Recommended: not in this plan; a `schema:` section mapping folders
    to JSON Schema files is a follow-up if the site's converter does not keep the front matter valid by construction.
 
-6. **Locale-aware formatting without ICU.** The tool is published with `InvariantGlobalization`; `format_date` with
-   month names per language needs data. Recommended: a built-in table for the languages .NET's invariant data lacks is
-   not worth it; `format_date` takes a format string and the page's `lang` for the few things the invariant culture
-   supports (numeric formats), and month and day names come from the site's `i18n` strings (`{{ date | format_date:
-   "%d {month} %Y" | t_month }}` style helpers are left to the site). Revisit if a site needs more: enabling ICU adds
-   about 1.5 MB per package.
+6. **Locale-aware formatting needs ICU.** The tool is not published with invariant globalization, so `format_date`
+   and `format_number` use the platform's ICU (present on macOS and Windows; a Linux container needs `libicu`, or
+   `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` with the invariant formats). Recommended: keep ICU, document the Linux
+   requirement; `AppContext` invariant mode is detected and reported once as a warning when a locale filter runs.
 
 7. **`collect` with `content: true` on large selections** holds every selected page's content at the barrier.
    Recommended: document the cost, and let `match` do the selecting; a streaming text export (a `reduce` step writing
