@@ -112,7 +112,7 @@ internal static partial class WorkflowLoader
 
             switch (key)
             {
-                case "content" or "data" or "includes":
+                case "content" or "data" or "includes" or "shortcodes":
                     if (text.Split('/', '\\').Contains(".."))
                     {
                         errors.Add(new($"'{key}' must be a folder inside the source folder", yaml.Location(value!)));
@@ -124,6 +124,7 @@ internal static partial class WorkflowLoader
                     {
                         "content" => site with { ContentFolder = folder },
                         "data" => site with { DataFolder = folder },
+                        "shortcodes" => site with { ShortcodesFolder = folder },
                         _ => site with { IncludesFolder = folder },
                     };
                     break;

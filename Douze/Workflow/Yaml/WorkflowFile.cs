@@ -21,6 +21,7 @@ internal sealed record SiteSettings
     public FPath? ContentFolder { get; init; }
     public FPath? DataFolder { get; init; }
     public FPath? IncludesFolder { get; init; }
+    public FPath? ShortcodesFolder { get; init; }
     public string? Output { get; init; }               // relative to the source folder, or absolute
     public string? Url { get; init; }
     public int? Parallelism { get; init; }

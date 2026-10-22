@@ -271,13 +271,15 @@ public class WorkflowLoaderTests
         AssertError("""
             site:
               contnt: docs
-            """, "unknown key 'contnt' in 'site'; expected 'content', 'data', 'includes', 'output', 'url' or 'parallelism'", 2, 3);
+            """, "unknown key 'contnt' in 'site'; expected 'content', 'data', 'includes', 'shortcodes', 'output', 'url' or 'parallelism'", 2, 3);
     }
 
     [Theory]
     [InlineData("parallelism: 0", "'parallelism' must be a positive integer", 16)]
     [InlineData("parallelism: many", "'parallelism' must be a positive integer", 16)]
     [InlineData("content: ../docs", "'content' must be a folder inside the source folder", 12)]
+    [InlineData("shortcodes: ../components", "'shortcodes' must be a folder inside the source folder", 15)]
+    [InlineData("shortcodes: [a]", "'shortcodes' must be a string", 15)]
     [InlineData("url: [a]", "'url' must be a string", 8)]
     public void InvalidSiteValue(string setting, string message, int column)
     {
@@ -490,6 +492,7 @@ public class WorkflowLoaderTests
               content: docs
               data: /data/
               includes: .
+              shortcodes: templates/components
               output: ../public
               url: https://example.com
               parallelism: 8
@@ -498,6 +501,7 @@ public class WorkflowLoaderTests
         Assert.Equal(new FPath("/docs/"), site.ContentFolder);
         Assert.Equal(new FPath("/data/"), site.DataFolder);
         Assert.Equal(FPath.Root, site.IncludesFolder);
+        Assert.Equal(new FPath("/templates/components/"), site.ShortcodesFolder);
         Assert.Equal("../public", site.Output);
         Assert.Equal("https://example.com", site.Url);
         Assert.Equal(8, site.Parallelism);
