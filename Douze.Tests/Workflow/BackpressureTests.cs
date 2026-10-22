@@ -243,6 +243,62 @@ public class BackpressureTests : CacheTestBase
     }
 
     [Fact]
+    public async Task FilesAreNotKeptOnceTheyLeftTheGraph()
+    {
+        // 'join' has two producers, so it checks that a path does not come from both: it keeps the refs of the files it
+        // received, not the files. When the sink has the last file, every file it saw before is gone, but for the last
+        // few, which units may still reference.
+        var site = await new FakeSite().WithFilesAsync([.. Files(40, "md"), .. Files(40, "css")]);
+        var outputs = new System.Collections.Concurrent.ConcurrentDictionary<FPath, WeakReference>();
+        var seen = new List<FPath>();
+        var alive = new List<FPath>();
+        var checkedCount = 0;
+
+        FakeMapStep Render(StepDefinition d) => new(d)
+        {
+            Process = (f, _, _) =>
+            {
+                var output = f.With(d.Name, content: FileContent.FromText(new string('x', 10_000)));
+                outputs[f.Path] = new WeakReference(output);
+                return new(FileList.Of(output));
+            },
+        };
+
+        var graph = new FakeWorkflow()
+            .Add("md", Render, inputs: ["**/*.md"])
+            .Add("css", Render, inputs: ["**/*.css"])
+            .Add("join", d => new FakeMapStep(d) { Process = (f, _, _) => new(FileList.Of(f)) }, needs: ["md", "css"])
+            .Add("sink", d => new FakeMapStep(d)
+            {
+                Process = (f, _, _) =>
+                {
+                    seen.Add(f.Path);
+
+                    if (seen.Count == 80)
+                    {
+                        GC.Collect();
+                        GC.WaitForPendingFinalizers();
+                        GC.Collect();
+
+                        var gone = seen.Take(seen.Count - 5).ToArray();
+                        checkedCount = gone.Length;
+                        alive.AddRange(gone.Where(x => outputs[x].IsAlive));
+                    }
+
+                    return new(FileList.None);
+                },
+            }, needs: ["join"])
+            .Build();
+
+        // One slot: the sink sees one file at a time.
+        var result = await WithinTimeout(site.BuildAsync(graph, parallelism: 1, keepFiles: false));
+
+        Assert.True(result.Succeeded, string.Join("\n", result.Errors));
+        Assert.Equal(75, checkedCount);
+        Assert.Empty(alive);
+    }
+
+    [Fact]
     public async Task ReplayedUnitsStreamThroughBoundedChannels()
     {
         // The default workflow with one slot, so every bounded channel fills: a clean build, a build replaying every unit

@@ -254,12 +254,12 @@ internal sealed class FakeSite
         return this;
     }
 
-    public Task<BuildResult> BuildAsync(WorkflowGraph graph, FailurePolicy failure = FailurePolicy.Default, int parallelism = 4, CancellationToken? cancellation = null, IProgressView? view = null, ITraceRecorder? trace = null)
+    public Task<BuildResult> BuildAsync(WorkflowGraph graph, FailurePolicy failure = FailurePolicy.Default, int parallelism = 4, CancellationToken? cancellation = null, IProgressView? view = null, ITraceRecorder? trace = null, bool keepFiles = true)
     {
         return SiteBuilder.BuildAsync(graph, Options, new BuildOptions
         {
             MaxDegreeOfParallelism = parallelism,
-            KeepFiles = true,
+            KeepFiles = keepFiles,
             Failure = failure,
             Cancellation = cancellation ?? Xunit.TestContext.Current.CancellationToken,
             Trace = trace ?? NullTraceRecorder.Instance,

@@ -183,7 +183,7 @@ internal sealed class Scheduler
         private readonly CancellationTokenSource _buildCts;
         private readonly CancellationTokenSource _stepCts;
         private readonly Lock _pathsLock = new();
-        private readonly Dictionary<FPath, (string Producer, VirtualFile File)> _producers = new();
+        private readonly Dictionary<FPath, (string Producer, FileRef Ref)>? _producers;
         private readonly Lock _startLock = new();
         private int _started;
         private TraceSpan _span;
@@ -205,6 +205,12 @@ internal sealed class Scheduler
             Node = node;
             Run = new StepRun(node);
             Output = new FileChannel(node.Dependents.Select(x => (x.Definition.Name, scheduler.GetCapacity(node, x))));
+
+            // A path can only come from two producers when there are several.
+            if (node.Needs.Count + (node.Inputs != null ? 1 : 0) > 1)
+            {
+                _producers = [];
+            }
 
             // Only reduce steps contribute scopes; the others never make their descendants wait.
             if (node.Step.EffectiveShape != StepShape.Reduce)
@@ -499,15 +505,7 @@ internal sealed class Scheduler
                 {
                     try
                     {
-                        foreach (var file in sources.Files)
-                        {
-                            token.ThrowIfCancellationRequested();
-
-                            if (inputs.IsMatch(file.Path))
-                            {
-                                await AcceptAsync(file, Provenance.SourceStep, consume, token);
-                            }
-                        }
+                        await AcceptAllAsync(sources.Files.Where(x => inputs.IsMatch(x.Path)).ToAsyncEnumerable(), Provenance.SourceStep, consume, token);
                     }
                     finally
                     {
@@ -525,10 +523,7 @@ internal sealed class Scheduler
                 {
                     try
                     {
-                        await foreach (var file in reader.ReadAllAsync(token))
-                        {
-                            await AcceptAsync(file, producer, consume, token);
-                        }
+                        await AcceptAllAsync(reader.ReadAllAsync(token), producer, consume, token);
                     }
                     catch (Exception e) when (e is StepUnavailableException or ChannelClosedException { InnerException: StepUnavailableException })
                     {
@@ -544,43 +539,31 @@ internal sealed class Scheduler
             token.ThrowIfCancellationRequested();
         }
 
-        private async ValueTask AcceptAsync(VirtualFile file, string producer, Func<VirtualFile, ValueTask> consume, CancellationToken token)
+        /// <summary>
+        /// Accepts the files of one producer in order, or, when the node tracks paths (several producers), several at once:
+        /// <see cref="EnterOnceAsync"/> hashes every file, which must not run one file at a time.
+        /// </summary>
+        private async Task AcceptAllAsync(IAsyncEnumerable<VirtualFile> files, string producer, Func<VirtualFile, ValueTask> consume, CancellationToken token)
         {
-            (string Producer, VirtualFile File)? conflict = null;
-
-            lock (_pathsLock)
+            if (_producers == null)
             {
-                if (_producers.TryGetValue(file.Path, out var existing) && existing.Producer != producer)
+                await foreach (var file in files)
                 {
-                    // The same file passed through two needs (a diamond in the graph) enters once.
-                    if (ReferenceEquals(existing.File, file))
-                    {
-                        return;
-                    }
+                    token.ThrowIfCancellationRequested();
+                    await AcceptAsync(file, producer, consume, token);
+                }
 
-                    conflict = existing;
-                }
-                else
-                {
-                    _producers[file.Path] = (producer, file);
-                }
+                return;
             }
 
-            if (conflict is { } other)
+            var options = new ParallelOptions { MaxDegreeOfParallelism = Context.MaxDegreeOfParallelism, CancellationToken = token };
+            await Parallel.ForEachAsync(files, options, (file, ct) => AcceptAsync(file, producer, consume, ct));
+        }
+
+        private async ValueTask AcceptAsync(VirtualFile file, string producer, Func<VirtualFile, ValueTask> consume, CancellationToken token)
+        {
+            if (_producers != null && !await EnterOnceAsync(file, producer, token))
             {
-                // Another instance of the same file (a replay re-emitting an unchanged file, a step returning an equal
-                // copy) enters once too; two different files with the same path are an error. The refs are compared
-                // outside the lock: hashing loads the contents.
-                await file.Content.EnsureHashAsync(token);
-                await other.File.Content.EnsureHashAsync(token);
-
-                if (other.File.Ref == file.Ref)
-                {
-                    return;
-                }
-
-                var (first, second) = string.CompareOrdinal(other.Producer, producer) < 0 ? (other.Producer, producer) : (producer, other.Producer);
-                ReportFailure(new BuildError(Name, file.Path, $"step '{Name}' received '{file.Path}' from both '{first}' and '{second}'", null, null));
                 return;
             }
 
@@ -598,6 +581,36 @@ internal sealed class Scheduler
                 Run.AddPassedThrough();
                 await Output.WriteAsync(file, token);
             }
+        }
+
+        /// <summary>
+        /// Whether a file arriving from <paramref name="producer"/> enters the node: a path that another producer already
+        /// delivered enters once when it is the same file (passed through two needs, a diamond in the graph, or an equal
+        /// instance: a replay re-emitting an unchanged file, a step returning an equal copy), and is an error otherwise.
+        /// Only the refs are kept: keeping the files would keep every content that entered the node until the build ends.
+        /// </summary>
+        private async ValueTask<bool> EnterOnceAsync(VirtualFile file, string producer, CancellationToken token)
+        {
+            await file.Content.EnsureHashAsync(token);
+            var reference = file.Ref;
+            (string Producer, FileRef Ref) existing;
+
+            lock (_pathsLock)
+            {
+                if (!_producers!.TryGetValue(file.Path, out existing) || existing.Producer == producer)
+                {
+                    _producers[file.Path] = (producer, reference);
+                    return true;
+                }
+            }
+
+            if (existing.Ref != reference)
+            {
+                var (first, second) = string.CompareOrdinal(existing.Producer, producer) < 0 ? (existing.Producer, producer) : (producer, existing.Producer);
+                ReportFailure(new BuildError(Name, file.Path, $"step '{Name}' received '{file.Path}' from both '{first}' and '{second}'", null, null));
+            }
+
+            return false;
         }
 
         private async Task RunMapAsync(SourceFiles sources, CancellationToken token)
