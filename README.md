@@ -13,6 +13,8 @@ The package is native AOT on Windows, Linux and macOS (x64 and arm64) and needs 
 
 ```
 douze [build] [options]          build once (default command)
+douze watch [options]            build, then rebuild on changes
+douze serve [options]            watch + dev server with live reload
 douze worker-helper              print douze-worker.mjs to stdout
 
 Options:
@@ -31,11 +33,10 @@ Options:
       --print-workflow           print the effective workflow as YAML and exit
       --no-cache                 ignore and do not write the disk cache
       --cache-dir <dir>          cache location (default: <source>/.douze)
+      --port <n>                 dev server port (serve, default 8080)
   -h, --help                     show the help
       --version                  show the version
 ```
-
-`douze --help` also lists the commands and options of features that are not available yet (watch mode, dev server).
 
 The exit code is 0 on success, 1 when the build has errors (each one is printed as
 `error: <step>: <file>(<line>,<col>): <message>`), 2 for an invalid command line or workflow, and 130 when the
@@ -51,6 +52,38 @@ data it resolved (folder data, site data, collections, `site:` settings) and, fo
 its `sources` match. The `write` step writes a file again when it is missing from the output folder or was changed
 there. `--no-cache` builds without reading or writing the cache, `--cache-dir` moves it. Add `.douze/` to your
 `.gitignore`.
+
+Once a build succeeds, it deletes the output files that the previous builds wrote and it did not: the pages of deleted
+or renamed sources, the pages a pagination no longer has, and the folders they leave empty. A file that something else
+changed since Douze wrote it stays, and so does everything when the build fails or runs with `--no-cache` (no record
+of the previous builds).
+
+# watch and serve
+
+`douze watch` builds the site, then again after every change of its sources, until Ctrl+C. `douze serve` does the same
+and serves the output folder on `http://localhost:8080/` (`--port`), with live reload. Both take the options of
+`douze build`.
+
+```
+douze serve -s Sample
+```
+
+- A rebuild runs only what the change affects, like a build from the cache: editing a page renders that page again
+  (and the pages that list it, when its title, tags or date changed), editing an include renders the pages that use
+  it, editing a data file the pages that read what changed. Each rebuild prints one line:
+  `_content/index.md changed: 1 file written in 0.01 s, 8 units executed, 64 cached`.
+- Changes are collected until none came for 150 ms, so saving several files, or a checkout, is one rebuild. The output
+  folder, the `.douze` folder and `.git` are not watched.
+- An edited workflow file (`douze.yml`, or the file of `--workflow`) takes effect at the next rebuild; while it is
+  invalid, its errors are printed and the session waits for the next change. A build that fails prints its errors
+  and the session goes on.
+- The cache stays open during the session and its index is written when the session ends: another `douze build` of
+  the site meanwhile builds without it (with a warning).
+- The server serves `index.html` for folder URLs (`/blog/a/`), redirects `/blog/a` to `/blog/a/`, and serves the
+  site's `404.html`, if it has one, for missing files. Browsers do not cache what it serves.
+- Live reload: the server adds a script to every HTML page before `</body>`. After each build, a page reloads when it
+  changed (or was deleted), or when a script changed; when only stylesheets changed, they are swapped in place without
+  reloading. Pages reload too when they reconnect to a restarted server.
 
 # site layout
 

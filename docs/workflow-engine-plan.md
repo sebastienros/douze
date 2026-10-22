@@ -701,6 +701,15 @@ group keys are sorted, `BuildResult.Outputs` is sorted, `collections` are sorted
 and the `write` step is order independent. Trace lanes (section 6.3) are assigned by span start
 time, which is the only nondeterministic output, and it is a diagnostic.
 
+*As implemented (phase 6):* the sources come from a `SourceSnapshot` (`Douze/Workflow/SourceSnapshot.cs`): the files of
+the source folder with their length and modification time, and which roots read each, matched once per graph. A build
+scans it; a watch session keeps it and applies the changes the watcher reports (`BuildOptions.Sources`), so a rebuild
+neither lists, stats nor matches the files that did not change. A replay takes no work slot (it checks dependencies and
+restores outputs). (A loop per slot instead of `Parallel.ForEachAsync` in map steps measured within noise and was not
+kept.) Globs reject a path by the
+literal prefix and suffix of their pattern before their regular expression (interpreted under native AOT), and
+`**/*.md` or `**/*.{md,html}` match by their ends alone.
+
 **Progress reporting.** The scheduler calls `IProgressView.StepStarted` when a node starts working:
 when its first file enters, or when its first unit runs (a reduce step with no input), or when it
 completes without either. A node waiting for its needs is not started: `StepRun.StartedAt`, the
@@ -825,6 +834,15 @@ internal sealed record LoadedTemplate(FPath Path, ParsedTemplate Template, NodeO
 
 Templates are parsed once per content hash, which also deduplicates identical page templates used
 by thousands of paginated pages (gap B5). The cache is a `ConcurrentDictionary<Hash128, Lazy<...>>`.
+
+*As implemented (phase 6):* Fluid calls the template cache with the key of the source the file provider returns (its
+`CacheKey`), which `TemplateLoader` sets to the content hash of the include; until phase 6 the cache looked that key up
+as an include name, never stored anything, and every render parsed every include again. The parsed includes are now
+keyed by content hash. `Invalidate(path)` forgets the names that resolved to a file, the names that resolved to nothing
+or after it (a file added in front of the one used), and the parsed include of its old content; a folder path forgets
+its files. `InvalidateAll` (lost watcher events), `Trim` (drops the slots of page templates nobody holds) and
+`TryGetHash` (the hash of a file as the loader sees it, which `ReplayState` uses instead of reading every template again
+in each build of a session) serve watch mode.
 
 ### 2.9 Progress view and trace recorder interfaces
 
@@ -1842,9 +1860,9 @@ A version mismatch in `index.json` discards the cache.
   than the time stamp granularity of any file system in use (2 s on FAT, less elsewhere), so a later edit of the same
   length gets a later time stamp. An edit *during* a build, after the file was read, is seen by the next build the same
   way (its time stamp is newer). What the window cannot catch is a tool that restores the previous length and time stamp
-  with other content, as for every build tool keyed on stat. Phase 6 must take the reference time from each rebuild's
-  start, not from when the cache was opened (`BuildCache._started`), or every file edited while watching is re-read on
-  every rebuild (correct, but wasted).
+  with other content, as for every build tool keyed on stat. *Phase 6:* each build takes its own start as the reference
+  (`BuildCache.BeginBuild`, through a `TimeProvider`), not the time the cache was opened, so a file edited during a
+  watch session is read again only by the rebuilds of the next 2 s.
 - **Retention.** A successful build keeps the units it used, replayed or ran: the results of an edited page's previous
   version, or of a deleted page, are dropped, so the cache does not grow with edits (switching between two branches
   rebuilds what differs). A failed or cancelled build keeps the previous units too. When less than half the bytes of
@@ -1876,6 +1894,21 @@ A version mismatch in `index.json` discards the cache.
   reload when only CSS changed).
 - The key test (section 8, phase 6): for random edit sequences on a fixture site, the incremental
   output equals a clean build.
+
+*As implemented (phase 6):* every build of a session runs the whole graph through the scheduler, which replays what did
+not change; what the session keeps across builds is the disk cache (open, committed in memory after each build:
+`BuildCache.Commit` updates the previous results in place and leaves the collection of unused blobs to `Persist`, which
+writes the index when the session ends), the template loader (changed files invalidated), the source snapshot (changed
+paths stat'ed or listed again), the graph (while the workflow and the site options are the same) and the metadata read
+from the packs. There is no separate set of previous results in memory: the committed cache is that set, with the
+dependencies and early cutoff of phase 5. Deletions are not done by `write` but by `StaleOutputs` once a build
+succeeded, for one-shot builds from the cache too: what the previous builds wrote (`DependencySet.Written` of the
+cached units, or `BuildOptions.PreviousWritten` without the cache) and this one did not is deleted, with the folders it
+leaves empty, when it is still as it was written. `write` writes only what changed through the replay (a unit whose
+input and written file did not change replays). The server is `HttpListener` (it works under the native AOT publish
+with the Satori GC on macOS, without new IL warnings; Linux and Windows are covered by the CI smoke test only for the
+build). The live reload events are as specified, plus a `hello` event with a session id so that a page reloads when it
+reconnects to a restarted server.
 
 ---
 
@@ -2457,6 +2490,51 @@ seed is rerunnable alone.
 **Acceptance.** Shared criteria; `douze serve -s Sample` serves the site, editing `index.md` reloads
 only `/` (checked manually, noted in the PR); the key test passes for 25 seeds in under 60 seconds.
 
+**As implemented** (7.5 and the *As implemented* notes of 2.6, 2.8 and 7.4 have the details):
+
+- **First task.** `HttpListener` works under the native AOT publish with the Satori GC on macOS (risk 8): no
+  `TcpListener` fallback.
+- **Commands.** `douze watch` and `douze serve` (`Cli/WatchCommand.cs`) build with the selected view, then print one
+  line per rebuild (`Progress/RebuildProgressView.cs`: `_content/index.md changed: 1 file written in 0.01 s, 8 units
+  executed, 64 cached`); `--trace` and `--timeline` are written again after every build. Ctrl+C and SIGTERM end the
+  session cleanly (exit 0) and write the cache index; SIGTERM cancels `douze build` cleanly too (exit 130). The
+  workflow and the site options are loaded again for every build: an edited `douze.yml` takes effect, an invalid one
+  is reported and the session waits; a workflow file outside the source folder is watched too.
+- **Watch** (`Workflow/Watch/`): `FileWatcher` (150 ms debounce, `.git`, output and cache folders ignored, lost events
+  as a rescan), `ChangeSet` (whose kinds the source snapshot corrects: FSEvents reports an edit of a recent file as a
+  creation), `IncrementalBuilder` (7.5), `DevServer` and `LiveReload` with `livereload.js` (embedded).
+- **Engine changes** (beyond the files the phase owned, as `AGENTS.md` allows): `StaleOutputs` and
+  `IFileSystem.DeleteFileAsync`/`DeleteDirectoryIfEmptyAsync`; `write` records what it writes also without the cache in a
+  watch session (`BuildOptions.RecordWritten`);
+  `BuildCache` `Commit`/`Persist`/`BeginBuild` (7.4); `BuildOptions.Cache`, `Templates`, `Sources`, `PreviousWritten`;
+  `SourceSnapshot` and the scheduler changes of 2.6; `TemplateLoader` (2.8); `Glob`; the worker of a command step
+  starts when its first unit runs when the cache is on (eagerly otherwise, to overlap its startup).
+- **Deviations.** `write` does not delete outputs: `StaleOutputs` does, after a successful build, for one-shot builds
+  from the cache too (phase 5 left stale outputs). There is no separate in-memory store of previous results: the cache
+  committed in memory is that store. `ChangeSetTests` has no "mapping to root nodes": a rebuild does not need it (the
+  snapshot and the recorded dependencies find what a change affects), so `ChangeSet` has no such method.
+  `IncrementalEqualsCleanTests` compares, after each edit, both a watch session and a build from the disk cache with a
+  clean build, on output folders (deletions included), with old modification times so that the stats of the source
+  files are trusted and a missed update would show.
+- **Bug found:** parsed includes were never cached (2.8), so every render parsed every include it used.
+- **Tests.** `ChangeSetTests` (6: merges, renames and folders, debounce, ignored paths, the folders the builder ignores,
+  the disk), `IncrementalBuilderTests` (11: no change, change kinds, delete, rename, include, data, added page and folder,
+  templates invalidated, a failed build deletes nothing, without the cache, workflow edits), `DevServerTests` (6: content
+  types and HEAD, script injection, folders, redirects and 404, paths outside the folder, events, an edit reloading its URL
+  only), `SessionCacheTests` (2: the reference time of each build, the index written once), `StaleOutputsTests` (4),
+  `IncrementalEqualsCleanTests` (25 seeds of 12 edits on 200 pages, about 18 s), a worker test, glob and template loader
+  tests. `douze serve -s Sample` was checked with the AOT binary and a scripted SSE client (editing `index.md` sends
+  `{"changed":["/"]}` and nothing else), and `livereload.js` in a browser (a stylesheet swapped in place, another page's
+  edit ignored, the page's own edit and a server restart reloading it).
+- **Results** (`bench/README.md`, "Phase 6", on a machine loaded by other builds): synthetic 32k, one page edited in a
+  watch session, 0.49 s (median of 10 rebuilds; 0.97 s from the disk cache; about 0.78 s before the replay work of 2.6
+  and 7.4): the 500 ms target of 9.2 is met, narrowly. Clean builds cost less CPU and memory (synthetic 32k peak 1.6 GB
+  instead of 2.0 GB, with Satori) from the include cache fix; wall times are unchanged within the noise.
+- **Left.** The collections barrier dominates a rebuild after a real edit (the page's date changes, so `collect` runs
+  again over every page); a watch session does not keep worker processes across builds (with the cache they start
+  only when a unit runs); Linux and Windows are not run here (`FileSystemWatcher` and `HttpListener` are the managed
+  implementations there too).
+
 ### Summary table
 
 | Phase | Depends on | Parallel with | Model and effort | Review pass |
@@ -2558,6 +2636,10 @@ the experimental Satori GC (`PublishWithSatoriGC`, `-p:UseSatoriGC=false` opts o
 site's 1.5 GB target is knowingly missed for the speed (the standard GC meets it, 1.07 GB). Small sites peak lower
 than with the standard GC (114 MB against 167 MB for 500 pages). Re-measure when Douze moves to the stable .NET 11.
 
+*Phase 6 results* (`bench/README.md`, "Phase 6"): synthetic 32k, one page edited in a watch session, 0.49 s (target
+500 ms, met narrowly on a loaded machine); clean builds unchanged in wall time, with less CPU and a lower peak (1.6 GB
+for the synthetic site) since parsed includes are cached.
+
 ### 9.3 Validation beyond tests
 
 - Build the Sample and a copy of the Sample with a `douze.yml` that reproduces the default
@@ -2657,6 +2739,9 @@ Each item has a recommended answer; implementers use it unless the user decides 
 
 8. **`HttpListener` under native AOT** is untested. Recommended: verify first in phase 6; fall back
    to a 150-line `TcpListener` server.
+   *Resolved in phase 6:* `HttpListener` (the managed implementation on macOS and Linux) works under the native AOT
+   publish with the Satori GC on macOS: requests, chunked Server-Sent Events, IPv6 loopback, no new IL warning. No
+   fallback was needed.
 
 9. **Large worker payloads.** A 14 MB JSON file sent inline through a JSON line works in Node but
    costs a base64 or escaping pass. Recommended: inline for protocol 1; reserve `contentPath` (a

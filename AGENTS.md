@@ -21,17 +21,23 @@ During the workflow engine refactor (`docs/workflow-engine-plan.md`), earlier de
 
 Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the design): a graph of steps that virtual files (path, content, metadata) flow through.
 
-- `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`), `WorkflowSource` (finds the site options and the workflow), `ViewSelector`.
-- `Douze/Workflow/`: the engine. `WorkflowGraph` validates a `WorkflowDefinition` and instantiates its steps; `SiteBuilder` runs it with the `Scheduling/Scheduler`, which streams files between steps by shape (`map`, `group`, `reduce`). `DefaultWorkflow` is the workflow of a site without a workflow file.
+- `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`, `WatchCommand` for `watch` and `serve`), `WorkflowSource` (finds the site options and the workflow), `ViewSelector`.
+- `Douze/Workflow/`: the engine. `WorkflowGraph` validates a `WorkflowDefinition` and instantiates its steps; `SiteBuilder` runs it with the `Scheduling/Scheduler`, which streams files between steps by shape (`map`, `group`, `reduce`), from a `SourceSnapshot` of the source folder. `DefaultWorkflow` is the workflow of a site without a workflow file. Once a build succeeded, `StaleOutputs` deletes what the previous builds wrote and it did not.
 - `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write`).
 - `Douze/Workflow/Cache/`: the disk cache (`<source>/.douze/cache/`, `--no-cache`, `--cache-dir`). `BuildCache` stores the
   result of every unit by `ResultKey` (step, configuration, input refs) with its dependency set, in pack files
   (`PackFile`) under a binary index (`CacheIndex`); `NodeSerializer` writes metadata and nodes keeping their types. The
-  scheduler replays a unit whose key is cached and whose dependencies did not change (`Scheduling/ReplayState`).
+  scheduler replays a unit whose key is cached and whose dependencies did not change (`Scheduling/ReplayState`). A watch
+  session keeps the cache open: each build commits to it in memory (`Commit`), the session writes the index once
+  (`Persist`).
+- `Douze/Workflow/Watch/`: watch mode and the dev server. `FileWatcher` batches the changes of the source folder into a
+  `ChangeSet`; `IncrementalBuilder` runs the builds of a session, keeping the cache, the template loader (invalidating
+  changed files) and the source snapshot; `DevServer` serves the output folder (`HttpListener`) and `LiveReload` sends
+  the changed URLs to `livereload.js` over Server-Sent Events.
 - `Douze/Workflow/Yaml/`: `douze.yml` loading. `YamlSource` keeps the position of every node, `WorkflowLoader` reads `site` (`SiteSettings`) and `steps` and reports every error with its line and column, `WorkflowSchema` is the field table shared by the loader and `--print-workflow`.
 - `Douze/Workflow/Commands/`: `run:` steps in the modes `filter` (a process per file), `batch` (a process per input or group) and `worker` (one process, JSON lines over stdin and stdout, `WorkerProtocol`). `ProcessRunner` starts processes and kills their tree on timeout (`ProcessTree`, which avoids `Process.Kill(entireProcessTree: true)` on Unix: it can hang forever on macOS); `douze-worker.mjs` is the Node helper printed by `douze worker-helper`.
 - `Douze/Liquid/`: the Fluid bridge. `TemplateLoader` parses templates once per content hash and serves includes; `MetadataValue` is the model of every render.
-- `Douze/Progress/`: the views of a build: `PlainProgressView` (a line per step), `SpectreProgressView` (live table and summary with a timeline), `SilentProgressView`; `StepSummary` formats what they share.
+- `Douze/Progress/`: the views of a build: `PlainProgressView` (a line per step), `SpectreProgressView` (live table and summary with a timeline), `SilentProgressView`, `RebuildProgressView` (a line per rebuild of a watch session); `StepSummary` formats what they share.
 - `Douze/Tracing/`: `TraceRecorder` records build, step, command and (with `--trace-units`) unit spans; `ChromeTraceWriter` writes them for Perfetto (`--trace`), `TimelineHtmlWriter` into the self-contained `timeline.html` (`--timeline`).
 - `Douze.Tests.FakeTool/`: the fake external tool of the command step tests, launched with `dotnet Douze.Tests.FakeTool.dll <mode>`; it is in `Douze.slnx` so that it builds in the configuration of the tests.
 - `bench/`: the benchmark harness (`Douze.Bench`: a synthetic site, the pages of a real-world API reference) and its results (`bench/README.md`).
