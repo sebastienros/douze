@@ -146,7 +146,9 @@ internal abstract class FileContent
     private sealed class TextContent : FileContent
     {
         private readonly string _text;
-        private ReadOnlyMemory<byte>? _bytes;
+
+        // A reference, published atomically: a nullable memory could be seen set with half of its fields.
+        private byte[]? _bytes;
 
         public TextContent(string text)
         {
@@ -165,8 +167,7 @@ internal abstract class FileContent
         public override ValueTask<ReadOnlyMemory<byte>> ReadBytesAsync(CancellationToken ct)
         {
             // Benign race: two threads may encode the same text.
-            _bytes ??= Encoding.UTF8.GetBytes(_text);
-            return new(_bytes.Value);
+            return new(_bytes ??= Encoding.UTF8.GetBytes(_text));
         }
 
         public override async ValueTask<Stream> OpenReadAsync(CancellationToken ct)

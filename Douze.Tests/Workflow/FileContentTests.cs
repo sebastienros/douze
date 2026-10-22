@@ -8,6 +8,36 @@ namespace Douze.Tests.Workflow;
 public class FileContentTests
 {
     [Fact]
+    public async Task TextBytesAreReadTheSameByEveryThread()
+    {
+        // The encoded bytes of a text are published once: a reader that sees them sees all of them (on ARM64, a
+        // field holding a struct can be seen half written).
+        var ct = TestContext.Current.CancellationToken;
+        var text = new string('x', 100_000);
+
+        for (var round = 0; round < 100; round++)
+        {
+            var content = FileContent.FromText(text);
+
+            await Task.WhenAll(Enumerable.Range(0, 8).Select(reader => Task.Run(async () =>
+            {
+                if (reader % 2 == 0)
+                {
+                    var bytes = await content.ReadBytesAsync(ct);
+                    Assert.Equal(text.Length, bytes.Length);
+                    Assert.True(bytes.Span.IndexOfAnyExcept((byte)'x') < 0);
+                }
+                else
+                {
+                    using var rented = await content.RentBytesAsync(ct);
+                    Assert.Equal(text.Length, rented.Memory.Length);
+                    Assert.True(rented.Memory.Span.IndexOfAnyExcept((byte)'x') < 0);
+                }
+            }, ct)));
+        }
+    }
+
+    [Fact]
     public async Task LazyFileIsReadOnce()
     {
         var fs = new CountingFileSystem();
