@@ -445,10 +445,103 @@ internal sealed partial class TwoslashChecker
         };
     }
 
+    /// <summary>
+    /// The quick info of a word. At a call (the word is the function called), the count of the other overloads is added,
+    /// as TypeScript 5 and 6 print it after the signature (<c>(+1 overload)</c>), which the hover of TypeScript 7 leaves
+    /// out: from the signatures of the call's signature help.
+    /// </summary>
     private static async Task<QuickInfo?> HoverAsync(LspClient server, CheckedFile file, IdentifierScanner.Word word, CancellationToken ct)
     {
         var (line, character) = file.Positions.ToPosition(word.Start);
-        return await server.HoverAsync(file.Uri, line, character, ct) is { } markdown ? QuickInfo.Parse(markdown) : null;
+        Task<int>? signatures = null;
+
+        if (ArgumentsStart(file.File.Content, word.Start + word.Length) is { } arguments)
+        {
+            var (callLine, callCharacter) = file.Positions.ToPosition(arguments);
+            signatures = SignatureCountAsync(server, file.Uri, callLine, callCharacter, ct);
+        }
+
+        if (await server.HoverAsync(file.Uri, line, character, ct) is not { } markdown || QuickInfo.Parse(markdown) is not { } info)
+        {
+            return null;
+        }
+
+        if (signatures != null && await signatures is var count and > 1 && !OverloadCount().IsMatch(info.Text))
+        {
+            return info with { Text = $"{info.Text} (+{count - 1} overload{(count == 2 ? "" : "s")})" };
+        }
+
+        return info;
+    }
+
+    // A call the server cannot help with counts as no overloads: the hover is still right.
+    private static async Task<int> SignatureCountAsync(LspClient server, string uri, int line, int character, CancellationToken ct)
+    {
+        try
+        {
+            return await server.SignatureCountAsync(uri, line, character, ct);
+        }
+        catch (LspErrorException)
+        {
+            return 0;
+        }
+    }
+
+    [GeneratedRegex(@"\(\+\d+ overloads?\)$")]
+    private static partial Regex OverloadCount();
+
+    /// <summary>
+    /// The offset after the <c>(</c> of the call whose function a word ending at <paramref name="end"/> names
+    /// (<c>f(</c>, <c>f&lt;T&gt;(</c>, <c>f?.(</c>), or null when the word is not called.
+    /// </summary>
+    internal static int? ArgumentsStart(string code, int end)
+    {
+        var i = SkipSpaces(code, end);
+
+        if (i < code.Length && code[i] == '<')
+        {
+            // Type arguments, nested ones included.
+            var depth = 0;
+
+            for (; i < code.Length; i++)
+            {
+                if (code[i] == '<')
+                {
+                    depth++;
+                }
+                else if (code[i] == '>' && code[i - 1] != '=' && --depth == 0)
+                {
+                    break;
+                }
+                else if (code[i] == ';')
+                {
+                    return null;
+                }
+            }
+
+            if (i >= code.Length)
+            {
+                return null;
+            }
+
+            i = SkipSpaces(code, i + 1);
+        }
+        else if (i + 1 < code.Length && code[i] == '?' && code[i + 1] == '.')
+        {
+            i = SkipSpaces(code, i + 2);
+        }
+
+        return i < code.Length && code[i] == '(' ? i + 1 : null;
+
+        static int SkipSpaces(string code, int i)
+        {
+            while (i < code.Length && char.IsWhiteSpace(code[i]))
+            {
+                i++;
+            }
+
+            return i;
+        }
     }
 
     private static async Task<List<TwoslashNode>> DiagnosticsAsync(LspClient server, CheckedFile file, CancellationToken ct)

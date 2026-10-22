@@ -120,6 +120,32 @@ public sealed partial class TwoslashStepTests : CacheTestBase
     }
 
     [Fact]
+    public async Task CallsCountTheOtherOverloads()
+    {
+        await Source.WriteTextFileAsync("/docs/a.md", Fence("""
+            function pick(a: string): string;
+            function pick(a: number, b?: number): number;
+            function pick(a: any) { return a; }
+            pick("x");
+            pick (1, 2);
+            const parse = (text: string) => text.length;
+            parse("x");
+            [1].map<number>((x) => x);
+            """));
+
+        await BuildCachedAsync(await WorkflowAsync());
+
+        var hovers = Nodes(Assert.Single(await ResultsAsync("/docs/a.html")), "hover");
+        var calls = hovers.Where(x => x.GetProperty("line").GetInt32() >= 3).GroupBy(x => (x.GetProperty("target").GetString(), x.GetProperty("line").GetInt32())).ToDictionary(x => x.Key, x => Text(x.First()));
+
+        // As TypeScript 5 prints them at a call: the signature called, and the count of the others.
+        Assert.Equal("function pick(a: string): string (+1 overload)", calls[("pick", 3)]);
+        Assert.Equal("function pick(a: number, b?: number): number (+1 overload)", calls[("pick", 4)]);
+        Assert.Equal("const parse: (text: string) => number", calls[("parse", 6)]);
+        Assert.DoesNotContain("overload", calls[("map", 7)]);
+    }
+
+    [Fact]
     public async Task QueriesHighlightsAndTags()
     {
         await Source.WriteTextFileAsync("/docs/a.md", Fence("""

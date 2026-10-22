@@ -44,7 +44,7 @@ namespace Douze.Workflow.Steps;
 internal sealed partial class TwoslashStep : CodeFenceStep<List<SharedFile>>
 {
     // Changes when what the step writes changes, so that memoized results are not reused.
-    private const string FormatVersion = "1";
+    private const string FormatVersion = "2";
 
     private static readonly string[] DefaultTags = ["annotate", "log", "warn", "error"];
 

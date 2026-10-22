@@ -664,9 +664,11 @@ macOS and Linux; 7.0.2 by default) or `tsrs` ([tsrs](https://github.com/oxc-proj
 Rust with the same protocol, for macOS on Apple silicon and Linux; it gives the same results with less memory).
 `version` picks another release; `path` (relative to the source folder) uses a binary instead, for offline machines.
 
-The hover texts are TypeScript 7's, which prints some types differently from TypeScript 5: no `(+1 overload)` after
-a signature resolved at a call, no `import x` line under an alias, union members in another order
-(`bench/twoslash.md` has a comparison).
+The hover texts are TypeScript 7's, which prints some types differently from TypeScript 5: no `import x` line under
+an alias, union members in another order (literal types sorted), a type and a const of the same name in the other
+order (`bench/twoslash.md` has a comparison). At a call, the step adds the count of the other overloads after the
+signature (`(+1 overload)`), as TypeScript 5 prints it and TypeScript 7 does not, from the call's signature help; it
+does not at a declaration.
 
 # csharp
 

@@ -77,6 +77,8 @@ internal sealed class LspClient
             writer.WriteEndObject();
             writer.WriteStartObject("diagnostic");
             writer.WriteEndObject();
+            writer.WriteStartObject("signatureHelp");
+            writer.WriteEndObject();
             writer.WriteStartObject("completion");
             writer.WriteEndObject();
             writer.WriteStartObject("semanticTokens");
@@ -179,6 +181,19 @@ internal sealed class LspClient
         }
 
         return value.GetString();
+    }
+
+    /// <summary>
+    /// The number of signatures of the call whose argument list starts at a position, just after its <c>(</c>
+    /// (<c>textDocument/signatureHelp</c>): the overloads of the function called; 0 when there is no call there.
+    /// </summary>
+    public async Task<int> SignatureCountAsync(string uri, int line, int character, CancellationToken ct)
+    {
+        var result = await RequestAsync("textDocument/signatureHelp", writer => WritePosition(writer, uri, line, character, null), ct);
+
+        return result.ValueKind == JsonValueKind.Object && result.TryGetProperty("signatures", out var signatures) && signatures.ValueKind == JsonValueKind.Array
+            ? signatures.GetArrayLength()
+            : 0;
     }
 
     /// <summary>
