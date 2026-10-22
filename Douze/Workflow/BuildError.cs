@@ -57,7 +57,11 @@ internal sealed record BuildError(string Step, FPath? File, string Message, Sour
             case TemplateParseException template when template.Line is { } line && (file == null || template.Path == file.Value.FullName):
                 return new BuildError(step, file ?? template.Path, template.Reason, new SourceLocation(template.Path, line, template.Column ?? 0), null);
 
-            case TemplateParseException or DouzeException or WorkflowValidationException or SharpYaml.YamlException:
+            // A tag of the page's own template (or of a template that is not known): the position is in the file.
+            case TemplateRenderException render when render.Path == null || file == null || render.Path == file.Value.FullName:
+                return new BuildError(step, file ?? (render.Path is { } path ? new FPath(path) : (FPath?)null), render.Reason, new SourceLocation(render.Path ?? file?.FullName ?? "", render.Line, render.Column), null);
+
+            case TemplateParseException or TemplateRenderException or DouzeException or WorkflowValidationException or SharpYaml.YamlException:
                 return new BuildError(step, file, exception.Message, null, null);
 
             default:

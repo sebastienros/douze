@@ -16,13 +16,14 @@ internal static class SiteBuilder
         return BuildAsync(WorkflowGraph.Build(workflow), site, options);
     }
 
+    /// <exception cref="WorkflowValidationException">A shortcode is invalid.</exception>
     public static async Task<BuildResult> BuildAsync(WorkflowGraph graph, SiteOptions site, BuildOptions options)
     {
         var stopwatch = Stopwatch.StartNew();
         var view = options.View ?? SilentProgressView.Discard;
         var trace = options.Trace ?? new TraceRecorder(options.TraceUnits);
 
-        await using var context = new BuildContext(site, options, view, trace);
+        await using var context = await BuildContext.CreateAsync(site, options, view, trace, options.Cancellation);
 
         foreach (var warning in graph.Warnings)
         {

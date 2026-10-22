@@ -1,4 +1,5 @@
 using Douze.Liquid.Filters;
+using Douze.Liquid.Tags;
 using Fluid;
 
 namespace Douze.Liquid;
@@ -19,14 +20,24 @@ internal static class LiquidOptions
             .WithDefaultFileExtension(".liquid");
 
         HtmlFilters.Register(builder);
+        MarkdownFilters.Register(builder);
 
         return builder.Build();
     }
 
     /// <summary>
-    /// A parser whose errors carry line and column.
+    /// A parser whose errors carry line and column, with Douze's tags. The shortcodes of a site are registered on it by
+    /// <see cref="ShortcodeRegistry.ScanAsync"/>.
     /// </summary>
+    public static DouzeParser CreateParser()
+    {
 #pragma warning disable FLUID001 // statement locations are what gives errors a line and a column
-    public static FluidParser CreateParser() => new(new FluidParserOptions { TrackStatementLocations = true });
+        var parser = new DouzeParser(new FluidParserOptions { TrackStatementLocations = true });
 #pragma warning restore FLUID001
+
+        MarkdownTags.Register(parser);
+        DiagnosticTags.Register(parser);
+
+        return parser;
+    }
 }

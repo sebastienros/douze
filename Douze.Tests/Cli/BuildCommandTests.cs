@@ -40,4 +40,30 @@ public class BuildCommandTests : IDisposable
         var html = await File.ReadAllTextAsync(timeline, TestContext.Current.CancellationToken);
         Assert.Contains("\"name\":\"markdown\"", html);
     }
+
+    [Fact]
+    public async Task ErrorTagFailsTheBuild()
+    {
+        var source = Path.Combine(_root, "site");
+        Directory.CreateDirectory(Path.Combine(source, "_content"));
+        await File.WriteAllTextAsync(Path.Combine(source, "_content", "index.md"), "# Hello\n{% error \"unknown reference\" %}", TestContext.Current.CancellationToken);
+
+        var exitCode = await CommandLine.RunAsync(["-s", source, "-o", Path.Combine(_root, "out"), "--quiet", "--no-cache"]);
+
+        Assert.Equal(ExitCodes.BuildErrors, exitCode);
+    }
+
+    [Fact]
+    public async Task InvalidShortcodeStopsBeforeTheBuild()
+    {
+        var source = Path.Combine(_root, "site");
+        Directory.CreateDirectory(Path.Combine(source, "_content"));
+        Directory.CreateDirectory(Path.Combine(source, "_includes", "shortcodes"));
+        await File.WriteAllTextAsync(Path.Combine(source, "_content", "index.md"), "# Hello", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(source, "_includes", "shortcodes", "raw.liquid"), "x", TestContext.Current.CancellationToken);
+
+        var exitCode = await CommandLine.RunAsync(["-s", source, "-o", Path.Combine(_root, "out"), "--quiet", "--no-cache"]);
+
+        Assert.Equal(ExitCodes.Usage, exitCode);
+    }
 }
