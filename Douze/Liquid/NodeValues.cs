@@ -147,12 +147,17 @@ internal sealed class NodeObjectValue : FluidValue
         return other is NodeObjectValue nodeObject && (ReferenceEquals(nodeObject.Value, Value) || nodeObject.Value.Equals(Value));
     }
 
-    // An object is true, 0 and empty whatever its members.
+    // An object is true whatever its members. Like Fluid's dictionary value, it counts its members: 'empty' and the
+    // 'default' filter compare that number to 0.
     [Obsolete("Use the TemplateContext overload.")]
     public override bool ToBooleanValue() => true;
 
     [Obsolete("Use the TemplateContext overload.")]
-    public override decimal ToNumberValue() => 0;
+    public override decimal ToNumberValue()
+    {
+        _recorder?.ReadCount();
+        return Value.Count;
+    }
 
     [Obsolete("Use the TemplateContext overload.")]
     public override string ToStringValue() => "";
@@ -311,12 +316,17 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
         return (other.IsNil() || other.Type == FluidValues.Empty) && Value.Count == 0;
     }
 
-    // An array is true and 0 whatever its items.
+    // An array is true whatever its items. Like Fluid's array value, it counts its items: 'empty' and the 'default'
+    // filter compare that number to 0.
     [Obsolete("Use the TemplateContext overload.")]
     public override bool ToBooleanValue() => true;
 
     [Obsolete("Use the TemplateContext overload.")]
-    public override decimal ToNumberValue() => 0;
+    public override decimal ToNumberValue()
+    {
+        _recorder?.ReadCount();
+        return Value.Count;
+    }
 
     [Obsolete("Use the TemplateContext overload.")]
     public override string ToStringValue()

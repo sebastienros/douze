@@ -90,6 +90,21 @@ public class NodeValuesTests
         Assert.Equal("yes yes yes", await RenderAsync("{% assign split = 'a,b' | split: ',' %}{% if items == split %}yes{% endif %} {% if split == items %}yes{% endif %} {% if none == empty %}yes{% endif %}", own));
     }
 
+    [Fact]
+    public async Task ArraysAndObjectsCountLikeFluidValues()
+    {
+        // 'default' and 'empty' compare the number of items or members to 0, as for Fluid's own values.
+        var own = new NodeObject
+        {
+            ["items"] = new NodeArray(NodeValue.Create(1)),
+            ["none"] = new NodeArray(),
+            ["obj"] = new NodeObject { ["a"] = NodeValue.Create(1) },
+        };
+
+        Assert.Equal("1 none 1", await RenderAsync("{{ items | default: 'x' | join: ',' }} {{ none | default: 'none' }} {{ obj | default: 'x' | size }}", own));
+        Assert.Equal("no yes no", await RenderAsync("{% if empty == items %}yes{% else %}no{% endif %} {% if empty == none %}yes{% else %}no{% endif %} {% if empty == obj %}yes{% else %}no{% endif %}", own));
+    }
+
     // A node that renders as its number and counts how many times it is converted to a Fluid value.
     private sealed class CountingNode(int value, int[] conversions) : Node
     {
