@@ -22,18 +22,18 @@ Without .NET, with the install scripts, which download the native build into `~/
 Windows) and add it to the `PATH`; running them again updates douze:
 
 ```
-curl -fsSL https://github.com/sebastienros/douze/releases/latest/download/install.sh | sh -s -- --preview
+curl -fsSL https://raw.githubusercontent.com/sebastienros/douze/main/install.sh | sh -s -- --preview
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/sebastienros/douze/releases/latest/download/install.ps1))) -Preview
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sebastienros/douze/main/install.ps1))) -Preview
 ```
 
 They take `--preview` (`-Preview`), `--version <version>`, `--install-dir <dir>`, `--no-modify-path`, `--feed <url>`
 and `--uninstall`. Without `--preview` they install the latest stable version (the latest preview while there is
-none), so `irm <url of install.ps1> | iex` works too. The scripts of `main` are also at
-`https://raw.githubusercontent.com/sebastienros/douze/main/install.sh` (and `install.ps1`). These URLs need the
-repository to be public, and the `releases/latest` ones a stable release (GitHub's latest release skips previews).
+none), so `irm <url of install.ps1> | iex` works too. Each release also carries the scripts of its version, and once a
+stable release exists they are at `https://github.com/sebastienros/douze/releases/latest/download/install.sh` (and
+`install.ps1`): GitHub's latest release skips previews.
 
 Or download the archive of your platform from the [releases](https://github.com/sebastienros/douze/releases) page
 (`douze-<version>-<rid>.tar.gz`, `.zip` for Windows, checked by `SHA256SUMS`) and put its folder on the `PATH`.
