@@ -1394,7 +1394,8 @@ All command steps live in `Douze/Workflow/Commands/`. `CommandStepFactory.Create
   "command exited with code 2 for '/blog/a.md': <last 20 lines of stderr>"; stderr output with
   `stderr: fail` (the default) fails the unit the same way even when the exit code is 0;
   `stderr: warn` forwards it as a warning message; `stderr: ignore` drops it. A timeout kills the
-  process tree (`Process.Kill(entireProcessTree: true)`) and fails the unit.
+  process tree (`ProcessTree`: on macOS and Linux a SIGKILL to every descendant, then to the process, without the SIGSTOP of
+  `Process.Kill(entireProcessTree: true)`, which can hang forever on macOS; that call elsewhere) and fails the unit.
 - Caching (phase 5): the command version is `Hash128.Combine(hash of version, hashes of files matching sources)`.
   `batch` units are keyed by all their inputs, so any input change re-runs the whole batch; `filter`
   and `worker` units are keyed per file; `incremental: false` disables reuse.
