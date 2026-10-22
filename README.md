@@ -579,8 +579,8 @@ with text laid out over it.
 # twoslash
 
 The `twoslash` step computes the type information of TypeScript code fences, as
-[twoslash](https://twoslash.netlify.app) does, without Node: with [tsrs](https://github.com/oxc-project/tsrs), the
-TypeScript 7 compiler and language server in Rust, which Douze downloads.
+[twoslash](https://twoslash.netlify.app) does, without Node: with the language server of TypeScript 7, Microsoft's
+native compiler, which Douze downloads.
 
 ````yaml
   twoslash: { needs: markdown, uses: twoslash,
@@ -605,19 +605,22 @@ unchanged.
 - `trim` (true): the code is checked as highlighters render it, without trailing spaces and blank lines around it.
   `tab-width` replaces tabs first.
 - A snippet that twoslash would reject (an error its `// @errors` does not list, a query that finds nothing) fails the
-  build, naming its page, the fence's number on the page and its first line.
+  build, naming its page, the fence's number on the page and its first line. With `errors: warn` it is a warning, and
+  the fence keeps its result when it has one (the errors are rendered). `handbook: { noErrorValidation: true }` renders
+  unexpected errors without a warning.
 
 All the snippets of a build are checked at once: the snippets that share their compiler options are the files of one
 project (each in its own folder, the `files` shared), checked by one language server whose requests are sent in
 parallel; `processes` (4) language servers run at once, `timeout` (300 seconds) each. Each result is kept in the cache
-by its code and what the step depends on (the tsrs version, the options, the content of `files`): a build checks only
-new snippets, and starts no tsrs when there is none.
+by its code and what the step depends on (the engine and its version, the options, the content of `files`): a build
+checks only new snippets, and starts no language server when there is none.
 
-tsrs is downloaded on first use from the npm registry (`registry`), the package of the platform (macOS on Apple
-silicon, Linux x64 and arm64, glibc or musl), verified against its integrity (the one Douze pins for its default
-version), into `<cache>/tools/tsrs/<version>/<platform>/`; later builds use it offline. `version` picks another
-release; `path` (relative to the source folder) uses a tsrs binary instead, for offline machines and the platforms
-tsrs does not publish (Windows, Intel macOS).
+The engine is downloaded on first use from the npm registry (`registry`), the package of the platform, verified
+against its integrity (the one Douze pins for its default version), into `<cache>/tools/<engine>/<version>/<platform>/`;
+later builds use it offline. `engine` is `typescript` (TypeScript 7, `@typescript/typescript-<platform>`, for Windows,
+macOS and Linux; 7.0.2 by default) or `tsrs` ([tsrs](https://github.com/oxc-project/tsrs), a port of TypeScript 7 to
+Rust with the same protocol, for macOS on Apple silicon and Linux; it gives the same results with less memory).
+`version` picks another release; `path` (relative to the source folder) uses a binary instead, for offline machines.
 
 The hover texts are TypeScript 7's, which prints some types differently from TypeScript 5: no `(+1 overload)` after
 a signature resolved at a call, no `import x` line under an alias, union members in another order

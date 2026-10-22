@@ -13,7 +13,7 @@ namespace Douze.Workflow.Steps;
 
 /// <summary>
 /// <c>uses: twoslash</c>. Computes the type information of the TypeScript code fences of HTML pages, as twoslash does,
-/// with tsrs (the TypeScript 7 compiler in Rust) and without Node: every fence that the <c>markdown</c> step wrote as
+/// with the language server of TypeScript 7 (a native binary) and without Node: every fence that the <c>markdown</c> step wrote as
 /// <c>&lt;pre data-lang="ts" data-meta="... twoslash ..."&gt;</c> (a language of <c>with.languages</c>, the word
 /// <c>twoslash</c> in its meta) gets a <c>data-twoslash</c> attribute holding twoslash's result for its code, in
 /// twoslash's shape (<c>{ "code": ..., "nodes": [...] }</c>: the code without its notations, the hovers, queries,
@@ -23,12 +23,13 @@ namespace Douze.Workflow.Steps;
 /// <remarks>
 /// <para>The step is a reduce: the fences of every page are checked at once, by one language server per set of
 /// compiler options (<see cref="TwoslashChecker"/>). Each result is memoized in the disk cache by its code, language and
-/// everything the step's results depend on (the tsrs version, the compiler options, the shared files, the tags, the
-/// handbook options): a build checks only the fences whose result is not known, and runs no tsrs when there is none
-/// (then it does not need tsrs at all).</para>
-/// <para>Options: <c>version</c> (of tsrs, downloaded from the npm registry, <c>registry</c>, into
-/// <c>&lt;cache&gt;/tools/tsrs/&lt;version&gt;/</c> on first use; Douze's pinned version by default), or <c>path</c> (a
-/// tsrs binary, relative to the source folder); <c>compiler</c> (tsconfig compiler options over twoslash's defaults);
+/// everything the step's results depend on (the engine and its version, the compiler options, the shared files, the
+/// tags, the handbook options): a build checks only the fences whose result is not known, and starts no language server
+/// when there is none (then it does not need the engine at all).</para>
+/// <para>Options: <c>engine</c> (<c>typescript</c>, Microsoft's TypeScript 7, by default, or <c>tsrs</c>, its port to
+/// Rust, which speaks the same protocol); <c>version</c> (of the engine, downloaded from the npm registry,
+/// <c>registry</c>, into <c>&lt;cache&gt;/tools/&lt;engine&gt;/&lt;version&gt;/</c> on first use; Douze's pinned version
+/// by default), or <c>path</c> (the engine's binary, relative to the source folder); <c>compiler</c> (tsconfig compiler options over twoslash's defaults);
 /// <c>files</c> (shared files: a path next to each snippet to a file of the source folder, such as a declaration file
 /// that snippets import); <c>tags</c> (the custom notations, <c>// @log: text</c>); <c>handbook</c> (twoslash's handbook
 /// options for every snippet, such as <c>noErrorValidation</c>); <c>languages</c>; <c>tab-width</c> (tabs are replaced
@@ -37,7 +38,8 @@ namespace Douze.Workflow.Steps;
 /// twoslash, so that the result is for the code they render); <c>processes</c> (language servers at once) and
 /// <c>timeout</c> (seconds per language server).</para>
 /// <para>A snippet that twoslash would reject (an error its <c>// @errors</c> does not list, a query that finds nothing)
-/// fails the build with the page and the fence.</para>
+/// fails the build with the page and the fence; with <c>errors: warn</c>, it is a warning, and the fence gets its result
+/// when there is one (its errors are rendered).</para>
 /// </remarks>
 internal sealed partial class TwoslashStep : Step, IReduceStep
 {
@@ -48,7 +50,9 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
 
     private static readonly string[] DefaultTags = ["annotate", "log", "warn", "error"];
 
+    private readonly NpmTool _tool;
     private readonly string _version;
+    private readonly bool _warn;
     private readonly string? _path;
     private readonly Uri? _registry;
     private readonly SortedDictionary<string, string> _compilerOptions = new(StringComparer.Ordinal);
@@ -65,9 +69,21 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
 
     public TwoslashStep(StepDefinition definition) : base(definition)
     {
-        var options = new WithOptions(definition, "version", "path", "registry", "compiler", "files", "tags", "handbook", "languages", "tab-width", "trim", "processes", "timeout");
+        var options = new WithOptions(definition, "engine", "version", "path", "errors", "registry", "compiler", "files", "tags", "handbook", "languages", "tab-width", "trim", "processes", "timeout");
 
-        _version = options.GetString("version") ?? NpmTool.Tsrs.DefaultVersion;
+        _tool = options.GetString("engine") switch
+        {
+            null or "typescript" => NpmTool.TypeScript,
+            "tsrs" => NpmTool.Tsrs,
+            var other => throw Error($"option 'engine' of step '{Name}' must be 'typescript' or 'tsrs', not '{other}'"),
+        };
+        _version = options.GetString("version") ?? _tool.DefaultVersion;
+        _warn = options.GetString("errors") switch
+        {
+            null or "fail" => false,
+            "warn" => true,
+            var other => throw Error($"option 'errors' of step '{Name}' must be 'fail' or 'warn', not '{other}'"),
+        };
         _path = options.GetString("path");
         _tags = options.Has("tags") ? options.GetStrings("tags") : DefaultTags;
         _languages = new HashSet<string>(options.Has("languages") ? options.GetStrings("languages") : ["ts", "tsx", "typescript"], StringComparer.Ordinal);
@@ -184,13 +200,13 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
     public override Hash128 CacheVersion => _toolIdentity;
 
     /// <summary>
-    /// What identifies the tsrs that checks: its version, or the content of the binary given by <c>path</c>.
+    /// What identifies the engine that checks: its name and version, or the content of the binary given by <c>path</c>.
     /// </summary>
     public override async ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
     {
         if (_path == null)
         {
-            _toolIdentity = Hash128.OfText("tsrs " + _version);
+            _toolIdentity = Hash128.OfText($"{_tool.Name} {_version}");
             return;
         }
 
@@ -198,7 +214,7 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
 
         if (!File.Exists(path))
         {
-            throw new DouzeException($"step '{Name}': the tsrs binary '{path}' does not exist");
+            throw new DouzeException($"step '{Name}': the {_tool.Name} binary '{path}' does not exist");
         }
 
         _toolIdentity = Hash128.Of(await File.ReadAllBytesAsync(path, ct));
@@ -279,23 +295,37 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
 
             for (var i = 0; i < missing.Count; i++)
             {
-                if (outcomes[i].Result is { } result)
+                var (result, error) = outcomes[i];
+
+                if (error != null)
+                {
+                    // Every fence with that code is reported, by its page's source and its number on the page. Its
+                    // result is not memoized, so that the next build that checks it reports it again.
+                    errors.AddRange(byKey[missing[i].Key].Select(x => $"{files[x.File].SourcePath ?? files[x.File].Path}: twoslash fence {x.Index} ('{FirstLine(x.Code)}'): {error}"));
+
+                    if (_warn && result != null)
+                    {
+                        results[missing[i].Key] = result.ToJson();
+                    }
+                }
+                else if (result != null)
                 {
                     var json = result.ToJson();
                     results[missing[i].Key] = json;
                     cache?.PutMemo(Name, missing[i].Key, Encoding.UTF8.GetBytes(json));
                 }
-                else
-                {
-                    // Every fence with that code is reported, by its page's source and its number on the page.
-                    errors.AddRange(byKey[missing[i].Key].Select(x => $"{files[x.File].SourcePath ?? files[x.File].Path}: twoslash fence {x.Index} ('{FirstLine(x.Code)}'): {outcomes[i].Error}"));
-                }
             }
 
-            if (errors.Count > 0)
+            errors.Sort(StringComparer.Ordinal);
+
+            if (errors.Count > 0 && !_warn)
             {
-                errors.Sort(StringComparer.Ordinal);
                 throw new DouzeException(string.Join(Environment.NewLine, errors));
+            }
+
+            foreach (var error in errors)
+            {
+                context.Log(LogLevel.Warning, error);
             }
         }
 
@@ -304,7 +334,7 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
 
         for (var i = 0; i < files.Count; i++)
         {
-            var fileFences = byFile[i].ToList();
+            var fileFences = byFile[i].Where(x => results.ContainsKey(x.Key)).ToList();
 
             if (fileFences.Count == 0)
             {
@@ -369,7 +399,7 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
         var build = context.Build;
         var root = Path.Combine(build.CacheRoot ?? Path.Combine(Path.GetTempPath(), BuildContext.DefaultCacheFolder), "tools");
         var installer = new ToolInstaller(root, _registry, context.Log);
-        return await installer.InstallAsync(NpmTool.Tsrs, _version, ct);
+        return await installer.InstallAsync(_tool, _version, ct);
     }
 
     private static string FirstLine(string code)
@@ -379,7 +409,7 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
     }
 
     /// <summary>
-    /// The first line of <c>tsrs --version</c>.
+    /// The first line of <c>--version</c> of the engine.
     /// </summary>
     private static async Task<string> VersionAsync(string executable, CancellationToken ct)
     {
@@ -387,7 +417,7 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
         using var process = Commands.ProcessRunner.Start(info, "");
         var output = await process.StandardOutput.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct);
-        return output.Split('\n')[0].Trim() is { Length: > 0 } line ? line : "tsrs";
+        return output.Split('\n')[0].Trim() is { Length: > 0 } line ? line : Path.GetFileNameWithoutExtension(executable);
     }
 
     private async Task<List<SharedFile>> ReadSharedFilesAsync(StepContext context)

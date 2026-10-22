@@ -12,41 +12,43 @@ using Xunit;
 namespace Douze.Tests.Workflow.Steps;
 
 /// <summary>
-/// Runs the <c>twoslash</c> step with tsrs: the binary of <c>DOUZE_TEST_TSRS</c>, or the pinned version installed
-/// once in a temporary folder. Skipped on a platform tsrs has no binary for, or offline.
+/// Runs the <c>twoslash</c> step with TypeScript 7 (the binary of <c>DOUZE_TEST_TYPESCRIPT</c>, or the pinned version
+/// installed once in a temporary folder) and, where it is published, tsrs (<c>DOUZE_TEST_TSRS</c>). Skipped on a
+/// platform without the engine, or offline.
 /// </summary>
 public sealed partial class TwoslashStepTests : CacheTestBase
 {
-    private static readonly Lazy<Task<(string? Path, string? Reason)>> TsrsBinary = new(ResolveTsrsAsync);
+    private static readonly Lazy<Task<(string? Path, string? Reason)>> TypeScriptBinary = new(() => ResolveAsync(NpmTool.TypeScript, "DOUZE_TEST_TYPESCRIPT"));
+    private static readonly Lazy<Task<(string? Path, string? Reason)>> TsrsBinary = new(() => ResolveAsync(NpmTool.Tsrs, "DOUZE_TEST_TSRS"));
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static async Task<(string?, string?)> ResolveTsrsAsync()
+    private static async Task<(string?, string?)> ResolveAsync(NpmTool tool, string variable)
     {
-        if (Environment.GetEnvironmentVariable("DOUZE_TEST_TSRS") is { Length: > 0 } path)
+        if (Environment.GetEnvironmentVariable(variable) is { Length: > 0 } path)
         {
             return (path, null);
         }
 
-        if (!NpmTool.Tsrs.Packages.ContainsKey(NpmTool.CurrentPlatform))
+        if (!tool.Packages.ContainsKey(NpmTool.CurrentPlatform))
         {
-            return (null, $"tsrs has no binary for {NpmTool.CurrentPlatform}");
+            return (null, $"{tool.Name} has no binary for {NpmTool.CurrentPlatform}");
         }
 
         try
         {
             var installer = new ToolInstaller(Path.Combine(Path.GetTempPath(), "douze-tests-tools"), null, (_, _) => { });
-            return (await installer.InstallAsync(NpmTool.Tsrs, NpmTool.Tsrs.DefaultVersion, CancellationToken.None), null);
+            return (await installer.InstallAsync(tool, tool.DefaultVersion, CancellationToken.None), null);
         }
         catch (DouzeException e)
         {
-            return (null, $"cannot install tsrs: {e.Message}");
+            return (null, $"cannot install {tool.Name}: {e.Message}");
         }
     }
 
-    private static async Task<string> RequireTsrsAsync()
+    private static async Task<string> RequireAsync(Lazy<Task<(string? Path, string? Reason)>> binary)
     {
-        var (path, reason) = await TsrsBinary.Value;
+        var (path, reason) = await binary.Value;
 
         if (path == null)
         {
@@ -58,7 +60,8 @@ public sealed partial class TwoslashStepTests : CacheTestBase
 
     private async Task<WorkflowDefinition> WorkflowAsync(params (string Key, Node? Value)[] options)
     {
-        var with = StepTestBase.With([("path", NodeValue.Create(await RequireTsrsAsync())), .. options]);
+        var engine = options.FirstOrDefault(x => x.Key == "engine").Value is NodeValue<string> { Value: "tsrs" } ? TsrsBinary : TypeScriptBinary;
+        var with = StepTestBase.With([("path", NodeValue.Create(await RequireAsync(engine))), .. options]);
 
         return StepTestBase.Workflow(
             StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
@@ -197,6 +200,44 @@ public sealed partial class TwoslashStepTests : CacheTestBase
         var error = Assert.Single(result.Errors);
         Assert.Contains("/docs/a.md: twoslash fence 1 ('let count: number = \"one\";'): errors were thrown in the sample, but not included in an error tag: 2322", error.Message);
         Assert.Contains("Expected: // @errors: 2322", error.Message);
+    }
+
+    [Fact]
+    public async Task ErrorsCanBeWarnings()
+    {
+        await Source.WriteTextFileAsync("/docs/a.md", "# Title\n\n" + Fence("let count: number = \"one\";") + Fence("""
+            const a = 1;
+            // ---cut-end---
+            """));
+
+        await BuildCachedAsync(await WorkflowAsync(("errors", NodeValue.Create("warn"))));
+
+        // The unexpected error is a warning and is rendered; the invalid snippet is a warning and has no result.
+        var results = await ResultsAsync("/docs/a.html");
+        Assert.Equal(2322, Assert.Single(Nodes(Assert.Single(results), "error")).GetProperty("code").GetInt32());
+        Assert.Contains(Messages, x => x.Level == LogLevel.Warning && x.Message.Contains("/docs/a.md: twoslash fence 1", StringComparison.Ordinal));
+        Assert.Contains(Messages, x => x.Level == LogLevel.Warning && x.Message.Contains("twoslash fence 2 ('const a = 1;'): mismatched cut markers", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task EnginesAgree()
+    {
+        await Source.WriteTextFileAsync("/docs/a.md", Fence("""
+            // @errors: 2322
+            interface Point { x: number; y: number }
+            /** Moves a point. */
+            function move(p: Point, by: number): Point { return { x: p.x + by, y: p.y + by }; }
+            const moved = move({ x: 1, y: 2 }, 3);
+            //    ^?
+            const wrong: string = moved.x;
+            """));
+
+        await BuildCachedAsync(await WorkflowAsync(("engine", NodeValue.Create("tsrs"))));
+        var tsrs = (await ResultsAsync("/docs/a.html")).Single().GetRawText();
+
+        await BuildCachedAsync(await WorkflowAsync());
+        Assert.Equal(tsrs, (await ResultsAsync("/docs/a.html")).Single().GetRawText());
+        Assert.Contains(Messages, x => x.Message.Contains("with Version 7.", StringComparison.Ordinal));
     }
 
     [Fact]

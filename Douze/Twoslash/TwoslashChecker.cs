@@ -13,7 +13,8 @@ namespace Douze.Twoslash;
 internal sealed record TwoslashSnippet(string Code, string Language);
 
 /// <summary>
-/// What checking a snippet gave: a result, or why twoslash would reject it.
+/// What checking a snippet gave: a result, why twoslash would reject it, or both (errors that its <c>// @errors</c>
+/// does not list).
 /// </summary>
 internal sealed record TwoslashOutcome(TwoslashResult? Result, string? Error);
 
@@ -49,14 +50,14 @@ internal sealed record TwoslashSettings(
 }
 
 /// <summary>
-/// Checks snippets the way twoslash does, with a TypeScript 7 language server (<c>tsrs --lsp -stdio</c>) instead of
-/// the TypeScript compiler API, all at once: the snippets that share their compiler options are the files of one
-/// project, each in its own folder (<c>&lt;n&gt;/index.ts</c>, with the files of <c>// @filename:</c>), and the shared
-/// files at the root, which <c>rootDirs</c> merges with every snippet's folder so that <c>./x</c> finds them as it
-/// would next to the snippet. Snippets are modules (<c>moduleDetection: force</c>, twoslash's default), so they do not
-/// see each other's declarations; one that augments the global scope or declares a module gets a project of its own.
-/// Each project is a language server process: its hover, completion and diagnostic requests are sent at once and
-/// answered in parallel.
+/// Checks snippets the way twoslash does, with a TypeScript 7 language server (<c>tsc --lsp --stdio</c> of TypeScript
+/// 7, or tsrs, which speaks the same protocol) instead of the TypeScript compiler API, all at once: the snippets that
+/// share their compiler options are the files of one project, each in its own folder (<c>&lt;n&gt;/index.ts</c>, with
+/// the files of <c>// @filename:</c>), and the shared files at the root, which <c>rootDirs</c> merges with every
+/// snippet's folder so that <c>./x</c> finds them as it would next to the snippet. Snippets are modules
+/// (<c>moduleDetection: force</c>, twoslash's default), so they do not see each other's declarations; one that augments
+/// the global scope or declares a module gets a project of its own. Each project is a language server process: its
+/// hover, completion and diagnostic requests are sent at once and answered in parallel.
 /// </summary>
 internal sealed partial class TwoslashChecker
 {
@@ -82,7 +83,7 @@ internal sealed partial class TwoslashChecker
     private readonly TimeSpan _timeout;
     private readonly Action<LogLevel, string> _log;
 
-    /// <param name="executable">The path of the <c>tsrs</c> binary.</param>
+    /// <param name="executable">The path of the language server's binary (<c>tsc</c> or <c>tsrs</c>).</param>
     /// <param name="settings">What every snippet shares.</param>
     /// <param name="workRoot">A folder for the projects, which the caller deletes.</param>
     /// <param name="maxProcesses">How many language servers run at once.</param>
@@ -239,7 +240,7 @@ internal sealed partial class TwoslashChecker
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(_timeout);
 
-        var server = LspConnection.Start(new ProcessStartInfo(_executable) { ArgumentList = { "--lsp", "-stdio" }, WorkingDirectory = folder }, "tsrs");
+        var server = LspConnection.Start(new ProcessStartInfo(_executable) { ArgumentList = { "--lsp", "--stdio" }, WorkingDirectory = folder }, Path.GetFileNameWithoutExtension(_executable));
 
         try
         {
@@ -258,7 +259,7 @@ internal sealed partial class TwoslashChecker
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             server.Kill();
-            throw new DouzeException($"tsrs did not check {group.Count} snippet(s) within {Workflow.Commands.ProcessRunner.FormatDuration(_timeout)}");
+            throw new DouzeException($"the language server did not check {group.Count} snippet(s) within {Workflow.Commands.ProcessRunner.FormatDuration(_timeout)}");
         }
         finally
         {
@@ -475,7 +476,8 @@ internal sealed partial class TwoslashChecker
             var unexpected = errors.Where(x => !handbook.Errors.Contains(x.Code)).ToList();
             var expected = $"// @errors: {string.Join(' ', errors.Select(x => x.Code).Distinct())}";
             var details = string.Join("; ", unexpected.Select(x => $"[{x.Code}] {x.Filename}:{x.Start} - {x.Text}"));
-            return Failure($"errors were thrown in the sample, but not included in an error tag: {string.Join(' ', unexpected.Select(x => x.Code).Distinct())}. "
+            // The result is kept: a step that only warns renders the errors.
+            return new TwoslashOutcome(Finish(markup, nodes), $"errors were thrown in the sample, but not included in an error tag: {string.Join(' ', unexpected.Select(x => x.Code).Distinct())}. "
                 + (handbook.Errors.Count > 0 ? $"The existing annotation specified {string.Join(' ', handbook.Errors)}" : $"Expected: {expected}") + $". Compiler errors: {details}");
         }
 
