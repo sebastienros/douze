@@ -58,7 +58,8 @@ public class DiagnosticTagsTests : CacheTestBase
         await Source.WriteTextFileAsync("/other/b.md", "---\ntitle: B\n---\nB");
         await Source.WriteTextFileAsync("/other/c.md", "C");
 
-        var result = await BuildAsync(Render(frontmatter: StepTestBase.With(("require", new NodeArray { NodeValue.Create("title"), NodeValue.Create("description") }))));
+        // Every unit runs: by default, the step stops at its first failure, which may come before the other one.
+        var result = await BuildAsync(Render(frontmatter: StepTestBase.With(("require", new NodeArray { NodeValue.Create("title"), NodeValue.Create("description") }))), Options(cache: false, failure: FailurePolicy.KeepGoing));
 
         // The folder data of docs/ provides the description of a.md.
         Assert.Equal([

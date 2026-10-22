@@ -26,7 +26,7 @@ public abstract class CacheTestBase : SiteTestBase, IDisposable
         return result;
     }
 
-    internal BuildOptions Options(bool cache = true, int parallelism = 4) => new()
+    internal BuildOptions Options(bool cache = true, int parallelism = 4, FailurePolicy failure = FailurePolicy.Default) => new()
     {
         MaxDegreeOfParallelism = parallelism,
         KeepFiles = true,
@@ -35,6 +35,7 @@ public abstract class CacheTestBase : SiteTestBase, IDisposable
         Trace = NullTraceRecorder.Instance,
         View = new MessageView(Messages),
         Cancellation = TestContext.Current.CancellationToken,
+        Failure = failure,
     };
 
     /// <summary>
