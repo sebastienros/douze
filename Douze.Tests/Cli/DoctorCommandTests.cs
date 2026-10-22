@@ -95,7 +95,7 @@ public sealed class DoctorCommandTests : IDisposable
         await WriteWorkflowAsync($$"""
               echo: { inputs: ["**/*.txt"], run: echo hi, mode: filter }
               tool: { inputs: ["**/*.txt"], run: {{MissingTool}} --flag, mode: filter }
-              check: { inputs: ["**/*.html"], uses: twoslash, with: { path: {{tsc}} } }
+              check: { inputs: ["**/*.html"], uses: hover-typescript, with: { path: {{tsc}} } }
               write: { needs: [echo, tool, check], uses: write }
 
             """);
@@ -123,8 +123,8 @@ public sealed class DoctorCommandTests : IDisposable
         var dotnet = Path.Combine("missing", "dotnet");
         var go = Path.Combine("missing", "go");
         await WriteWorkflowAsync($$"""
-              cs: { inputs: ["**/*.html"], uses: csharp, with: { dotnet: {{dotnet}}, version: 0.0.1-test } }
-              golang: { needs: cs, uses: go, with: { go: {{go}}, version: v0.0.1 } }
+              cs: { inputs: ["**/*.html"], uses: hover-csharp, with: { dotnet: {{dotnet}}, version: 0.0.1-test } }
+              golang: { needs: cs, uses: hover-go, with: { go: {{go}}, version: v0.0.1 } }
 
             """);
 
@@ -167,8 +167,8 @@ public sealed class DoctorCommandTests : IDisposable
 
         // Two steps with the same engine install it once.
         await WriteWorkflowAsync($$"""
-              check: { inputs: ["**/*.html"], uses: twoslash, with: { version: {{version}}, registry: "{{_registry.Url}}" } }
-              again: { needs: check, uses: twoslash, with: { version: {{version}}, registry: "{{_registry.Url}}" } }
+              check: { inputs: ["**/*.html"], uses: hover-typescript, with: { version: {{version}}, registry: "{{_registry.Url}}" } }
+              again: { needs: check, uses: hover-typescript, with: { version: {{version}}, registry: "{{_registry.Url}}" } }
 
             """);
 
@@ -202,7 +202,7 @@ public sealed class DoctorCommandTests : IDisposable
     public async Task ToolsInstallReportsAToolThatCannotBeDownloaded()
     {
         await WriteWorkflowAsync($$"""
-              check: { inputs: ["**/*.html"], uses: twoslash, with: { version: 0.0.2-absent, registry: "{{_registry.Url}}" } }
+              check: { inputs: ["**/*.html"], uses: hover-typescript, with: { version: 0.0.2-absent, registry: "{{_registry.Url}}" } }
 
             """);
 

@@ -71,7 +71,7 @@ public sealed partial class GoStepTests : CacheTestBase
     private static WorkflowDefinition Workflow(string path, params (string Key, Node? Value)[] options) => StepTestBase.Workflow(
         StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
         StepTestBase.Step("markdown", "markdown", needs: ["pages"]),
-        StepTestBase.Step("go", "go", needs: ["markdown"], with: StepTestBase.With([("path", NodeValue.Create(path)), .. options])),
+        StepTestBase.Step("go", "hover-go", needs: ["markdown"], with: StepTestBase.With([("path", NodeValue.Create(path)), .. options])),
         StepTestBase.Step("write", "write", needs: ["go"]));
 
     private static string Fence(string code, string meta = "") => $"```go {meta}\n{code}\n```\n\n";
@@ -295,13 +295,13 @@ public sealed partial class GoStepTests : CacheTestBase
 
         var e = await Assert.ThrowsAsync<WorkflowValidationException>(() => BuildAsync(StepTestBase.Workflow(
             StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
-            StepTestBase.Step("go", "go", needs: ["pages"], with: StepTestBase.With(("modules", new NodeObject { ["app"] = new NodeObject { ["require"] = new NodeObject() } })))), Options()));
+            StepTestBase.Step("go", "hover-go", needs: ["pages"], with: StepTestBase.With(("modules", new NodeObject { ["app"] = new NodeObject { ["require"] = new NodeObject() } })))), Options()));
 
         Assert.Contains("module 'app' of step 'go' has an unknown field 'require'; did you mean 'requires'?", e.Message);
 
         e = await Assert.ThrowsAsync<WorkflowValidationException>(() => BuildAsync(StepTestBase.Workflow(
             StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
-            StepTestBase.Step("go", "go", needs: ["pages"], with: StepTestBase.With(("modules", new NodeObject { ["app"] = new NodeObject { ["files"] = new NodeObject { ["s1/a.go"] = NodeValue.Create("a.go") } } })))), Options()));
+            StepTestBase.Step("go", "hover-go", needs: ["pages"], with: StepTestBase.With(("modules", new NodeObject { ["app"] = new NodeObject { ["files"] = new NodeObject { ["s1/a.go"] = NodeValue.Create("a.go") } } })))), Options()));
 
         Assert.Contains("has a reserved path 's1/a.go'", e.Message);
     }
