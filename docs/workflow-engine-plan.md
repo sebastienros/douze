@@ -714,7 +714,9 @@ data files and scope sources (7.3), and a result is reused when every recorded l
 value. Command steps do not record every scope: they cannot read scopes (their model has the file, the folders and
 `with`; workers receive the own metadata only), so `ScopeSet.Hash` in their keys would only re-run them for nothing;
 what a command reads from disk is declared with `sources`. A step that reads only metadata (`Step.ReadsContent`, false
-for `collect`) leaves the content hashes of its inputs out of its keys. Early cutoff needs no comparison: a unit that
+for `collect`) leaves the content hashes of its inputs out of its keys. The key also has the date of the source file
+each input comes from (`VirtualFile.LastWriteTimeUtc`): `frontmatter` reads it for `page.date`, and a checkout or a copy
+changes it without changing the content (found by `scripts/compare-sample.sh`, which touches the Sample). Early cutoff needs no comparison: a unit that
 runs again and produces the same outputs gives its dependents the same input refs, hence the same keys.
 
 ### 2.8 Templates and the Liquid bridge
