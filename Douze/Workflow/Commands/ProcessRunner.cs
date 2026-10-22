@@ -231,13 +231,13 @@ internal static class ProcessRunner
     }
 
     /// <summary>
-    /// Kills a process and all its descendants. Never throws.
+    /// Kills a process and all its descendants (<see cref="ProcessTree"/>). Never throws.
     /// </summary>
     public static void KillTree(Process process)
     {
         try
         {
-            process.Kill(entireProcessTree: true);
+            ProcessTree.Kill(process);
         }
         catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
         {

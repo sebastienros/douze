@@ -27,6 +27,8 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <PublishAot>true</PublishAot>
+    <!-- LibraryImport (ProcessTree) generates unsafe marshalling code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- The tool has no use for its XML documentation, and the .NET 11 SDK's native AOT publish doesn't copy it to bin. -->
     <PublishDocumentationFile>false</PublishDocumentationFile>
     <!-- With the standard GC: a build is a batch job, background GC only throttles the allocating threads (bench/README.md, .NET 11). -->
