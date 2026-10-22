@@ -239,6 +239,8 @@ internal static class HeadingScanner
     /// <summary>
     /// The text of inner HTML: tags removed, entities decoded, whitespace collapsed and trimmed.
     /// </summary>
+    private static readonly char[] AsciiWhitespace = [' ', '\t', '\n', '\r', '\f', '\v'];
+
     internal static string TextOf(ReadOnlySpan<char> html)
     {
         using var builder = ZString.CreateStringBuilder();
@@ -260,8 +262,9 @@ internal static class HeadingScanner
             }
         }
 
+        // Runs of ASCII whitespace collapse to one space; a no-break space is text (the slug of 3.3 drops it, as GitHub does).
         var decoded = WebUtility.HtmlDecode(builder.ToString());
-        return string.Join(' ', decoded.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return string.Join(' ', decoded.Split(AsciiWhitespace, StringSplitOptions.RemoveEmptyEntries));
     }
 
     /// <summary>

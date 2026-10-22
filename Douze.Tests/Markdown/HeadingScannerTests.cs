@@ -46,4 +46,12 @@ public class HeadingScannerTests
 
         Assert.Equal("<h1 id=\"a&quot;1\">A[1]</h1><p>x</p><h2 id=\"keep\">B[2]</h2>", result);
     }
+
+    [Fact]
+    public void NoBreakSpacesStayInTheText()
+    {
+        // A no-break space is not a word separator: the slug drops it, as GitHub does.
+        Assert.Equal("App\u00a0model", HeadingScanner.TextOf("App\u00a0model".AsSpan()));
+        Assert.Equal("appmodel-x", Slugger.Slug("App\u00a0model x"));
+    }
 }
