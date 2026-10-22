@@ -40,6 +40,30 @@ public class WorkerCommandStepTests : CommandTestBase
         Assert.Contains(Messages, x => x is { Level: LogLevel.Debug, Step: "work", Message: "worker 'fake' ready, 3 request(s) at once" });
     }
 
+    [Fact]
+    public async Task NoProcessStartsWhenEveryUnitReplays()
+    {
+        await Source.WriteTextFileAsync("/a.txt", "HELLO");
+
+        static bool Started((LogLevel Level, string? Step, string Message) message) => message is { Step: "work" } && message.Message.Contains("ready", StringComparison.Ordinal);
+
+        var first = await RunAsync(Worker(), cache: true);
+        Assert.True(first.Succeeded, string.Join(Environment.NewLine, first.Errors));
+        Assert.Contains(Messages, Started);
+
+        // Every unit replays: the worker does not start.
+        var second = await RunAsync(Worker(), cache: true);
+        Assert.True(second.Succeeded, string.Join(Environment.NewLine, second.Errors));
+        Assert.Equal(0, second.UnitsExecuted);
+        Assert.DoesNotContain(Messages, Started);
+
+        // A unit runs: it starts the worker.
+        await Source.WriteTextFileAsync("/a.txt", "HELLO AGAIN");
+        var third = await RunAsync(Worker(), cache: true);
+        Assert.True(third.Succeeded, string.Join(Environment.NewLine, third.Errors));
+        Assert.Contains(Messages, Started);
+    }
+
     [Theory]
     [InlineData(2, 4, 2)]
     [InlineData(16, 2, 2)]

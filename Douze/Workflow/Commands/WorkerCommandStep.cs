@@ -6,8 +6,9 @@ namespace Douze.Workflow.Commands;
 
 /// <summary>
 /// <c>mode: worker</c>: one long-running process for the step, sent each consumed file over the
-/// <see cref="WorkerProtocol"/>. The process starts when the step starts, so its startup overlaps with the steps
-/// before it, and is shut down when the step is done.
+/// <see cref="WorkerProtocol"/>. Without the cache, the process starts when the step starts, so its startup overlaps
+/// with the steps before it; with the cache, it starts when the first unit runs, so a build whose units all replay
+/// starts no process. It is shut down when the step is done.
 /// </summary>
 /// <remarks>
 /// A <c>result</c> file without <c>path</c> keeps the input path, without <c>content</c> the input content, and its
@@ -17,7 +18,9 @@ namespace Douze.Workflow.Commands;
 /// </remarks>
 internal sealed class WorkerCommandStep : CommandStep, IMapStep
 {
-    private Task<WorkerProcess>? _worker;
+    private readonly Lock _startLock = new();
+    private volatile Task<WorkerProcess>? _worker;
+    private Func<Task<WorkerProcess>>? _start;
     private long _nextId;
     private volatile bool _startReported;
 
@@ -36,7 +39,30 @@ internal sealed class WorkerCommandStep : CommandStep, IMapStep
 
         // Not awaited: the first unit waits for the handshake. The build's token, not the step's, so that the units
         // of a step stopped by a failure see the same worker until it shuts down.
-        _worker = StartAsync(info, hello, context.MaxDegreeOfParallelism, context.Cancellation);
+        _worker = null;
+        _startReported = false;
+        _start = () => StartAsync(info, hello, context.MaxDegreeOfParallelism, context.Cancellation);
+
+        if (context.Cache == null || !Definition.Incremental)
+        {
+            _worker = _start();
+        }
+    }
+
+    /// <summary>
+    /// The worker, started by the first unit that needs it when it did not start with the step.
+    /// </summary>
+    private Task<WorkerProcess> GetWorker()
+    {
+        if (_worker is { } worker)
+        {
+            return worker;
+        }
+
+        lock (_startLock)
+        {
+            return _worker ??= _start!();
+        }
     }
 
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
@@ -45,7 +71,7 @@ internal sealed class WorkerCommandStep : CommandStep, IMapStep
 
         try
         {
-            worker = await _worker!.WaitAsync(ct);
+            worker = await GetWorker().WaitAsync(ct);
         }
         catch (DouzeException)
         {
@@ -85,13 +111,13 @@ internal sealed class WorkerCommandStep : CommandStep, IMapStep
     {
         try
         {
-            if (_worker != null)
+            if (_worker is { } started)
             {
                 WorkerProcess worker;
 
                 try
                 {
-                    worker = await _worker;
+                    worker = await started;
                 }
                 catch (DouzeException) when (_startReported)
                 {
