@@ -68,6 +68,14 @@ public class HeadingsStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task AnchorLabelWithTheHeadingText()
+    {
+        var file = await BuildPageAsync("## A &amp; B\n", With(("anchors", NodeValue.Create(true)), ("anchor-label", NodeValue.Create("Section titled \u201c{text}\u201d"))));
+
+        Assert.Contains("<span class=\"sr-only\">Section titled \u201cA &amp; B\u201d</span>", await TextAsync(file));
+    }
+
+    [Fact]
     public async Task HeadingsOfARawRegionAndOfCodeBlocks()
     {
         var file = await BuildPageAsync("## Page\n\n\u001E<div>\u001D\u001D<h2>From a shortcode</h2>\u001D\u001D</div>\u001E\n\n```html\n<h2>Not a heading</h2>\n```\n");

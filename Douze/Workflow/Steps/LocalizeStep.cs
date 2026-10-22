@@ -37,7 +37,8 @@ internal sealed class LocalizeStep : Step, IMapStep
     public override GlobSet DefaultMatch => Pages;
 
     // The locale settings are read from the build, not through the scopes.
-    public override Hash128 CacheVersion => _locales.Hash;
+    // Version 2: the opt-out lookup is part of a unit's dependencies.
+    public override Hash128 CacheVersion => Hash128.Combine(_locales.Hash, Hash128.OfText("2"));
 
     public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
     {

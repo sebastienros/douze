@@ -34,6 +34,15 @@ public class MarkdownRendererTests
     }
 
     [Fact]
+    public async Task SmartyPantsTurnsApostrophesTypographic()
+    {
+        var options = new MarkdownOptions { Extensions = ["smartypants"] };
+
+        Assert.Contains("<p>It\u2019s the 80\u2019s, &lsquo;quoted&rsquo; <code>it's</code> <b title='x'>y</b></p>", await RenderAsync("It's the 80's, 'quoted' `it's` <b title='x'>y</b>", options));
+        Assert.Contains("<p>It's</p>", await RenderAsync("It's", new MarkdownOptions { Extensions = ["none"] }));
+    }
+
+    [Fact]
     public async Task NoneIsCommonMark()
     {
         var html = await RenderAsync("| a |\n|---|\n| 1 |\n\n# Title {#custom}", MarkdownOptions.None);

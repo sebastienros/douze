@@ -11,7 +11,8 @@ namespace Douze.Workflow.Steps;
 /// <c>headings</c> (every heading: <c>depth</c>, <c>text</c>, <c>id</c>), <c>toc</c> (the headings of
 /// <c>with.levels</c>, default <c>[2, 3]</c>, nested in <c>children</c>) and <c>page.heading</c> (the text of the first
 /// <c>h1</c>). <c>with.anchors: true</c> appends an anchor link to each heading (<c>with.anchor-class</c>,
-/// <c>with.anchor-label</c>, <c>with.anchor-html</c>: the visible content); with <c>with.wrapper-class</c> the heading
+/// <c>with.anchor-label</c>, the screen reader text, where <c>{text}</c> is the heading's; <c>with.anchor-html</c>: the
+/// visible content); with <c>with.wrapper-class</c> the heading
 /// and its anchor are wrapped in <c>&lt;div class="&lt;wrapper&gt; level-hN"&gt;</c> instead, the anchor after the heading.
 /// </summary>
 internal sealed class HeadingsStep : Step, IMapStep
@@ -67,7 +68,6 @@ internal sealed class HeadingsStep : Step, IMapStep
         var ids = headings.Select(x => x.Id ?? scope.Unique(Slugger.Slug(x.Text))).ToArray();
         var index = headings.Select((x, i) => (x.Start, i)).ToDictionary(x => x.Start, x => x.i);
 
-        var label = HeadingScanner.EncodeAttribute(_anchorLabel);
         var anchorClass = HeadingScanner.EncodeAttribute(_anchorClass);
 
         // Without a wrapper class the anchor is appended inside the heading; with one, the heading and the anchor are
@@ -82,7 +82,7 @@ internal sealed class HeadingsStep : Step, IMapStep
             x => wrapper != null ? $"<div class=\"{wrapper} level-h{x.Depth}\">" : null,
             x => wrapper != null ? $"{(_anchors ? Anchor(x) : "")}</div>" : null);
 
-        string Anchor(Heading x) => $"<a class=\"{anchorClass}\" href=\"#{HeadingScanner.EncodeAttribute(ids[index[x.Start]])}\"><span aria-hidden=\"true\">{_anchorHtml}</span><span class=\"sr-only\">{label}</span></a>";
+        string Anchor(Heading x) => $"<a class=\"{anchorClass}\" href=\"#{HeadingScanner.EncodeAttribute(ids[index[x.Start]])}\"><span aria-hidden=\"true\">{_anchorHtml}</span><span class=\"sr-only\">{HeadingScanner.EncodeAttribute(_anchorLabel.Replace("{text}", x.Text))}</span></a>";
 
         var all = new NodeArray();
 

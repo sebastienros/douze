@@ -95,6 +95,13 @@ internal static class MarkdownPipelineFactory
             }
 
             builder.Configure(name);
+
+            if (name == "smartypants")
+            {
+                // Markdig's smart quotes leave the apostrophe of "it's" straight; typographic apostrophes are
+                // part of the smart punctuation of other site generators.
+                builder.Extensions.Add(new ApostropheExtension());
+            }
         }
 
         builder.Extensions.Add(new RawRegionExtension());
