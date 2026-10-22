@@ -7,7 +7,7 @@ using Douze.Workflow.Cache;
 
 namespace Douze.Workflow.Scheduling;
 
-internal sealed record SchedulerResult(IReadOnlyList<StepRun> Runs, IReadOnlyList<BuildError> Errors, ScopeSet FinalScopes, bool Cancelled);
+internal sealed record SchedulerResult(IReadOnlyList<StepRun> Runs, IReadOnlyList<BuildError> Errors, ScopeSet FinalScopes, bool Cancelled, SourceSnapshot? Sources);
 
 /// <summary>
 /// Runs a workflow graph: streams source files into root steps, runs each step according to its shape, merges scope
@@ -45,7 +45,7 @@ internal sealed class Scheduler
             runners[node.Index] = new NodeRunner(this, node, runners, buildCts);
         }
 
-        var sources = new SourceFiles(await EnumerateSourcesAsync(), _graph.Nodes.Count(x => x.Inputs != null));
+        var sources = await EnumerateSourcesAsync();
 
         await Task.WhenAll(runners.Select(x => x.RunAsync(sources)));
 
@@ -55,45 +55,35 @@ internal sealed class Scheduler
         // Nearest contributions first: descending topological index.
         var finalScopes = ScopeSet.Merge(runs.Reverse().Select(x => x.Contributions).ToArray(), _context.BaseScopes);
 
-        return new SchedulerResult(runs, errors, finalScopes, ct.IsCancellationRequested);
+        return new SchedulerResult(runs, errors, finalScopes, ct.IsCancellationRequested, Sources);
     }
 
     /// <summary>
-    /// Enumerates the source files once, sorted by path, keeping only those that some node's <c>inputs</c> match.
-    /// Files under the output folder or the cache folder are excluded when they are inside the source folder. A file
-    /// whose length and modification time did not change since a build that cached its hash is not read to be hashed.
+    /// The source files of the roots, sorted by path, from the snapshot of the source folder that the build was given
+    /// (watch mode) or from a scan. Files under the output folder or the cache folder are excluded when they are inside
+    /// the source folder. A file whose length and modification time did not change since a build that cached its hash
+    /// is not read to be hashed.
     /// </summary>
-    private async Task<IReadOnlyList<VirtualFile>> EnumerateSourcesAsync()
+    private async Task<SourceFiles> EnumerateSourcesAsync()
     {
-        var roots = _graph.Nodes.Where(x => x.Inputs != null).Select(x => x.Inputs!).ToArray();
+        var roots = _graph.Nodes.Where(x => x.Inputs != null).ToArray();
 
         if (roots.Length == 0)
         {
-            return [];
+            return new SourceFiles(roots, []);
         }
 
         var source = _context.Source;
-        var excluded = _context.ExcludedSourceFolders;
-        var entries = await source.EnumerateFileSystemEntriesAsync(FPath.Root, recursive: true, filter: null);
+        var snapshot = _context.Options.Sources ?? await SourceSnapshot.ScanAsync(source, _context.ExcludedSourceFolders, _context.MaxDegreeOfParallelism, _context.Cancellation);
+        Sources = snapshot;
 
-        var paths = entries
-            .Where(x => !x.IsDirectory)
-            .Select(x => x.Path.ToAbsolute())
-            .Where(x => !excluded.Any(x.IsInDirectory))
-            .Where(x => roots.Any(r => r.IsMatch(x)))
-            .Distinct()
-            .Order()
-            .ToArray();
-
-        var files = new VirtualFile[paths.Length];
+        var entries = snapshot.Matching(_graph, roots, _context.ExcludedSourceFolders);
+        var files = new VirtualFile[entries.Count];
         var cache = _context.Cache;
-        var options = new ParallelOptions { MaxDegreeOfParallelism = _context.MaxDegreeOfParallelism };
 
-        await Parallel.ForAsync(0, paths.Length, options, async (i, _) =>
+        for (var i = 0; i < files.Length; i++)
         {
-            var path = paths[i];
-            var info = await source.GetFileMetadataAsync(path);
-            var (length, date) = (info.Length, info.LastWriteTimeUtc);
+            var (path, length, date, _) = entries[i];
             FileContent content;
 
             if (cache == null)
@@ -111,10 +101,30 @@ internal sealed class Scheduler
             }
 
             files[i] = VirtualFile.FromSource(path, content, date);
-        });
+        }
 
-        return files;
+        var byRoot = new List<VirtualFile>[roots.Length];
+
+        for (var r = 0; r < byRoot.Length; r++)
+        {
+            byRoot[r] = [];
+        }
+
+        for (var i = 0; i < files.Length; i++)
+        {
+            foreach (var r in entries[i].Roots)
+            {
+                byRoot[r].Add(files[i]);
+            }
+        }
+
+        return new SourceFiles(roots, byRoot);
     }
+
+    /// <summary>
+    /// The snapshot of the source folder the build used, once the sources are enumerated.
+    /// </summary>
+    public SourceSnapshot? Sources { get; private set; }
 
     /// <summary>
     /// The capacity of the channel from <paramref name="producer"/> to <paramref name="consumer"/>, null for unbounded.
@@ -153,15 +163,18 @@ internal sealed class Scheduler
     }
 
     /// <summary>
-    /// The source files, released once every node with <c>inputs</c> has read them, so that their contents do not stay
-    /// in memory until the build ends.
+    /// The source files of each root, released once every root has read them, so that their contents do not stay in
+    /// memory until the build ends.
     /// </summary>
-    private sealed class SourceFiles(IReadOnlyList<VirtualFile> files, int readers)
+    private sealed class SourceFiles(GraphNode[] roots, List<VirtualFile>[] files)
     {
-        private IReadOnlyList<VirtualFile>? _files = files;
-        private int _readers = readers;
+        private List<VirtualFile>[]? _files = files;
+        private int _readers = roots.Length;
 
-        public IReadOnlyList<VirtualFile> Files => _files ?? [];
+        public IReadOnlyList<VirtualFile> FilesOf(GraphNode root)
+        {
+            return _files is { } files ? files[Array.IndexOf(roots, root)] : [];
+        }
 
         public void Release()
         {
@@ -499,13 +512,13 @@ internal sealed class Scheduler
         {
             var pumps = new List<Task>(Node.Needs.Count + 1);
 
-            if (Node.Inputs is { } inputs)
+            if (Node.Inputs != null)
             {
                 pumps.Add(Task.Run(async () =>
                 {
                     try
                     {
-                        await AcceptAllAsync(sources.Files.Where(x => inputs.IsMatch(x.Path)).ToAsyncEnumerable(), Provenance.SourceStep, consume, token);
+                        await AcceptAllAsync(sources.FilesOf(Node).ToAsyncEnumerable(), Provenance.SourceStep, consume, token);
                     }
                     finally
                     {
@@ -790,25 +803,36 @@ internal sealed class Scheduler
         /// <summary>
         /// Runs one unit under a work slot: creates its dependency tracker and span, and records its result; then, with
         /// the slot released, writes its outputs to the channel. Failures are reported, not thrown. With the cache, a
-        /// unit whose result key has a result whose dependencies did not change is replayed instead: its outputs (and
-        /// its contribution) come from the cache. A unit that runs stores its result.
+        /// unit whose result key has a result whose dependencies did not change is replayed instead, without a slot: its
+        /// outputs (and its contribution) come from the cache. A unit that runs stores its result.
         /// </summary>
         private async Task RunUnitAsync(UnitKey key, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, CancellationToken ct)
         {
             MarkStarted();
 
-            var slots = Node.Definition.IsCommand ? Context.ProcessSlots : Context.Parallelism;
-            await slots.WaitAsync(ct);
-
+            var replay = _replay;
+            var resultKey = replay == null ? default : ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent, [.. inputFiles.Select(x => x.LastWriteTimeUtc)]);
             FileList? outputs;
 
-            try
+            // A replay takes no slot: it checks dependencies and restores outputs, which is short, and a rebuild replays
+            // nearly every unit.
+            if (replay != null && await TryReplayAsync(replay, resultKey, key, inputFiles, inputs, file, ct) is (true, var replayed))
             {
-                outputs = await ProcessUnitAsync(key, inputFiles, inputs, body, file, ct);
+                outputs = replayed;
             }
-            finally
+            else
             {
-                slots.Release();
+                var slots = Node.Definition.IsCommand ? Context.ProcessSlots : Context.Parallelism;
+                await slots.WaitAsync(ct);
+
+                try
+                {
+                    outputs = await ProcessUnitAsync(key, resultKey, inputFiles, inputs, body, file, ct);
+                }
+                finally
+                {
+                    slots.Release();
+                }
             }
 
             if (outputs is not { } files)
@@ -837,15 +861,9 @@ internal sealed class Scheduler
         /// The part of <see cref="RunUnitAsync"/> under the slot. Returns the outputs to write, or null when the unit is
         /// done without outputs to write (it failed or was cancelled).
         /// </summary>
-        private async ValueTask<FileList?> ProcessUnitAsync(UnitKey key, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, CancellationToken ct)
+        private async ValueTask<FileList?> ProcessUnitAsync(UnitKey key, Hash128 resultKey, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, CancellationToken ct)
         {
             var replay = _replay;
-            var resultKey = replay == null ? default : ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent, [.. inputFiles.Select(x => x.LastWriteTimeUtc)]);
-
-            if (replay != null && await TryReplayAsync(replay, resultKey, key, inputFiles, inputs, file, ct) is (true, var replayed))
-            {
-                return replayed;
-            }
 
             var deps = new DependencyTracker();
             using var span = Context.Trace.Begin(Name, UnitCategory, key.Unit);

@@ -15,12 +15,24 @@ internal sealed class Glob
 {
     private readonly Regex _regex;
 
-    private Glob(string pattern, bool negated, Regex regex, string fixedPrefix)
+    // What every matching path (without its leading '/') starts and ends with: most paths are rejected without the
+    // regular expression, which is interpreted under native AOT. 'prefix/**' matches the folder itself too, without
+    // its slash.
+    private readonly string _literalPrefix;
+    private readonly string _literalSuffix;
+
+    // For '**/*.md' and '**/*.{md,html}', the patterns of the built-in steps: the ends that decide the match alone.
+    private readonly string[]? _endings;
+
+    private Glob(string pattern, bool negated, Regex regex, string fixedPrefix, string body)
     {
         Pattern = pattern;
         Negated = negated;
         _regex = regex;
         FixedPrefix = fixedPrefix;
+        _literalPrefix = fixedPrefix[1..].TrimEnd('/');
+        _literalSuffix = GetLiteralSuffix(body);
+        _endings = GetEndings(body);
     }
 
     public bool Negated { get; }
@@ -66,7 +78,7 @@ internal sealed class Glob
         new Translator(body, offset, regex).Translate();
         regex.Append('$');
 
-        return new Glob(pattern, negated, new Regex(regex.ToString(), RegexOptions.CultureInvariant | RegexOptions.Singleline), GetFixedPrefix(body));
+        return new Glob(pattern, negated, new Regex(regex.ToString(), RegexOptions.CultureInvariant | RegexOptions.Singleline), GetFixedPrefix(body), body);
     }
 
     /// <summary>
@@ -76,7 +88,24 @@ internal sealed class Glob
     public bool IsMatch(FPath path)
     {
         var value = path.FullName;
-        return _regex.IsMatch(value.StartsWith('/') ? value.AsSpan(1) : value.AsSpan());
+        var span = value.StartsWith('/') ? value.AsSpan(1) : value.AsSpan();
+
+        if (_endings != null)
+        {
+            foreach (var ending in _endings)
+            {
+                if (span.EndsWith(ending, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return span.StartsWith(_literalPrefix, StringComparison.Ordinal)
+            && span.EndsWith(_literalSuffix, StringComparison.Ordinal)
+            && _regex.IsMatch(span);
     }
 
     public override string ToString() => Pattern;
@@ -88,6 +117,67 @@ internal sealed class Glob
         var slash = literal.LastIndexOf('/');
 
         return slash < 0 ? "/" : "/" + literal[..(slash + 1)];
+    }
+
+    /// <summary>
+    /// The literal end of the pattern, after its last wildcard, class or alternative (<c>.md</c> for
+    /// <c>**/*.md</c>); empty when the pattern escapes a character, or ends with a wildcard.
+    /// </summary>
+    private static string GetLiteralSuffix(string body)
+    {
+        if (body.Contains('\\'))
+        {
+            return "";
+        }
+
+        var special = body.AsSpan().LastIndexOfAny("*?]}");
+        var suffix = body[(special + 1)..];
+
+        // The slash of '**/' is optional: '**/index.md' matches 'index.md'.
+        return special >= 1 && body[special - 1] == '*' && body[special] == '*' && suffix.StartsWith('/') ? suffix[1..] : suffix;
+    }
+
+    /// <summary>
+    /// The ends a path must have to match <c>**/*</c> followed by a literal without <c>/</c>, or by literals around one
+    /// group of literal alternatives (<c>**/*.{md,html}</c>): any path ending with one of them matches, since
+    /// <c>**/*</c> matches any path. Null for other patterns.
+    /// </summary>
+    private static string[]? GetEndings(string body)
+    {
+        if (!body.StartsWith("**/*", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var rest = body[4..];
+
+        if (rest.AsSpan().IndexOfAny("*?[]\\/") >= 0)
+        {
+            return null;
+        }
+
+        var open = rest.IndexOf('{');
+
+        if (open < 0)
+        {
+            return rest.Contains('}') || rest.Contains(',') ? null : [rest];
+        }
+
+        var close = rest.IndexOf('}');
+
+        if (close < open || rest.IndexOf('{', open + 1) >= 0 || rest.IndexOf('}', close + 1) >= 0)
+        {
+            return null;
+        }
+
+        var (head, tail) = (rest[..open], rest[(close + 1)..]);
+
+        if (head.Contains(',') || tail.Contains(','))
+        {
+            return null;
+        }
+
+        return [.. rest[(open + 1)..close].Split(',').Select(x => head + x + tail)];
     }
 
     private ref struct Translator

@@ -27,36 +27,56 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     private const string PacksFolder = "packs";
     private const string LockFile = "lock";
 
-    // A pack file whose time is that close to the build start may be changed again within the same time: its hash is
+    // A source file whose time is that close to the build start may be changed again within the same time: its hash is
     // not trusted by the next build.
     private static readonly TimeSpan RacyWindow = TimeSpan.FromSeconds(2);
 
     private readonly string _directory;
     private readonly FileStream _lock;
     private readonly IProgressView _view;
-    private readonly CacheIndex _previous;
-    private readonly PackFile?[] _packs;
     private readonly Lock _writerLock = new();
-    private readonly DateTime _started = DateTime.UtcNow;
+
+    // The results of the previous builds, read from the index or committed by the previous build of a watch session,
+    // the packs that hold their blobs, and whether the index on disk is that one.
+    private CacheIndex _previous;
+    private PackFile?[] _packs;
+    private bool _persisted = true;
+
+    // The start of the build in progress: source files changed less than RacyWindow before it are read again.
+    private readonly TimeProvider _time;
+    private DateTime _started;
 
     // Created on first use and read without the lock: volatile, so a reader that sees it sees it constructed.
     private volatile PackFile? _writer;
 
     private readonly ConcurrentDictionary<BlobId, BlobEntry> _written = new();
     private readonly ConcurrentDictionary<BlobId, byte> _writing = new();
-    private readonly ConcurrentDictionary<Hash128, CachedUnit> _units = new();
+    private ConcurrentDictionary<Hash128, byte> _reused;
+    private readonly ConcurrentDictionary<Hash128, CachedUnit> _put = new();
     private readonly ConcurrentDictionary<Hash128, DependencySet> _dependencies = new();
-    private readonly ConcurrentDictionary<FPath, SourceStat> _sources = new();
+    private ConcurrentDictionary<FPath, SourceStat> _sources;
     private readonly ConcurrentDictionary<Hash128, Metadata> _metadata = new();
     private readonly ConcurrentDictionary<Hash128, Lazy<Node>> _nodes = new();
 
-    private BuildCache(string directory, FileStream lockFile, IProgressView view, CacheIndex previous)
+    private BuildCache(string directory, FileStream lockFile, IProgressView view, CacheIndex previous, TimeProvider time)
     {
+        _time = time;
+        _started = time.GetUtcNow().UtcDateTime;
         _directory = directory;
         _lock = lockFile;
         _view = view;
         _previous = previous;
         _packs = new PackFile?[previous.Packs.Count];
+        (_reused, _sources) = NewBuildSets(previous);
+    }
+
+    /// <summary>
+    /// The sets of a build that hold an entry per unit or source file, sized for the previous build: growing a
+    /// concurrent dictionary locks it whole, and a rebuild reuses about every unit.
+    /// </summary>
+    private static (ConcurrentDictionary<Hash128, byte>, ConcurrentDictionary<FPath, SourceStat>) NewBuildSets(CacheIndex previous)
+    {
+        return (new(Environment.ProcessorCount, previous.Units.Count), new(Environment.ProcessorCount, previous.Sources.Count));
     }
 
     /// <summary>
@@ -70,10 +90,15 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     public int PreviousUnits => _previous.Units.Count;
 
     /// <summary>
+    /// The number of packs the previous results use.
+    /// </summary>
+    public int PackCount => _previous.Packs.Count;
+
+    /// <summary>
     /// Opens the cache in <paramref name="directory"/>, or returns <c>null</c> when another build uses it. A cache written
     /// by another version of Douze is discarded; a damaged one is discarded with a warning.
     /// </summary>
-    public static BuildCache? Open(string directory, IProgressView view)
+    public static BuildCache? Open(string directory, IProgressView view, TimeProvider? time = null)
     {
         System.IO.Directory.CreateDirectory(Path.Combine(directory, PacksFolder));
 
@@ -90,7 +115,7 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
         }
 
         var index = LoadIndex(directory, view);
-        var cache = new BuildCache(directory, lockFile, view, index);
+        var cache = new BuildCache(directory, lockFile, view, index, time ?? TimeProvider.System);
         cache.DeleteUnusedPacks(index.Packs);
         return cache;
     }
@@ -222,8 +247,7 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     /// </summary>
     public void Reused(Hash128 key, CachedUnit unit)
     {
-        _units[key] = unit;
-        _dependencies.TryAdd(unit.Dependencies, _previous.Dependencies[unit.Dependencies]);
+        _reused.TryAdd(key, 0);
     }
 
     /// <summary>
@@ -232,8 +256,12 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     /// </summary>
     public void Put(Hash128 key, CachedUnit unit, DependencySet dependencies)
     {
-        _dependencies.TryAdd(dependencies.Hash, dependencies);
-        _units[key] = unit with { Dependencies = dependencies.Hash };
+        if (!_previous.Dependencies.ContainsKey(dependencies.Hash))
+        {
+            _dependencies.TryAdd(dependencies.Hash, dependencies);
+        }
+
+        _put[key] = unit with { Dependencies = dependencies.Hash };
     }
 
     /// <summary>
@@ -480,14 +508,15 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     }
 
     /// <summary>
-    /// Writes the index of what the next build can use. <paramref name="succeeded"/>: whether the build succeeded, in
-    /// which case the units it did not use are dropped.
+    /// Writes the index of what the next build can use (<see cref="Commit"/>, then <see cref="Persist"/>).
+    /// <paramref name="succeeded"/>: whether the build succeeded, in which case the units it did not use are dropped.
     /// </summary>
     public void Save(bool succeeded)
     {
         try
         {
-            SaveCore(succeeded);
+            CommitCore(succeeded);
+            PersistCore();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or DouzeException)
         {
@@ -495,30 +524,176 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
         }
     }
 
-    private void SaveCore(bool succeeded)
+    /// <summary>
+    /// Makes what the build used and stored the previous results of the next build, in memory: a watch session keeps
+    /// the cache open across its rebuilds and writes the index once, with <see cref="Persist"/>.
+    /// <paramref name="succeeded"/>: whether the build succeeded, in which case the units it did not use are dropped.
+    /// </summary>
+    public void Commit(bool succeeded)
     {
-        _writer?.Flush();
-
-        // Nothing ran and every unit was reused: the index on disk is the one to keep.
-        if (_written.IsEmpty && _units.Count == _previous.Units.Count && _sources.Count == _previous.Sources.Count
-            && _units.All(x => _previous.Units.ContainsKey(x.Key)) && _sources.All(x => _previous.Sources.TryGetValue(x.Key, out var s) && s == x.Value))
+        try
         {
-            DeleteWriter();
-            return;
+            CommitCore(succeeded);
         }
-
-        var index = new CacheIndex();
-        var units = new Dictionary<Hash128, CachedUnit>(_units);
-
-        if (!succeeded)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or DouzeException)
         {
-            foreach (var (key, unit) in _previous.Units)
+            _view.Message(LogLevel.Warning, null, $"cannot save the cache '{_directory}': {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Writes the index of the committed results when it changed since it was read or last written, compacting the
+    /// packs when most of their bytes are unused, and deletes the packs it does not list.
+    /// </summary>
+    public void Persist()
+    {
+        try
+        {
+            PersistCore();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or DouzeException)
+        {
+            _view.Message(LogLevel.Warning, null, $"cannot save the cache '{_directory}': {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Starts a build: the modification times of the source files are trusted from this time on (watch mode starts a
+    /// build for every change; a build that opens the cache starts when it opens it).
+    /// </summary>
+    public void BeginBuild()
+    {
+        _started = _time.GetUtcNow().UtcDateTime;
+    }
+
+    /// <summary>
+    /// The files that the units of the previous builds wrote to the output folder, with their length and modification
+    /// time once written (<see cref="DependencySet.Written"/>). A path can be listed twice when a failed build kept the
+    /// units of an older one.
+    /// </summary>
+    public IEnumerable<(FPath Path, long Length, DateTime LastWriteTimeUtc)> PreviousWritten()
+    {
+        foreach (var unit in _previous.Units.Values)
+        {
+            foreach (var written in _previous.Dependencies[unit.Dependencies].Written)
             {
-                units.TryAdd(key, unit);
+                yield return written;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Updates the previous results in place: the units this build used (and, after a failure, the previous ones too),
+    /// the blobs it wrote, in its pack, and the stats of the source files. Nothing is collected: blobs, dependency sets
+    /// and packs that nothing uses anymore stay until <see cref="PersistCore"/>, so that a rebuild of a watch session
+    /// costs what it changed, not the size of the cache.
+    /// </summary>
+    private void CommitCore(bool succeeded)
+    {
+        var index = _previous;
+        var changed = false;
+
+        // Every previous unit was reused when as many were: nothing to drop.
+        if (succeeded && _reused.Count != index.Units.Count)
+        {
+            foreach (var key in index.Units.Keys)
+            {
+                if (!_reused.ContainsKey(key) && !_put.ContainsKey(key))
+                {
+                    index.Units.Remove(key);
+                    changed = true;
+                }
             }
         }
 
-        // The blobs the kept units use, and their children.
+        foreach (var (key, unit) in _put)
+        {
+            index.Units[key] = unit;
+            changed = true;
+        }
+
+        foreach (var (hash, set) in _dependencies)
+        {
+            index.Dependencies.TryAdd(hash, set);
+        }
+
+        // The packs of this build are read like the others from now on.
+        if (_writer is { } writer)
+        {
+            writer.Flush();
+            writer.Dispose();
+            _writer = null;
+
+            if (_written.IsEmpty)
+            {
+                TryDelete(writer.Path);
+            }
+            else
+            {
+                var pack = index.Packs.Count;
+                index.Packs.Add(Path.GetFileName(writer.Path));
+
+                foreach (var (id, entry) in _written)
+                {
+                    index.Blobs[id] = entry with { Location = entry.Location with { Pack = pack } };
+                }
+
+                Array.Resize(ref _packs, index.Packs.Count);
+                changed = true;
+            }
+        }
+
+        // The stats of the files this build saw; after a failure, those of the previous builds too.
+        if (succeeded && (_sources.Count != index.Sources.Count || _sources.Any(x => !index.Sources.TryGetValue(x.Key, out var s) || s != x.Value)))
+        {
+            index.Sources.Clear();
+
+            foreach (var (path, stat) in _sources)
+            {
+                index.Sources[path] = stat;
+            }
+
+            changed = true;
+        }
+        else if (!succeeded)
+        {
+            foreach (var (path, stat) in _sources)
+            {
+                if (!index.Sources.TryGetValue(path, out var previous) || previous != stat)
+                {
+                    index.Sources[path] = stat;
+                    changed = true;
+                }
+            }
+        }
+
+        _written.Clear();
+        _writing.Clear();
+        _put.Clear();
+        _dependencies.Clear();
+        (_reused, _sources) = NewBuildSets(index);
+
+        if (changed)
+        {
+            _persisted = false;
+        }
+    }
+
+    /// <summary>
+    /// Writes the previous results to the index: only the blobs and dependency sets their units use, in the packs that
+    /// hold them, compacted into a new pack when most of their bytes are unused. Then deletes the other packs.
+    /// </summary>
+    private void PersistCore()
+    {
+        if (_persisted)
+        {
+            return;
+        }
+
+        var previous = _previous;
+        var index = new CacheIndex();
+
+        // The blobs the units use, and their children.
         var live = new HashSet<BlobId>();
         var pending = new Stack<BlobId>();
 
@@ -530,10 +705,10 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
             }
         }
 
-        foreach (var (key, unit) in units)
+        foreach (var (key, unit) in previous.Units)
         {
             index.Units[key] = unit;
-            index.Dependencies[unit.Dependencies] = _dependencies.TryGetValue(unit.Dependencies, out var set) ? set : _previous.Dependencies[unit.Dependencies];
+            index.Dependencies[unit.Dependencies] = previous.Dependencies[unit.Dependencies];
 
             foreach (var output in unit.Outputs)
             {
@@ -560,7 +735,7 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
         while (pending.TryPop(out var id))
         {
             // Outputs whose content or metadata are an input's have no blob.
-            if (!_written.TryGetValue(id, out var entry) && !_previous.Blobs.TryGetValue(id, out entry))
+            if (!previous.Blobs.TryGetValue(id, out var entry))
             {
                 continue;
             }
@@ -573,69 +748,42 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
             }
         }
 
-        // Packs: the previous ones, then this build's (-1). Mostly unused packs are compacted into a new one.
-        var packLengths = new Dictionary<int, long>();
-        var liveLengths = new Dictionary<int, long>();
-
-        for (var i = 0; i < _previous.Packs.Count; i++)
+        foreach (var (path, stat) in previous.Sources)
         {
-            packLengths[i] = new FileInfo(Path.Combine(_directory, PacksFolder, _previous.Packs[i])).Length;
+            index.Sources[path] = stat;
         }
 
-        if (_writer != null)
-        {
-            packLengths[-1] = _writer.Length;
-        }
+        // Packs: the ones that still hold a used blob; mostly unused packs are compacted into a new one.
+        var used = entries.Values.Sum(x => (long)x.Location.Length);
+        var packs = entries.Values.Select(x => x.Location.Pack).Distinct().Order().ToArray();
+        var total = packs.Sum(x => new FileInfo(Path.Combine(_directory, PacksFolder, previous.Packs[x])).Length);
 
-        foreach (var entry in entries.Values)
+        if (total > 4 << 20 && used < total / 2)
         {
-            liveLengths[entry.Location.Pack] = liveLengths.GetValueOrDefault(entry.Location.Pack) + entry.Location.Length;
-        }
-
-        var total = packLengths.Values.Sum();
-        var used = liveLengths.Values.Sum();
-        var compact = total > 4 << 20 && used < total / 2;
-        var packNumbers = new Dictionary<int, int>();
-        PackFile? compacted = null;
-
-        if (compact)
-        {
-            compacted = PackFile.Create(Path.Combine(_directory, PacksFolder, Guid.NewGuid().ToString("N") + ".pack"));
+            using var compacted = PackFile.Create(Path.Combine(_directory, PacksFolder, Guid.NewGuid().ToString("N") + ".pack"));
             index.Packs.Add(Path.GetFileName(compacted.Path));
 
             foreach (var (id, entry) in entries.OrderBy(x => x.Value.Location.Pack).ThenBy(x => x.Value.Location.Offset))
             {
-                var bytes = entry.Location.Pack < 0 ? _writer!.Read(entry.Location.Offset, entry.Location.Length) : GetPack(entry.Location.Pack).Read(entry.Location.Offset, entry.Location.Length);
+                var bytes = GetPack(entry.Location.Pack).Read(entry.Location.Offset, entry.Location.Length);
                 index.Blobs[id] = entry with { Location = new BlobLocation(0, compacted.Append(bytes), bytes.Length) };
             }
 
             compacted.Flush();
-            compacted.Dispose();
         }
         else
         {
-            foreach (var pack in liveLengths.Keys.Order())
+            var packNumbers = new Dictionary<int, int>();
+
+            foreach (var pack in packs)
             {
                 packNumbers[pack] = index.Packs.Count;
-                index.Packs.Add(pack < 0 ? Path.GetFileName(_writer!.Path) : _previous.Packs[pack]);
+                index.Packs.Add(previous.Packs[pack]);
             }
 
             foreach (var (id, entry) in entries)
             {
                 index.Blobs[id] = entry with { Location = entry.Location with { Pack = packNumbers[entry.Location.Pack] } };
-            }
-        }
-
-        foreach (var (path, stat) in _sources)
-        {
-            index.Sources[path] = stat;
-        }
-
-        if (!succeeded)
-        {
-            foreach (var (path, stat) in _previous.Sources)
-            {
-                index.Sources.TryAdd(path, stat);
             }
         }
 
@@ -648,22 +796,36 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
 
         File.Move(temporary, Path.Combine(_directory, IndexFile), overwrite: true);
 
-        if (_writer != null && !index.Packs.Contains(Path.GetFileName(_writer.Path)))
-        {
-            DeleteWriter();
-        }
-
-        ClosePacks();
+        Roll(index);
+        _persisted = true;
         DeleteUnusedPacks(index.Packs);
     }
 
-    private void DeleteWriter()
+    /// <summary>
+    /// Makes <paramref name="index"/> the previous results. The metadata and nodes read from blobs that the index keeps
+    /// stay: the next build of a watch session reads them again (collections read the metadata of every page).
+    /// </summary>
+    private void Roll(CacheIndex index)
     {
-        if (_writer is { } writer)
+        ClosePacks();
+
+        _previous = index;
+        _packs = new PackFile?[index.Packs.Count];
+
+        foreach (var hash in _metadata.Keys)
         {
-            writer.Dispose();
-            TryDelete(writer.Path);
-            _writer = null;
+            if (!index.Blobs.ContainsKey(new BlobId(BlobKind.Metadata, hash)))
+            {
+                _metadata.TryRemove(hash, out _);
+            }
+        }
+
+        foreach (var hash in _nodes.Keys)
+        {
+            if (!index.Blobs.ContainsKey(new BlobId(BlobKind.Node, hash)))
+            {
+                _nodes.TryRemove(hash, out _);
+            }
         }
     }
 

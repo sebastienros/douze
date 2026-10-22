@@ -24,7 +24,8 @@ internal sealed class BuildContext : IAsyncDisposable
     /// <exception cref="WorkflowValidationException">A shortcode is invalid: the build does not start.</exception>
     public static async Task<BuildContext> CreateAsync(SiteOptions site, BuildOptions options, IProgressView view, ITraceRecorder trace, CancellationToken ct = default)
     {
-        var parser = Liquid.LiquidOptions.CreateParser();
+        // Watch mode reuses a template loader across rebuilds: the shortcodes are registered on its parser.
+        var parser = options.Templates?.Parser as DouzeParser ?? Liquid.LiquidOptions.CreateParser();
         var shortcodes = await ShortcodeRegistry.ScanAsync(site.Source, site.ShortcodesFolder, parser, ct);
 
         return new BuildContext(site, options, view, trace, parser, shortcodes);
@@ -44,7 +45,7 @@ internal sealed class BuildContext : IAsyncDisposable
         ProcessSlots = new SemaphoreSlim(parallelism, parallelism);
 
         Shortcodes = shortcodes;
-        Templates = new TemplateLoader(site.Source, [site.IncludesFolder], parser);
+        Templates = options.Templates ?? new TemplateLoader(site.Source, [site.IncludesFolder], parser);
         LiquidOptions = Liquid.LiquidOptions.Create(Templates);
         Markdown = new MarkdownRenderer(site.Markdown, site.Source, site.ContentFolder);
 
@@ -55,9 +56,15 @@ internal sealed class BuildContext : IAsyncDisposable
 
         ExcludedSourceFolders = [.. new[] { InsideSource(site, site.OutputDirectory), InsideSource(site, CacheRoot) }.OfType<FPath>()];
 
-        if (options.UseCache && CacheRoot != null)
+        if (options.Cache is { } shared)
+        {
+            Cache = shared;
+            Cache.BeginBuild();
+        }
+        else if (options.UseCache && CacheRoot != null)
         {
             Cache = BuildCache.Open(Path.Combine(CacheRoot, "cache"), view);
+            OwnsCache = true;
         }
 
         BaseScopes = ScopeSet.FromSettings(SiteValues(site));
@@ -70,7 +77,7 @@ internal sealed class BuildContext : IAsyncDisposable
     /// <summary>
     /// The virtual path of a folder of the disk when it is inside the source folder.
     /// </summary>
-    private static FPath? InsideSource(SiteOptions site, string? directory)
+    internal static FPath? InsideSource(SiteOptions site, string? directory)
     {
         if (site.SourceDirectory is not { } sourceDirectory || directory == null)
         {
@@ -143,6 +150,7 @@ internal sealed class BuildContext : IAsyncDisposable
     public ImmutableArray<FPath> ExcludedSourceFolders { get; }  // the output and cache folders, when they are inside the source folder: never sources
     public string? CacheRoot { get; }               // --cache-dir, or <source>/.douze/; null for a site not on disk
     public BuildCache? Cache { get; }               // the disk cache in <cache root>/cache/; null with --no-cache or when another build holds it
+    public bool OwnsCache { get; }                  // opened by this build, which saves it; false for BuildOptions.Cache, which the build commits
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _warned = new(StringComparer.Ordinal);
 
@@ -166,7 +174,10 @@ internal sealed class BuildContext : IAsyncDisposable
     {
         Parallelism.Dispose();
         ProcessSlots.Dispose();
-        Cache?.Dispose();
+        if (OwnsCache)
+        {
+            Cache?.Dispose();
+        }
 
         try
         {

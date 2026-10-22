@@ -1,3 +1,4 @@
+using Douze.FileSystems;
 using Douze.Nodes;
 using Douze.Tracing;
 using Douze.Workflow.Scheduling;
@@ -42,6 +43,22 @@ internal sealed class BuildResult
     public ScopeSet Scopes { get; }
 
     public TraceSession Trace { get; }
+
+    /// <summary>
+    /// The files the units of the build wrote to the output folder (now, or in the build whose results they replayed),
+    /// with their length and modification time once written, sorted by path.
+    /// </summary>
+    public IReadOnlyList<(FPath Path, long Length, DateTime LastWriteTimeUtc)> Written { get; init; } = [];
+
+    /// <summary>
+    /// The files of the output folder that a previous build wrote and this one did not, deleted, sorted.
+    /// </summary>
+    public IReadOnlyList<FPath> Deleted { get; init; } = [];
+
+    /// <summary>
+    /// The snapshot of the source folder the build used: a watch session updates it for the next build.
+    /// </summary>
+    public SourceSnapshot? Sources { get; init; }
 
     public TimeSpan Elapsed { get; }
 

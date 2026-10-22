@@ -118,5 +118,7 @@ public class WriteStepTests : StepTestBase
         public ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath basePath, bool recursive, Predicate<string>? filter) => inner.EnumerateFileSystemEntriesAsync(basePath, recursive, filter);
         public ValueTask CreateDirectoryAsync(FPath path) => inner.CreateDirectoryAsync(path);
         public ValueTask<FileMetadata> GetFileMetadataAsync(FPath path) => inner.GetFileMetadataAsync(path);
+        public ValueTask DeleteFileAsync(FPath path) => inner.DeleteFileAsync(path);
+        public ValueTask<bool> DeleteDirectoryIfEmptyAsync(FPath path) => inner.DeleteDirectoryIfEmptyAsync(path);
     }
 }

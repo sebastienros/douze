@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Douze.Progress;
 using Douze.Tracing;
 using Douze.Workflow;
@@ -11,31 +12,12 @@ internal static class BuildCommand
 {
     public static async Task<int> RunAsync(CommandLine commandLine)
     {
-        var sourceDirectory = Path.GetFullPath(commandLine.Source);
-
-        if (!Directory.Exists(sourceDirectory))
+        if (await LoadAsync(commandLine) is not { } loaded)
         {
-            Console.Error.WriteLine($"error: the source folder '{sourceDirectory}' does not exist");
             return ExitCodes.Usage;
         }
 
-        WorkflowGraph graph;
-        SiteOptions site;
-
-        try
-        {
-            (var workflow, site) = await WorkflowSource.LoadAsync(commandLine, sourceDirectory);
-            graph = WorkflowGraph.Build(workflow);
-        }
-        catch (WorkflowValidationException e)
-        {
-            foreach (var error in e.Errors)
-            {
-                Console.Error.WriteLine(error);
-            }
-
-            return ExitCodes.Usage;
-        }
+        var (sourceDirectory, graph, site) = loaded;
 
         if (commandLine.PrintWorkflow)
         {
@@ -44,62 +26,121 @@ internal static class BuildCommand
         }
 
         using var cancellation = new CancellationTokenSource();
+        using var _ = HandleCancelKey(cancellation);
 
+        using var view = ViewSelector.Select(commandLine);
+
+        BuildResult result;
+
+        try
+        {
+            result = await SiteBuilder.BuildAsync(graph, site, Options(commandLine, site, view, cancellation.Token));
+        }
+        catch (WorkflowValidationException e)
+        {
+            // Invalid shortcodes: the build did not start.
+            foreach (var error in e.Errors)
+            {
+                Console.Error.WriteLine(error);
+            }
+
+            return ExitCodes.Usage;
+        }
+
+        var traced = WriteTraceFiles(commandLine, view, result, sourceDirectory);
+
+        return result.Cancelled ? ExitCodes.Cancelled : result.Succeeded && traced ? ExitCodes.Success : ExitCodes.BuildErrors;
+    }
+
+    /// <summary>
+    /// The source folder, the graph and the site of the command line, or null when they are invalid (the errors are
+    /// printed).
+    /// </summary>
+    internal static async Task<(string SourceDirectory, WorkflowGraph Graph, SiteOptions Site)?> LoadAsync(CommandLine commandLine)
+    {
+        var sourceDirectory = Path.GetFullPath(commandLine.Source);
+
+        if (!Directory.Exists(sourceDirectory))
+        {
+            Console.Error.WriteLine($"error: the source folder '{sourceDirectory}' does not exist");
+            return null;
+        }
+
+        try
+        {
+            var (workflow, site) = await WorkflowSource.LoadAsync(commandLine, sourceDirectory);
+            return (sourceDirectory, WorkflowGraph.Build(workflow), site);
+        }
+        catch (WorkflowValidationException e)
+        {
+            foreach (var error in e.Errors)
+            {
+                Console.Error.WriteLine(error);
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Cancels <paramref name="cancellation"/> on Ctrl+C or SIGTERM, until disposed. The first Ctrl+C stops the build
+    /// cleanly; a second one ends the process.
+    /// </summary>
+    internal static IDisposable HandleCancelKey(CancellationTokenSource cancellation)
+    {
         ConsoleCancelEventHandler cancel = (_, e) =>
         {
-            // The first Ctrl+C stops the build cleanly; a second one ends the process.
             e.Cancel = !cancellation.IsCancellationRequested;
             cancellation.Cancel();
         };
 
         Console.CancelKeyPress += cancel;
 
-        try
+        var terminate = OperatingSystem.IsWindows() ? null : PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
         {
-            using var view = ViewSelector.Select(commandLine);
+            context.Cancel = true;
+            cancellation.Cancel();
+        });
 
-            var options = new BuildOptions
-            {
-                MaxDegreeOfParallelism = commandLine.Parallelism ?? site.Parallelism ?? Environment.ProcessorCount,
-                Failure = commandLine.Failure,
-                Verbose = commandLine.Verbose,
-                TraceUnits = commandLine.TraceUnits,
-                TracePath = commandLine.TracePath,
-                TimelinePath = commandLine.TimelinePath,
-                View = view,
-                CacheDirectory = commandLine.CacheDirectory,
-                UseCache = !commandLine.NoCache,
-                Cancellation = cancellation.Token,
-            };
+        return new CancelKeyRegistration(cancel, terminate);
+    }
 
-            BuildResult result;
-
-            try
-            {
-                result = await SiteBuilder.BuildAsync(graph, site, options);
-            }
-            catch (WorkflowValidationException e)
-            {
-                // Invalid shortcodes: the build did not start.
-                foreach (var error in e.Errors)
-                {
-                    Console.Error.WriteLine(error);
-                }
-
-                return ExitCodes.Usage;
-            }
-
-            // A failed or cancelled build is traced too: that is when the trace is the most useful.
-            KeyValuePair<string, string>[] otherData = [new("douze", StepDefinition.DouzeVersion), new("site", sourceDirectory)];
-            var traced = WriteTraceFile(view, "trace", commandLine.TracePath, s => ChromeTraceWriter.Write(result.Trace, s, otherData))
-                & WriteTraceFile(view, "timeline", commandLine.TimelinePath, s => TimelineHtmlWriter.Write(result.Trace, s, otherData));
-
-            return result.Cancelled ? ExitCodes.Cancelled : result.Succeeded && traced ? ExitCodes.Success : ExitCodes.BuildErrors;
-        }
-        finally
+    private sealed class CancelKeyRegistration(ConsoleCancelEventHandler cancel, PosixSignalRegistration? terminate) : IDisposable
+    {
+        public void Dispose()
         {
             Console.CancelKeyPress -= cancel;
+            terminate?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// The build options of the command line.
+    /// </summary>
+    internal static BuildOptions Options(CommandLine commandLine, SiteOptions site, IProgressView? view, CancellationToken ct) => new()
+    {
+        MaxDegreeOfParallelism = commandLine.Parallelism ?? site.Parallelism ?? Environment.ProcessorCount,
+        Failure = commandLine.Failure,
+        Verbose = commandLine.Verbose,
+        TraceUnits = commandLine.TraceUnits,
+        TracePath = commandLine.TracePath,
+        TimelinePath = commandLine.TimelinePath,
+        View = view,
+        CacheDirectory = commandLine.CacheDirectory,
+        UseCache = !commandLine.NoCache,
+        Cancellation = ct,
+    };
+
+    /// <summary>
+    /// Writes the trace and the timeline of a build when the command line asks for them. Returns <c>false</c> when one
+    /// cannot be written. A failed or cancelled build is traced too: that is when the trace is the most useful.
+    /// </summary>
+    internal static bool WriteTraceFiles(CommandLine commandLine, IProgressView view, BuildResult result, string sourceDirectory)
+    {
+        KeyValuePair<string, string>[] otherData = [new("douze", StepDefinition.DouzeVersion), new("site", sourceDirectory)];
+
+        return WriteTraceFile(view, "trace", commandLine.TracePath, s => ChromeTraceWriter.Write(result.Trace, s, otherData))
+            & WriteTraceFile(view, "timeline", commandLine.TimelinePath, s => TimelineHtmlWriter.Write(result.Trace, s, otherData));
     }
 
     /// <summary>

@@ -31,10 +31,9 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     // Files of the includes folders by relative path, read once, with the paths looked for before them.
     private readonly ConcurrentDictionary<FPath, Lazy<Task<Resolution>>> _files = new();
 
-    // Fluid include names to the content hash of the file they resolved to, for the template cache.
-    private readonly ConcurrentDictionary<string, Hash128> _includeHashes = new(StringComparer.Ordinal);
-
-    private readonly ConcurrentDictionary<Hash128, IFluidTemplate> _includeTemplates = new();
+    // Parsed includes by the cache key Fluid gives the template cache: the content hash of the file, which
+    // GetFileInfoAsync returns as the key of its source.
+    private readonly ConcurrentDictionary<string, IFluidTemplate> _includeTemplates = new(StringComparer.Ordinal);
 
     public TemplateLoader(IFileSystem source, IReadOnlyList<FPath> includesFolders, FluidParser parser)
     {
@@ -49,6 +48,11 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     /// The number of distinct templates parsed (or that failed to parse).
     /// </summary>
     public int ParsedCount => _parsed.Count;
+
+    /// <summary>
+    /// The number of parsed includes kept for <c>{% include %}</c> and <c>{% render %}</c>.
+    /// </summary>
+    public int IncludeCount => _includeTemplates.Count;
 
     /// <summary>
     /// Returns the parsed template for <paramref name="text"/>, parsing it only once per <paramref name="contentHash"/>.
@@ -76,6 +80,8 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     {
         private readonly Lock _lock = new();
         private volatile WeakReference<ParseResult>? _result;
+
+        public bool IsAlive => _result is not { } result || result.TryGetTarget(out _);
 
         public ParseResult GetOrParse(FluidParser parser, Hash128 hash, string text)
         {
@@ -142,20 +148,94 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     }
 
     /// <summary>
-    /// Forgets a source file that changed (watch mode).
+    /// Forgets a source file that changed, was added or was deleted (watch mode): the names that resolved to it, the
+    /// names that resolved to nothing (they may resolve to it now), and the parsed include of its content. A directory
+    /// path forgets every file under it.
     /// </summary>
     public void Invalidate(FPath sourcePath)
     {
         foreach (var entry in _files)
         {
-            var file = entry.Value.IsValueCreated && entry.Value.Value.IsCompletedSuccessfully ? entry.Value.Value.Result.File : null;
+            var resolution = entry.Value.IsValueCreated && entry.Value.Value.IsCompletedSuccessfully ? entry.Value.Value.Result : null;
+            var file = resolution?.File;
 
-            // Entries that were not found may resolve to the new file.
-            if (file == null || file.Path == sourcePath)
+            // Entries that were not found, or found after the path, may resolve to the new file.
+            if (file == null || file.Path == sourcePath || sourcePath.IsDirectory && file.Path.IsInDirectory(sourcePath)
+                || resolution!.Missing.Any(x => x == sourcePath || sourcePath.IsDirectory && x.IsInDirectory(sourcePath)))
             {
                 _files.TryRemove(entry.Key, out _);
+
+                if (file != null)
+                {
+                    Forget(file.ContentHash);
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Forgets every file read from the includes folders (watch mode, when the changes are not known).
+    /// </summary>
+    public void InvalidateAll()
+    {
+        _files.Clear();
+        _includeTemplates.Clear();
+    }
+
+    /// <summary>
+    /// Drops the slots of parsed templates that nobody holds anymore: a watch session parses the new content of every
+    /// page it rebuilds.
+    /// </summary>
+    public void Trim()
+    {
+        foreach (var (hash, slot) in _parsed)
+        {
+            if (!slot.IsAlive)
+            {
+                _parsed.TryRemove(new KeyValuePair<Hash128, ParseSlot>(hash, slot));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The hash of a file of the includes folders as this loader sees it, or <see cref="DependencySet.Absent"/> for a
+    /// path it looked for and did not find. Returns <c>false</c> when the loader did not look for it: units that run
+    /// would read it as it is on disk.
+    /// </summary>
+    public bool TryGetHash(FPath sourcePath, out Hash128 hash)
+    {
+        foreach (var entry in _files)
+        {
+            if (!entry.Value.IsValueCreated || !entry.Value.Value.IsCompletedSuccessfully)
+            {
+                continue;
+            }
+
+            var resolution = entry.Value.Value.Result;
+
+            if (resolution.File is { } file && file.Path == sourcePath)
+            {
+                hash = file.ContentHash;
+                return true;
+            }
+
+            if (resolution.Missing.Contains(sourcePath))
+            {
+                hash = DependencySet.Absent;
+                return true;
+            }
+        }
+
+        hash = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Forgets the parsed include of a content.
+    /// </summary>
+    private void Forget(Hash128 contentHash)
+    {
+        _includeTemplates.TryRemove(contentHash.ToString(), out _);
     }
 
     async ValueTask<TemplateSourceInfo> ITemplateFileProvider.GetFileInfoAsync(string subpath, TemplateContext context, CancellationToken cancellationToken)
@@ -172,31 +252,20 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
             throw new DouzeException($"include '{subpath}' not found in {string.Join(", ", _includesFolders.Select(x => $"'{x}'"))}");
         }
 
-        _includeHashes[subpath] = file.ContentHash;
-
         var bytes = file.Bytes;
         return new TemplateSourceInfo(DateTimeOffset.MinValue, _ => new ValueTask<Stream>(new MemoryStream(bytes, writable: false)), file.ContentHash.ToString());
     }
 
-    bool ITemplateCache.TryGetTemplate(string subpath, DateTimeOffset lastModified, [MaybeNullWhen(false)] out IFluidTemplate template)
+    // Fluid calls the template cache with the key of the source GetFileInfoAsync returned: the content hash. The
+    // modification date is ignored.
+    bool ITemplateCache.TryGetTemplate(string key, DateTimeOffset lastModified, [MaybeNullWhen(false)] out IFluidTemplate template)
     {
-        // The modification date is ignored: the cache is keyed by content hash.
-        if (_includeHashes.TryGetValue(subpath, out var hash) && _includeTemplates.TryGetValue(hash, out var cached))
-        {
-            template = cached;
-            return true;
-        }
-
-        template = null;
-        return false;
+        return _includeTemplates.TryGetValue(key, out template);
     }
 
-    void ITemplateCache.SetTemplate(string subpath, DateTimeOffset lastModified, IFluidTemplate template)
+    void ITemplateCache.SetTemplate(string key, DateTimeOffset lastModified, IFluidTemplate template)
     {
-        if (_includeHashes.TryGetValue(subpath, out var hash))
-        {
-            _includeTemplates.TryAdd(hash, template);
-        }
+        _includeTemplates.TryAdd(key, template);
     }
 
     private async Task<Resolution> ResolveIncludeAsync(string subpath)

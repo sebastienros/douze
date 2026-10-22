@@ -82,13 +82,19 @@ internal sealed class ReplayState
     }
 
     /// <summary>
-    /// The hash of a template file of the source folder as it is now, read once per build, or
-    /// <see cref="DependencySet.Absent"/>.
+    /// The hash of a template file of the source folder as units that run would see it, or
+    /// <see cref="DependencySet.Absent"/>: the template loader's when it read the file already (a watch session keeps it
+    /// across rebuilds), otherwise as it is now, read once per build.
     /// </summary>
     private Task<Hash128> TemplateHashAsync(FPath path)
     {
         return _templates.GetOrAdd(path, static (path, context) => new Lazy<Task<Hash128>>(async () =>
         {
+            if (context.Templates.TryGetHash(path, out var known))
+            {
+                return known;
+            }
+
             if (!(await context.Source.GetFileEntryAsync(path)).Exists)
             {
                 return DependencySet.Absent;

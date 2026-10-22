@@ -22,6 +22,15 @@ public interface IFileSystem
 
     ValueTask<FileMetadata> GetFileMetadataAsync(FPath path);
 
+    /// <summary>
+    /// Deletes a file. A file that does not exist is not an error.
+    /// </summary>
+    ValueTask DeleteFileAsync(FPath path);
+
+    /// <summary>
+    /// Deletes a directory when it is empty, and returns whether it did.
+    /// </summary>
+    ValueTask<bool> DeleteDirectoryIfEmptyAsync(FPath path);
 }
 
 public static class FileSystemExtensions

@@ -133,6 +133,32 @@ internal sealed class MemoryFileSystem : IFileSystem
         return new(new FileMetadata(file.Bytes.Length, file.LastWriteTimeUtc, file.LastWriteTimeUtc, file.LastWriteTimeUtc));
     }
 
+    public ValueTask DeleteFileAsync(FPath path)
+    {
+        path = path.ToAbsolute();
+
+        if (_files.TryGetValue(path, out var entry) && entry is FileEntry)
+        {
+            _files.TryRemove(path, out _);
+            _contents.TryRemove(path, out _);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask<bool> DeleteDirectoryIfEmptyAsync(FPath path)
+    {
+        path = path.ToAbsolute().GetDirectory();
+
+        if (path == FPath.Root || !_files.TryGetValue(path, out var entry) || entry is not DirectoryEntry
+            || _files.Keys.Any(x => x != path && x.IsInDirectory(path)))
+        {
+            return new(false);
+        }
+
+        return new(_files.TryRemove(path, out _));
+    }
+
     private sealed record MemoryFile(byte[] Bytes, DateTime LastWriteTimeUtc)
     {
         public static readonly MemoryFile Empty = new([], DateTime.UtcNow);

@@ -326,6 +326,36 @@ lock); the first run on a machine takes 1.6 s more while fontconfig builds its c
 Tool packages (`dotnet pack -r osx-arm64 -p:PackTool=true`): 17.3 MB before, 25.6 MB with `libvips.42.dylib` (17.9 MB
 uncompressed); the binary grows by 66 KB (16.82 to 16.88 MB). The `any` package grows by 65 KB (the managed NetVips
 assembly) and has no native library.
+### Phase 6: watch mode, 2026-10-22
+
+Native AOT with the Satori GC, M4 Pro. **Base** is ab9088a (bounded channels, Satori), **head** phase 6. The machine
+was loaded by other builds during these runs (load average 6 to 19), so the variance is higher than in the tables above:
+one head run of the synthetic clean build took 6.5 s and is left out. Median of 3, two rounds each.
+
+| Scenario | Variant | Wall (s) | User (s) | Sys (s) | Peak RSS (MB) |
+|---|---|---:|---:|---:|---:|
+| synthetic 32000, clean, no cache | base | 4.59-4.78 | 9.0-9.3 | 17.6-18.7 | 1987-2012 |
+| synthetic 32000, clean, no cache | head | 4.59 | 8.5 | 17.9 | 1620 |
+| synthetic 32000, one page edited, disk cache | base | 0.96-1.21 | 3.9-4.7 | 0.7-1.1 | 705-732 |
+| synthetic 32000, one page edited, disk cache | head | 0.97 | 4.6 | 1.1 | 706-715 |
+| API reference pages, clean, no cache | base | 2.02-2.22 | 5.4 | 7.9-8.4 | 1301-1319 |
+| API reference pages, clean, no cache | head | 1.98 | 4.7 | 9.0-9.2 | 1229-1278 |
+
+| Scenario | Wall (s) |
+|---|---:|
+| synthetic 32000, one page edited, `douze watch` (median of 10 rebuilds, two sessions) | 0.49 |
+
+A clean build costs less CPU and memory: parsed includes were never cached (plan 2.8), so every page parsed the three
+includes of the synthetic layout again. A rebuild in a watch session takes half the time of a build from the disk cache:
+the session keeps the index, the source stats and the metadata of every page in memory, commits in place, and does not
+list the source folder again. Before the work on replays (trace of one rebuild, at about 0.78 s): 130 ms to list, stat
+and match the sources, 250 ms of collections (reading the metadata of 32k pages from the packs), 280 ms replaying the
+pages through five steps, 65 ms rebuilding the index; after: 10 ms, 170 ms, 250 ms and 8 ms. The rest is the
+collections barrier (`collect` runs again whenever a page's metadata changed, and a real edit changes its date) and
+about 8 µs per replayed unit.
+
+Against section 9.2's watch target, "synthetic 32k, one page edited, watch mode: under 500 ms to the written output": 0.47
+to 0.52 s, at the edge of it on this loaded machine.
 
 ## Findings
 

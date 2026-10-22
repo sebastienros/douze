@@ -18,8 +18,8 @@ internal sealed class CommandLine
     public const string Usage = """
         Usage:
           douze [build] [options]          build once (default command)
-          douze watch [options]            rebuild on changes (not available yet)
-          douze serve [options]            watch + dev server with live reload (not available yet)
+          douze watch [options]            build, then rebuild on changes
+          douze serve [options]            watch + dev server with live reload
           douze worker-helper              print douze-worker.mjs to stdout
 
         Options:
@@ -177,8 +177,7 @@ internal sealed class CommandLine
                 return WorkerHelperCommand.Run();
 
             case Command.Watch or Command.Serve:
-                Console.Error.WriteLine($"error: 'douze {commandLine.Command.ToString().ToLowerInvariant()}' is not available yet");
-                return ExitCodes.Usage;
+                return await WatchCommand.RunAsync(commandLine);
 
             default:
                 return await BuildCommand.RunAsync(commandLine);

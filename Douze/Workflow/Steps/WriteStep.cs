@@ -6,7 +6,9 @@ namespace Douze.Workflow.Steps;
 /// <summary>
 /// <c>uses: write</c>. Writes each file to the output folder and passes it through, so that later steps can run after
 /// it. Two files with the same output path are an error, unless they are the same file (path, content and metadata): an
-/// image variant used by two pages is produced by both, and written once.
+/// image variant used by two pages is produced by both, and written once. A file whose unit is replayed is not written
+/// again: it is in the output folder as written. What a previous build wrote and this one does not is deleted once the
+/// build succeeded (<see cref="StaleOutputs"/>).
 /// </summary>
 internal sealed class WriteStep : Step, IMapStep, IReplayObserver
 {
@@ -57,8 +59,9 @@ internal sealed class WriteStep : Step, IMapStep, IReplayObserver
             }
         }
 
-        // The result is reused while the file is in the output folder as written.
-        if (context.Build.Cache != null)
+        // The result is reused while the file is in the output folder as written, and the next build deletes it if it
+        // does not write it again (StaleOutputs). Without the cache, a one-shot build has no next build to tell.
+        if (context.Build.Cache != null || context.Build.Options.RecordWritten)
         {
             var info = await context.Build.Output.GetFileMetadataAsync(file.Path);
             context.Dependencies.RecordWritten(file.Path, info.Length, info.LastWriteTimeUtc);

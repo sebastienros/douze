@@ -44,14 +44,50 @@ public class TemplateLoaderTests
                 deps.ToSet().Templates.Select(x => (x.Path.FullName, x.Hash)));
         }
 
-        // Each include file was read once, whatever the number of renders.
+        // Each include file was read once and parsed once, whatever the number of renders.
         Assert.Equal(2, fs.Opens);
+        Assert.Equal(2, loader.IncludeCount);
 
         var missing = loader.GetOrParse(Hash128.OfText("missing"), "{% include 'nope' %}", "/page.html");
         var missingDeps = new DependencyTracker();
         var e = await Assert.ThrowsAsync<DouzeException>(async () => await missing.Template.RenderAsync(Context(loader, missingDeps)));
         Assert.Equal("include 'nope' not found in '/_includes/'", e.Message);
         Assert.Equal(["/_includes/nope.html", "/_includes/nope.liquid"], missingDeps.ToSet().Templates.Select(x => x.Path.FullName));
+    }
+
+    [Fact]
+    public async Task InvalidatedFilesAreReadAgain()
+    {
+        var fs = new CountingFileSystem();
+        await fs.WriteTextFileAsync("/_includes/header.liquid", "Header 1");
+        await fs.WriteTextFileAsync("/_includes/footer.liquid", "Footer");
+
+        var loader = Loader(fs);
+        var template = loader.GetOrParse(Hash128.OfText("page"), "{% include 'header' %} {% include 'nav' %}{% include 'footer' %}", "/page.html");
+
+        async Task<string> RenderAsync() => await template.Template.RenderAsync(Context(loader, new DependencyTracker()));
+
+        await fs.WriteTextFileAsync("/_includes/nav.liquid", "");
+        Assert.Equal("Header 1 Footer", await RenderAsync());
+
+        // Changed files are not read again until they are invalidated.
+        await fs.WriteTextFileAsync("/_includes/header.liquid", "Header 2");
+        await fs.WriteTextFileAsync("/_includes/nav.liquid", "Nav ");
+        Assert.Equal("Header 1 Footer", await RenderAsync());
+
+        loader.Invalidate("/_includes/header.liquid");
+        loader.Invalidate("/_includes/nav.liquid");
+        Assert.Equal("Header 2 Nav Footer", await RenderAsync());
+
+        // The parsed include of the previous content is dropped; the footer's stays, its file was not read again.
+        Assert.Equal(3, loader.IncludeCount);
+        Assert.True(loader.TryGetHash("/_includes/footer.liquid", out var footer));
+        Assert.Equal(Hash128.OfText("Footer"), footer);
+        Assert.Equal(5, fs.Opens);
+
+        // A folder forgets its files.
+        loader.Invalidate("/_includes/");
+        Assert.False(loader.TryGetHash("/_includes/footer.liquid", out _));
     }
 
     [Fact]
@@ -111,6 +147,8 @@ public class TemplateLoaderTests
         public ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath basePath, bool recursive, Predicate<string>? filter) => _inner.EnumerateFileSystemEntriesAsync(basePath, recursive, filter);
         public ValueTask<Stream> CreateFileAsync(FPath path) => _inner.CreateFileAsync(path);
         public ValueTask CreateDirectoryAsync(FPath path) => _inner.CreateDirectoryAsync(path);
+        public ValueTask DeleteFileAsync(FPath path) => _inner.DeleteFileAsync(path);
+        public ValueTask<bool> DeleteDirectoryIfEmptyAsync(FPath path) => _inner.DeleteDirectoryIfEmptyAsync(path);
         public ValueTask<FileMetadata> GetFileMetadataAsync(FPath path) => _inner.GetFileMetadataAsync(path);
     }
 }

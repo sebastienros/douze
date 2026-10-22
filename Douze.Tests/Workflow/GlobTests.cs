@@ -25,6 +25,33 @@ public class GlobTests
     }
 
     [Fact]
+    public void LiteralEndsAreMatchedLikeThePattern()
+    {
+        // The literal prefix and suffix of a pattern reject paths before its regular expression runs.
+        Assert.True(Match("**/index.md", "/index.md"));
+        Assert.True(Match("**/index.md", "/a/b/index.md"));
+        Assert.False(Match("**/index.md", "/a/xindex.md"));
+        Assert.True(Match("docs/**/index.md", "/docs/index.md"));
+        Assert.False(Match("docs/**/index.md", "/other/index.md"));
+        Assert.True(Match("[ab].txt", "/a.txt"));
+        Assert.True(Match("a{b,}/x", "/a/x"));
+        Assert.True(Match("a\\*.md", "/a*.md"));
+        Assert.False(Match("a\\*.md", "/ab.md"));
+
+        // '**/*.md' and '**/*.{md,html}' match by their ends alone.
+        Assert.True(Match("**/*.md", "/.md"));
+        Assert.True(Match("**/*.md", "/a/.b/c.md"));
+        Assert.False(Match("**/*.md", "/a/c.mdx"));
+        Assert.True(Match("**/*.{md,html}", "/a/b.html"));
+        Assert.True(Match("**/*-{a,}.txt", "/x/y-.txt"));
+        Assert.False(Match("**/*.{md,html}", "/a/b.htm"));
+
+        // 'prefix/**' matches the folder itself.
+        Assert.True(Match("_content/**", "/_content"));
+        Assert.False(Match("_content/**", "/_contents"));
+    }
+
+    [Fact]
     public void FileNameMatchesAtRootOnly()
     {
         Assert.True(Match("config.json", "/config.json"));
