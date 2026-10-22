@@ -115,23 +115,33 @@ internal sealed class ValueAccess
 
     private Hash128 ComputeShape()
     {
-        var hashes = new List<Hash128> { new((IsWhole ? 1UL : 0) | (CountRead ? 2UL : 0), 0) };
+        var hash = new XxHash128();
+        Span<byte> buffer = stackalloc byte[16];
+
+        buffer[0] = (byte)((IsWhole ? 1 : 0) | (CountRead ? 2 : 0));
+        hash.Append(buffer[..1]);
 
         foreach (var (key, access) in Members)
         {
-            hashes.Add(Hash128.OfText(key));
-            hashes.Add(access.Shape);
+            Hash128.AppendText(hash, key);
+            buffer[0] = 0;
+            hash.Append(buffer[..1]);
+            access.Shape.WriteTo(buffer);
+            hash.Append(buffer);
         }
 
-        hashes.Add(Hash128.Empty);
+        buffer[0] = 1;
+        hash.Append(buffer[..1]);
 
         foreach (var (index, access) in Items)
         {
-            hashes.Add(new Hash128((ulong)index, 1));
-            hashes.Add(access.Shape);
+            BitConverter.TryWriteBytes(buffer, index);
+            hash.Append(buffer[..4]);
+            access.Shape.WriteTo(buffer);
+            hash.Append(buffer);
         }
 
-        return Hash128.Combine([.. hashes]);
+        return Hash128.FromUInt128(hash.GetCurrentHashAsUInt128());
     }
 }
 
@@ -139,21 +149,35 @@ internal sealed class ValueAccess
 /// Records what a template reads of a value, while it renders (<see cref="ValueAccess"/>). Shared by the Fluid values
 /// of a value and of its members and items; thread safe.
 /// </summary>
+/// <remarks>
+/// The record is bounded: an object or an array of which more than <see cref="MaxEntries"/> members or items are read
+/// (a sidebar over every package), or a value of which more than <see cref="MaxNodes"/> parts are read in all, is
+/// recorded as read whole. Its hash is cached on the node, while hashing what was read would cost as much as reading it
+/// in every unit, and keeping it would cost memory in every result.
+/// </remarks>
 internal sealed class AccessRecorder
 {
-    private readonly Lock _lock;
+    public const int MaxEntries = 64;
+    public const int MaxNodes = 1024;
+
+    // Records nothing: what is read under a value read whole.
+    private static readonly AccessRecorder Ignored = new(new Root(), ignored: true);
+
+    private readonly Root _root;
+    private readonly bool _ignored;
     private bool _whole;
     private bool _count;
     private Dictionary<string, AccessRecorder>? _members;
     private Dictionary<int, AccessRecorder>? _items;
 
-    public AccessRecorder() : this(new Lock())
+    public AccessRecorder() : this(new Root(), ignored: false)
     {
     }
 
-    private AccessRecorder(Lock root)
+    private AccessRecorder(Root root, bool ignored)
     {
-        _lock = root;
+        _root = root;
+        _ignored = ignored;
     }
 
     /// <summary>
@@ -161,15 +185,25 @@ internal sealed class AccessRecorder
     /// </summary>
     public void ReadWhole()
     {
-        lock (_lock)
+        if (_ignored)
         {
-            _whole = true;
+            return;
+        }
+
+        lock (_root)
+        {
+            MarkWhole();
         }
     }
 
     public void ReadCount()
     {
-        lock (_lock)
+        if (_ignored)
+        {
+            return;
+        }
+
+        lock (_root)
         {
             _count = true;
         }
@@ -180,15 +214,31 @@ internal sealed class AccessRecorder
     /// </summary>
     public AccessRecorder Member(string key)
     {
-        lock (_lock)
+        if (_ignored)
         {
-            _members ??= new(StringComparer.Ordinal);
+            return Ignored;
+        }
 
-            if (!_members.TryGetValue(key, out var member))
+        lock (_root)
+        {
+            if (_whole)
             {
-                _members[key] = member = new AccessRecorder(_lock);
+                return Ignored;
             }
 
+            _members ??= new(StringComparer.Ordinal);
+
+            if (_members.TryGetValue(key, out var member))
+            {
+                return member;
+            }
+
+            if (_members.Count >= MaxEntries || ++_root.Nodes > MaxNodes)
+            {
+                return Overflow();
+            }
+
+            _members[key] = member = new AccessRecorder(_root, ignored: false);
             return member;
         }
     }
@@ -198,25 +248,60 @@ internal sealed class AccessRecorder
     /// </summary>
     public AccessRecorder Item(int index)
     {
-        lock (_lock)
+        if (_ignored)
         {
-            _items ??= new();
+            return Ignored;
+        }
 
-            if (!_items.TryGetValue(index, out var item))
+        lock (_root)
+        {
+            if (_whole)
             {
-                _items[index] = item = new AccessRecorder(_lock);
+                return Ignored;
             }
 
+            _items ??= new();
+
+            if (_items.TryGetValue(index, out var item))
+            {
+                return item;
+            }
+
+            if (_items.Count >= MaxEntries || ++_root.Nodes > MaxNodes)
+            {
+                return Overflow();
+            }
+
+            _items[index] = item = new AccessRecorder(_root, ignored: false);
             return item;
         }
     }
 
     public ValueAccess Snapshot()
     {
-        lock (_lock)
+        lock (_root)
         {
-            return SnapshotCore();
+            return _root.Overflowed ? ValueAccess.Whole : SnapshotCore();
         }
+    }
+
+    // Too much read: this value is read whole, or the whole lookup when it read too many parts in all.
+    private AccessRecorder Overflow()
+    {
+        if (_root.Nodes > MaxNodes)
+        {
+            _root.Overflowed = true;
+        }
+
+        MarkWhole();
+        return Ignored;
+    }
+
+    private void MarkWhole()
+    {
+        _whole = true;
+        _members = null;
+        _items = null;
     }
 
     private ValueAccess SnapshotCore()
@@ -236,5 +321,14 @@ internal sealed class AccessRecorder
             _count,
             _members == null ? [] : [.. _members.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => (x.Key, x.Value.SnapshotCore()))],
             _items == null ? [] : [.. _items.OrderBy(x => x.Key).Select(x => (x.Key, x.Value.SnapshotCore()))]);
+    }
+
+    /// <summary>
+    /// The lock and the counters of a recorder and of the recorders of its parts.
+    /// </summary>
+    private sealed class Root
+    {
+        public int Nodes;
+        public bool Overflowed;
     }
 }

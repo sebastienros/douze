@@ -21,6 +21,9 @@ internal sealed class Scheduler
     private readonly BuildContext _context;
     private readonly ReplayState? _replay;
 
+    // Equal dependency sets are shared by the units that recorded them (the cache shares them otherwise).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Hash128, DependencySet> _dependencySets = new();
+
     public Scheduler(WorkflowGraph graph, BuildContext context)
     {
         _graph = graph;
@@ -752,6 +755,10 @@ internal sealed class Scheduler
                 {
                     dependencies = replay.Cache.Intern(dependencies);
                     await StoreAsync(replay, resultKey, key, inputFiles, files, dependencies, contributions, ct);
+                }
+                else if (!dependencies.IsEmpty)
+                {
+                    dependencies = _scheduler._dependencySets.GetOrAdd(dependencies.Hash, dependencies);
                 }
 
                 Run.AddResult(new UnitResult(key, inputs, [.. files.AsEnumerable().Select(x => x.Ref)], dependencies)
