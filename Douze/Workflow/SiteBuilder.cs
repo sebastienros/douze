@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Douze.FileSystems;
 using Douze.Progress;
 using Douze.Tracing;
 using Douze.Workflow.Scheduling;
@@ -39,6 +40,18 @@ internal static class SiteBuilder
         }
 
         var succeeded = result.Errors.Count == 0 && !result.Cancelled;
+        var written = Written(result.Runs);
+        IReadOnlyList<FPath> deleted = [];
+
+        // What the previous builds wrote and this one did not is stale, unless the build failed: a page that failed may
+        // be written again by the next build.
+        if (succeeded && (options.PreviousWritten ?? context.Cache?.PreviousWritten()) is { } previous)
+        {
+            using (trace.Begin("stale outputs", "io"))
+            {
+                deleted = await StaleOutputs.DeleteAsync(context.Output, previous, written);
+            }
+        }
 
         if (context.Cache is { } cache)
         {
@@ -55,10 +68,25 @@ internal static class SiteBuilder
             .OrderBy(x => x.Path)
             .ToArray();
 
-        var buildResult = new BuildResult(result.Runs, result.Errors, outputs, result.FinalScopes, trace.Session, stopwatch.Elapsed, result.Cancelled);
+        var buildResult = new BuildResult(result.Runs, result.Errors, outputs, result.FinalScopes, trace.Session, stopwatch.Elapsed, result.Cancelled)
+        {
+            Written = written,
+            Deleted = deleted,
+        };
 
         view.BuildCompleted(buildResult);
 
         return buildResult;
+    }
+
+    /// <summary>
+    /// The files the units of the build wrote to the output folder, ran or replayed, sorted by path.
+    /// </summary>
+    private static IReadOnlyList<(FPath Path, long Length, DateTime LastWriteTimeUtc)> Written(IReadOnlyList<StepRun> runs)
+    {
+        return [.. runs
+            .SelectMany(x => x.Results)
+            .SelectMany(x => x.Dependencies.Written)
+            .OrderBy(x => x.Path)];
     }
 }

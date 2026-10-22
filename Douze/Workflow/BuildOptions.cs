@@ -1,3 +1,4 @@
+using Douze.FileSystems;
 using Douze.Progress;
 using Douze.Tracing;
 
@@ -16,5 +17,6 @@ internal sealed class BuildOptions
     public string? CacheDirectory { get; init; }     // default: <source>/.douze/
     public bool UseCache { get; init; } = true;      // --no-cache
     public bool KeepFiles { get; init; }             // keeps the output files of every unit in UnitResult.Files (tests)
+    public IReadOnlyList<(FPath Path, long Length, DateTime LastWriteTimeUtc)>? PreviousWritten { get; init; }  // what the previous build wrote, when there is no cache to tell
     public CancellationToken Cancellation { get; init; }
 }

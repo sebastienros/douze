@@ -112,6 +112,8 @@ public class TemplateLoaderTests
         public ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath basePath, bool recursive, Predicate<string>? filter) => _inner.EnumerateFileSystemEntriesAsync(basePath, recursive, filter);
         public ValueTask<Stream> CreateFileAsync(FPath path) => _inner.CreateFileAsync(path);
         public ValueTask CreateDirectoryAsync(FPath path) => _inner.CreateDirectoryAsync(path);
+        public ValueTask DeleteFileAsync(FPath path) => _inner.DeleteFileAsync(path);
+        public ValueTask<bool> DeleteDirectoryIfEmptyAsync(FPath path) => _inner.DeleteDirectoryIfEmptyAsync(path);
         public ValueTask<FileMetadata> GetFileMetadataAsync(FPath path) => _inner.GetFileMetadataAsync(path);
     }
 }

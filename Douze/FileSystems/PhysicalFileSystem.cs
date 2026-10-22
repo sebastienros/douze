@@ -177,4 +177,31 @@ internal sealed class PhysicalFileSystem : IFileSystem
         var fileInfo = new FileInfo(fullPath);
         return new(new FileMetadata(fileInfo.Length, fileInfo.CreationTimeUtc, fileInfo.LastAccessTimeUtc, fileInfo.LastWriteTimeUtc));
     }
+
+    public ValueTask DeleteFileAsync(FPath path)
+    {
+        File.Delete(_basePathWithoutTrailingSeparator.FullName + path.ToAbsolute());
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask<bool> DeleteDirectoryIfEmptyAsync(FPath path)
+    {
+        var fullPath = (_basePathWithoutTrailingSeparator.FullName + path.ToAbsolute()).TrimEnd('/');
+
+        if (!Directory.Exists(fullPath) || Directory.EnumerateFileSystemEntries(fullPath).Any())
+        {
+            return new(false);
+        }
+
+        try
+        {
+            Directory.Delete(fullPath, recursive: false);
+            return new(true);
+        }
+        catch (IOException)
+        {
+            // Not empty anymore.
+            return new(false);
+        }
+    }
 }

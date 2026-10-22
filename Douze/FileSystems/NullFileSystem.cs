@@ -38,4 +38,14 @@ internal sealed class NullFileSystem : IFileSystem
     {
         throw new NotImplementedException();
     }
+
+    public ValueTask DeleteFileAsync(FPath path)
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask<bool> DeleteDirectoryIfEmptyAsync(FPath path)
+    {
+        throw new NotImplementedException();
+    }
 }

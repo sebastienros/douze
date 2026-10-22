@@ -218,6 +218,22 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     }
 
     /// <summary>
+    /// The files that the units of the previous builds wrote to the output folder, with their length and modification
+    /// time once written (<see cref="DependencySet.Written"/>). A path can be listed twice when a failed build kept the
+    /// units of an older one.
+    /// </summary>
+    public IEnumerable<(FPath Path, long Length, DateTime LastWriteTimeUtc)> PreviousWritten()
+    {
+        foreach (var unit in _previous.Units.Values)
+        {
+            foreach (var written in _previous.Dependencies[unit.Dependencies].Written)
+            {
+                yield return written;
+            }
+        }
+    }
+
+    /// <summary>
     /// Records that a unit of the previous builds was reused.
     /// </summary>
     public void Reused(Hash128 key, CachedUnit unit)
