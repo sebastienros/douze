@@ -33,7 +33,8 @@ public class HeadingScannerTests
     [Fact]
     public void CollapsesWhitespace()
     {
-        Assert.Equal("A B", Assert.Single(HeadingScanner.Scan("<h2>\n  A&nbsp;\n B </h2>")).Text);
+        // ASCII whitespace collapses; a no-break space is text (dropped by the slug, like GitHub).
+        Assert.Equal("A\u00a0 B", Assert.Single(HeadingScanner.Scan("<h2>\n  A&nbsp;\n B </h2>")).Text);
     }
 
     [Fact]
