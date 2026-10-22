@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Douze.Progress;
 using Douze.Workflow.Cache;
 using Douze.Liquid;
+using Douze.Markdown;
 using Douze.Tracing;
 using Douze.FileSystems;
 using Douze.Nodes;
@@ -29,6 +30,7 @@ internal sealed class BuildContext : IAsyncDisposable
 
         Templates = new TemplateLoader(site.Source, [site.IncludesFolder], Liquid.LiquidOptions.CreateParser());
         LiquidOptions = Liquid.LiquidOptions.Create(Templates);
+        Markdown = new MarkdownRenderer(site.Markdown, site.Source, site.ContentFolder);
 
         // A site that is not on disk (tests) has no cache unless a folder is given; its commands use the temp folder.
         var cacheDirectory = options.CacheDirectory ?? (site.SourceDirectory is { } source ? Path.Combine(source, DefaultCacheFolder) : null);
@@ -91,6 +93,7 @@ internal sealed class BuildContext : IAsyncDisposable
     public IFileSystem Output => Site.Output;
     public TemplateLoader Templates { get; }        // shared parsed template cache + include file provider
     public TemplateOptions LiquidOptions { get; }   // built once by LiquidOptions.Create
+    public MarkdownRenderer Markdown { get; }       // the site's Markdown pipeline (the markdown section of douze.yml), built once
     public ITraceRecorder Trace { get; }
     public IProgressView View { get; }
     public int MaxDegreeOfParallelism { get; }

@@ -6,8 +6,8 @@ namespace Douze.Cli;
 
 /// <summary>
 /// Finds the site options and the workflow of a build: the workflow file given with <c>--workflow</c>, or
-/// <c>douze.yml</c> at the source root when it exists; its <c>site</c> section, then detection, for the folders; and
-/// its <c>steps</c>, or the default workflow.
+/// <c>douze.yml</c> at the source root when it exists; its <c>site</c> section, then detection, for the folders;
+/// its <c>markdown</c> section; and its <c>steps</c>, or the default workflow.
 /// </summary>
 internal static class WorkflowSource
 {
@@ -32,7 +32,8 @@ internal static class WorkflowSource
             new PhysicalFileSystem(outputDirectory),
             sourceDirectory,
             outputDirectory,
-            file?.Site);
+            file?.Site,
+            file?.Markdown);
 
         return (file?.Workflow ?? DefaultWorkflow.Create(site), site);
     }

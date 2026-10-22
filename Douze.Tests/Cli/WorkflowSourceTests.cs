@@ -1,4 +1,5 @@
 using Douze.Cli;
+using Douze.Markdown;
 using Douze.Progress;
 using Douze.Tests.Workflow.Yaml;
 using Douze.Tracing;
@@ -32,6 +33,18 @@ public class WorkflowSourceTests : IDisposable
         Assert.Equal(_folder, site.SourceDirectory);
         Assert.Equal(Path.GetFullPath(WorkflowSource.DefaultOutput), site.OutputDirectory);
         Assert.Null(site.Parallelism);
+        Assert.Same(MarkdownOptions.None, site.Markdown);
+    }
+
+    [Fact]
+    public async Task MarkdownSectionSetsTheMarkdownOptions()
+    {
+        await WriteAsync(WorkflowSource.DefaultFileName, "markdown:\n  links: false\n");
+
+        var (_, site) = await WorkflowSource.LoadAsync(CommandLine.Parse(["-s", _folder]), _folder);
+
+        Assert.False(site.Markdown.RewriteLinks);
+        Assert.Equal(MarkdownOptions.DefaultExtensions, site.Markdown.Extensions);
     }
 
     [Fact]
