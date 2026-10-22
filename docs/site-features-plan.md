@@ -635,7 +635,7 @@ keyed by file name), with this shape, which the filters understand:
 
 ```yaml
 - label: Foundations                      # a topic: a top-level group with an icon and a root link
-  label_translations: { fr: Fondations }  # or label: { en: ..., fr: ... }; a string is the default locale's
+  # label: { en: Foundations, fr: Fondations }: a label is a string, or an object of labels by locale
   icon: open-book
   link: /docs/
   items:
@@ -643,7 +643,7 @@ keyed by file name), with this shape, which the filters understand:
       collapsed: true
       items:
         - { label: Install, link: /get-started/install/, badge: { text: New, variant: tip } }
-        - { label: First app, link: /get-started/first-app/, translations: { fr: Première application } }
+        - { label: { en: First app, fr: Première application }, link: /get-started/first-app/ }
         - /get-started/deploy/              # a bare url: label from the page's title (needs collections)
     - { label: GitHub, link: https://github.com/x/y, external: true }
 ```
@@ -740,6 +740,12 @@ Filters (`Douze/Liquid/Filters/LocaleFilters.cs`):
 
 `t` reads `i18n` through the scopes (`_data/i18n/ja.json` is `i18n.ja`), so a string edit re-renders only the pages
 that read that key (member level dependency).
+
+As built: `permalink` removes the locale root from the paths under it and keeps the locale folder (`<root>/ja/x.md`
+is `/ja/x/`); `locale_url` and the keys of `collections.urls` are normalized urls (no `index.html`); `site.locales`
+is in the settings scope with `languages` as a list (default locale first); the locale settings are the
+`localize` step's `CacheVersion` (the engine's name for the `StateHash` of 2.2), and filters that use them read
+`site.locales` through the model. `format_date` and `format_number` are not built (Fluid has filters of those names).
 
 Interplay with other features: the `permalink` step keeps the locale folder in the url (`/ja/docs/x/`), nothing to
 do; `nav_active` strips the prefix (3.5); `headings` ids are computed from the translated text; the Markdown twins of
@@ -1086,7 +1092,8 @@ is a few tens of megabytes; holding 32k API pages would be a gigabyte, and the p
 template reads `item.content`, which records a dependency on that item's content hash (`ValueAccess` records the
 member; the item's hash covers it).
 
-**`collections.urls`.** `collect` always contributes `collections.urls`: an object keyed by `url` whose values are
+**`collections.urls`.** `collect` always contributes `collections.urls`: an object keyed by normalized `url` (without a
+trailing `index.html`) whose values are
 the items (the same nodes as in `all`), for `localize` (3.6), the navigation filters (3.5) and templates that look
 up a page by url (`collections.urls["/docs/x/"].data.title`). Reading one member records that member only.
 
@@ -1108,7 +1115,9 @@ recommended, the site keeps Markdown sources for that).
 
 **Templates for the rest.** Feeds, sitemaps and text exports are pages (`sitemap.xml`, `rss.xml`, `llms.txt`,
 `llms-full.txt`) written as Liquid templates with `permalink`, `liquid: true`, `layout: false`, rendered after
-`collect` (they are in the default workflow's `render` already). Filters they need (`Filters/HtmlFilters.cs`,
+`collect` (they are in the default workflow's `render` already; as built, the `liquid` step also matches `.liquid`,
+`.xml` and `.txt`, and `name.ext.liquid` is written to `name.ext`). Filters they need (as built in
+`Filters/OutputFilters.cs`, not `HtmlFilters.cs`;
 `DataFilters.cs`): `xml_escape`, `absolute_url` (`site.url` + path), `relative_url`, `strip_html`, `date_to_xmlschema`
 (a `date` alias with the RFC 3339 format), `date_to_rfc822`, `where_exp: "item", "item.data.locale == 'default'"`,
 `group_by_exp`, `sort_by: "data.title"`, `index_by: "url"`, `jsonify` (alias of `json`). `locale_pages` (3.6)
