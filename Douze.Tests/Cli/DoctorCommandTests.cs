@@ -178,7 +178,7 @@ public sealed class DoctorCommandTests : IDisposable
         Assert.Contains("Every requirement is met: 2 tools will be downloaded on first use", before.Output);
         Assert.Empty(_registry.Requests);
 
-        var path = Path.Combine(Cache, "tools", "typescript", version, platform, executable);
+        var path = Path.Combine(Cache, "tools", "typescript", version, platform, executable.Replace('/', Path.DirectorySeparatorChar));
         var install = await InstallAsync();
 
         Assert.Equal(ExitCodes.Success, install.ExitCode);

@@ -133,9 +133,12 @@ internal sealed class ToolInstaller
 
     private string GetExecutable(NpmTool tool, string version, string platform) => Path.Combine(GetFolder(tool, version, platform), GetExecutable(tool, platform));
 
-    private static string GetExecutable(NpmTool tool, string platform) => tool.Executable + (platform.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : "");
+    // The paths in a package use '/': they are made native, so that the path of a tool has one separator on Windows.
+    private static string GetExecutable(NpmTool tool, string platform) => ToNative(tool.Executable) + (platform.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : "");
 
-    private static string GetExecutable(NuGetTool tool, string platform) => tool.Executable.Replace("{platform}", platform, StringComparison.Ordinal);
+    private static string GetExecutable(NuGetTool tool, string platform) => ToNative(tool.Executable.Replace("{platform}", platform, StringComparison.Ordinal));
+
+    private static string ToNative(string path) => path.Replace('/', Path.DirectorySeparatorChar);
 
     private static string GetExecutable(GoTool tool) => tool.Executable + (OperatingSystem.IsWindows() ? ".exe" : "");
 
