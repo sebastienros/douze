@@ -553,12 +553,33 @@ internal readonly record struct UnitKey(string Step, string Unit);
 
 How the scheduler runs:
 
-**Channels.** Every node owns a `FileChannel` (`Douze/Workflow/Scheduling/FileChannel.cs`): an
-unbounded `System.Threading.Channels.Channel<VirtualFile>` per consumer. When a node has several
+**Channels.** Every node owns a `FileChannel` (`Douze/Workflow/Scheduling/FileChannel.cs`): a
+`System.Threading.Channels.Channel<VirtualFile>` per consumer. When a node has several
 dependents, the producer writes each output to every dependent's channel (fan-out). A `FileChannel`
-exposes `ChannelReader<VirtualFile> Subscribe(string consumer)`, `ValueTask WriteAsync(VirtualFile)`
-and `void Complete(Exception? error)`. Unbounded is fine: the number of in-flight files is bounded by
-the number of files, and content is shared, not copied.
+exposes `ChannelReader<VirtualFile> Subscribe(string consumer)`, `ValueTask WriteAsync(VirtualFile, CancellationToken)`
+and `void Complete(Exception? error)`.
+
+*As implemented (bounded channels, between phases 5 and 6, risk 6):* the channel in front of a map step is bounded to
+`2 × MaxDegreeOfParallelism` files, and `WriteAsync` waits while it is full, so a producer runs at most a few files per
+slot ahead of its slowest consumer (fan-out waits for each consumer in turn) and pages no longer pile up in front of
+`write`. `Scheduler.GetCapacity` keeps a channel unbounded when its consumer must hold everything: a reduce or group
+step (a barrier), and a step that waits for the contribution of a reduce step R that is not upstream of the producer
+while the producer feeds R (R is the producer, R needs it, or they share an ancestor). Such a step reads nothing before R
+has run, and R cannot run while the producer waits for room; a reduce step also passes the files it does not match
+through while it reads. In the default workflow, `permalink -> paginate` and `collections -> paginate` are unbounded
+(every page waits there for the collections, by design of the barrier), the channels from `paginate` to `write` are
+bounded. Three rules keep every wait finite, each with a test in `BackpressureTests` that times out without it:
+
+- A unit releases its work slot before it writes its outputs (`RunUnitAsync` runs `ProcessUnitAsync` under the slot,
+  then writes): a unit waiting for room must not hold the slot that the consumer needs to make room. A unit with more
+  outputs than the consumer buffers (a paginated page) would otherwise deadlock with one slot.
+- A reduce step publishes its contribution before it writes its outputs, since its dependents start with it.
+- A node that stopped reading its inputs early (a failure, a skip, a cancellation) drains them (`DrainInputs`, before
+  `CompleteAsync` waits for its needs): it reads and drops what its needs still write, so they never wait for room.
+
+Every consumer therefore reads its channel to the end, drains it, or holds it unbounded, and a producer's wait always
+ends. The map step's own queue of accepted files waiting for a unit is bounded too (`MaxDegreeOfParallelism`), otherwise
+its reader would move the bounded channel into an unbounded queue.
 
 **Source.** Before any step starts, the scheduler enumerates the source file system once
 (`EnumerateFileSystemEntriesAsync(FPath.Root, recursive: true)`), keeps files only, sorts them by
@@ -577,7 +598,13 @@ a diamond such as `render` needing `permalink` and `collections` in the default 
 replayed unit re-emitting an unchanged file next to a re-executed one in phases 5 and 6, or a step
 returning an equal copy of its input). Such a file enters once, through whichever need delivered it
 first. Identity is checked under the lock; refs are compared outside it, after loading both contents,
-because they are only needed on this rare path. Entering files are then split by `Match`: files that match are **consumed** by the step;
+because they are only needed on this rare path.
+*As implemented (bounded channels):* only a node with several producers (needs, or needs and `inputs`) tracks paths,
+and it keeps the producer and the `FileRef` of each path, not the file (`EnterOnceAsync`): keeping the files kept
+every content that went through every step until the build ended (`write` alone held the HTML of every page), which
+was most of the peak memory that phase 5 attributed to the channels. Such a node hashes every entering file, so it
+accepts up to `MaxDegreeOfParallelism` files at once (`AcceptAllAsync`); a node with one producer reads in order and
+hashes nothing on entry. Entering files are then split by `Match`: files that match are **consumed** by the step;
 files that do not match are **passed through** to the node's output unchanged, as soon as they
 arrive, without waiting for the step.
 
@@ -586,14 +613,15 @@ arrive, without waiting for the step.
 `BuildContext.Parallelism` (a global `SemaphoreSlim` sized to `MaxDegreeOfParallelism`, so that
 several map steps running at once do not oversubscribe the machine; command steps take a
 `ProcessSlots` slot instead while they wait on an external process), creates a `DependencyTracker`
-and a trace span, calls `ProcessAsync`, writes each output file to the node's channel immediately,
-records a `UnitResult`, releases the slot, and reports progress. A file therefore moves to the next
+and a trace span, calls `ProcessAsync`, records a `UnitResult` (and stores it in the cache), releases the slot, writes each output file
+to the node's channel, and reports progress. A file therefore moves to the next
 step as soon as it is done. The map step's channel is completed when the input channel is complete
 and all bodies have returned.
 
 **Reduce.** The node reads its whole input into a list, waits for the input channel to complete,
-sorts the list by path (ordinal), acquires one slot, calls `ProcessAllAsync`, writes the outputs,
-records the contribution (`StepOutput.Scope`, `StepOutput.Folders`), and completes its channel. The
+sorts the list by path (ordinal), acquires one slot, calls `ProcessAllAsync`, records the contribution
+(`StepOutput.Scope`, `StepOutput.Folders`), releases the slot, publishes the contribution, writes the outputs, and
+completes its channel. The
 `UnitResult.Inputs` of a reduce step is the sorted list of all input refs, which is what early cutoff
 compares later.
 
@@ -617,7 +645,8 @@ chain of map nodes starts immediately and streams, whatever the states of the no
 
 **Completion order.** A node makes its run final (state, end time, counters, sorted results and
 errors), waits for the nodes it needs to be complete, reports `IProgressView.StepCompleted`, and only
-then completes its channel. For every edge A -> B, A is reported before B, whatever the states. A
+then completes its channel. For every edge A -> B, A is reported before B, whatever the states (a node
+that stopped early drains its inputs first, so its needs can complete while it waits for them). A
 node that stopped early is `Skipped` when a need failed or was skipped, `Cancelled` otherwise, so the
 final states do not depend on which of a failure and a cancellation was observed first.
 Publishing the outcome cannot be skipped: `NodeRunner.RunAsync` completes the contribution, the
@@ -629,8 +658,8 @@ and the build hung at 0% CPU (benchmark finding 5, `SchedulerTests.ExceptionOuts
 A map step whose processing loop fails outside a unit also stops reading its inputs at once.
 
 **Skipping.** When a node fails or is skipped, its channel is completed with a
-`StepUnavailableException`; every dependent stops when it reaches it, is marked `Skipped`, completes
-its own channel the same way, and the rest of the graph continues. Independent nodes finish
+`StepUnavailableException`; every dependent stops when it reaches it, is marked `Skipped`, drains its other inputs,
+completes its own channel the same way, and the rest of the graph continues. Independent nodes finish
 normally. A streaming dependent may have processed files before the failure and emitted outputs
 downstream: it is `Skipped` all the same, and its `Results` are not reused (section 7.5 replays
 succeeded steps only).
@@ -2397,6 +2426,16 @@ its resolution; the worker process of a command step started only once a unit ru
 deletes and renames (`IncrementalEqualsCleanTests`, whose edits are modifications only). The backpressure of risk 6 lands
 before phase 6 starts.
 
+From the bounded channels change (2.6, risk 6): the scheduler keeps no file once it left the graph (results keep refs,
+nodes with several producers keep the refs of the paths they received), so what watch mode keeps across rebuilds is its
+own choice; anything that keeps files (previous results, a `write` that compares with what it wrote) must keep refs or
+bounded content, or the peak of 9.2 comes back. A rebuild runs through the same bounded channels: a step added for watch
+mode that stops reading early must drain its inputs like the others (`DrainInputs`), and a unit must not wait for room
+while holding a slot. On macOS, `Process.Kill(entireProcessTree: true)` on .NET 11 RC 2 can hang forever at 100% CPU
+(the SIGCHLD handler spins on the stopped child under the lock `KillTree` needs); a `run:` step that times out, or a
+worker killed on shutdown, can hang a watch session: work around it in `ProcessRunner.KillTree` or confirm the runtime
+fixed it before relying on timeouts in watch mode.
+
 **Tests.** `ChangeSetTests` (4: debounce merges events, rename is delete plus add, output and cache
 folders ignored, mapping to root nodes), `IncrementalBuilderTests` (6: delete removes outputs,
 rename moves outputs, include edit re-renders users only, data edit, new file added to collections,
@@ -2492,12 +2531,21 @@ Douze runs on .NET 11 with runtime async and the non concurrent GC since the int
 concurrent GC throttles the allocating threads (40% slower on the synthetic site), without it the synthetic site
 builds in 33 s instead of 43 s on .NET 10 (`bench/README.md`, ".NET 11 and runtime async", finding 7). Phase 5
 re-measured the GC modes after its memory changes: non concurrent stays the default (Server GC with DATAS ties, the
-others are slower, none lowers the peak, which is the live set).
+others are slower, none lowers the peak, which is the live set). *Corrected by the bounded channels change:* those
+Server GC runs set `DOTNET_gcServer=1`, which the native AOT binary (linked with the workstation GC) ignores. Published
+with `ServerGarbageCollection=true`, Server GC builds the aspire pages 24 to 32% faster, ties on the synthetic site, and
+peaks higher (1.46 GB on the synthetic site); the non concurrent workstation GC stays the default for its memory margin,
+and Server GC is a decision of its own (`bench/README.md`, finding 8).
 
 *Phase 5 results* (`bench/README.md`, "Phase 5"): every target is met except the synthetic site's peak RSS (2.3 GB
 clean without the cache, 2.7 GB writing it, against 1.5 GB): pages wait in the unbounded channels in front of `write`,
 the slowest step; backpressure on the channels that do not feed a barrier is the follow-up, as a change of its own
 before phase 6 (risk 6).
+
+*Bounded channels results* (`bench/README.md`, "Bounded channels and duplicate path tracking", median of 3 against the
+phase 5 base measured the same day): synthetic 32k clean 6.3 s and 1.08 GB (base 6.5 s and 2.42 GB), 7.2 s and 1.22 GB
+writing the cache; one page edited 1.6 s; aspire API pages 4.0 s and 1.1 GB (base 4.3 s and 2.43 GB), 1.4 GB writing the
+cache. Every target of this table that phases up to 5 own is met.
 
 ### 9.3 Validation beyond tests
 
@@ -2583,6 +2631,13 @@ Each item has a recommended answer; implementers use it unless the user decides 
    barrier stay unbounded. Recommended: a change of its own between phases 5 and 6 (`Scheduler.cs` only, with the
    benchmark as acceptance), not inside phase 6: watch mode keeps results across rebuilds and would meet the same
    pressure, and the two rules are easier to get right in a change that does nothing else.
+   *Resolved by the bounded channels change (2.6):* channels in front of map steps hold 2 files per slot, with the two
+   rules above plus a third the review did not foresee: a channel stays unbounded in front of a step that waits for the
+   contribution of a reduce step its producer feeds (`paginate` after `permalink` and `collections`), which could not
+   run while the producer waits for room. `BackpressureTests` has a test per rule that hangs without it. Most of the 2.3
+   GB, though, was not in the channels: every node kept every file that entered it to detect duplicate paths; nodes now
+   keep refs, and only those with several producers track paths. The synthetic site peaks at 1.08 GB, the aspire pages
+   at 1.1 GB (9.2), and both build faster.
 
 7. **Global CPU slots and command steps.** A command step waiting on an external process should
    not hold a CPU slot. Recommended (and specified in 2.6): command steps take slots from

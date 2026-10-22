@@ -228,7 +228,8 @@ Where the synthetic site's memory goes: sampling RSS during a clean build shows 
 the GC modes do not change it (below). The fix is backpressure on the channels whose consumer reads as soon as its
 producer writes (not those in front of a barrier, which must hold everything), with two conditions: a unit must not
 hold its work slot while it waits to write its outputs (the consumer needs a slot), and a consumer that stops early must
-release its producers. Left for a follow-up.
+release its producers. Left for a follow-up. *The follow-up ("Bounded channels and duplicate path tracking" above) found
+that most of the climb was the files every node kept to detect duplicate paths, not the channels.*
 
 GC modes, measured after findings 1 to 3 (clean builds without the cache, 2 runs each, wall and peak RSS):
 
@@ -240,9 +241,69 @@ GC modes, measured after findings 1 to 3 (clean builds without the cache, 2 runs
 | Server GC with DATAS | 5.7-5.9 s, 2.6 GB | 3.4 s, 3.3 GB |
 | concurrent | 6.7-7.2 s, 2.5 GB | 4.4 s, 3.4 GB |
 
-The non concurrent workstation GC stays the default: Server GC with DATAS ties with it, the other settings are slower
+The non concurrent workstation GC stays the default: Server GC with DATAS (set with `DOTNET_gcServer=1`, which the
+native AOT binary ignores: finding 8) ties with it, the other settings are slower
 and none lowers the peak by more than 10%, since the peak is the live set. Most of the system time of a clean build
 (about 18 s) is the kernel providing fresh memory to the GC and creating the output folders, not the GC itself.
+
+### Bounded channels and duplicate path tracking, 2026-10-21
+
+Same machine and data, native AOT, non concurrent GC. **Base** is 4b32b5e (phase 5 reviewed), **head** this change:
+channels in front of map steps bounded to 2 files per slot (plan 2.6, risk 6), and nodes keep the refs of the files
+they check for duplicate paths instead of the files. **Unbounded** is head with every channel unbounded, to separate the
+two. Runs interleaved (one run of each variant per round), median of 3. This day's builds spend more system time than
+the phase 5 table's (35 to 45 s against 18 s for the same clean build of the base), so compare within this table.
+
+| Scenario | Variant | Wall (s) | User (s) | Sys (s) | Peak RSS (MB) |
+|---|---|---:|---:|---:|---:|
+| synthetic 32000, clean, no cache | base | 6.53 | 8.46 | 39.54 | 2422 |
+| synthetic 32000, clean, no cache | head | 6.26 | 9.21 | 39.96 | 1075 |
+| synthetic 32000, clean, no cache | unbounded | 7.36 | 7.52 | 52.43 | 1109 |
+| synthetic 32000, clean, writing the cache | base | 7.59 | 10.32 | 36.23 | 2679 |
+| synthetic 32000, clean, writing the cache | head | 7.21 | 10.95 | 31.21 | 1221 |
+| synthetic 32000, one page edited | base | 1.70 | 3.24 | 0.74 | 635 |
+| synthetic 32000, one page edited | head | 1.56 | 4.64 | 0.85 | 578 |
+| aspire API pages, clean, no cache | base | 4.31 | 6.19 | 20.78 | 2428 |
+| aspire API pages, clean, no cache | head | 3.96 | 6.42 | 15.03 | 1113 |
+| aspire API pages, clean, no cache | unbounded | 4.42 | 5.77 | 26.96 | 1740 |
+| aspire API pages, clean, writing the cache | base | 4.98 | 6.60 | 19.65 | 2620 |
+| aspire API pages, clean, writing the cache | head | 4.74 | 7.25 | 16.36 | 1411 |
+
+What phase 5 attributed to the channels was mostly elsewhere: every node kept every file that entered it, in the map it
+uses to detect a path delivered by two producers (`NodeRunner._producers`), so every content of every step stayed in
+memory until the build ended (`write` alone held the HTML of every page; found with `dotnet-gcdump` on a JIT build). With
+refs kept instead, the synthetic site peaks at the collections barrier (about 1.05 GB: every page waits there, by design)
+and no longer climbs while the pages stream to `write`. Bounded channels then matter for the aspire pages (1.1 GB against
+1.7 GB unbounded) and for time: with them, `render`, `markdown` and `layout` no longer run ahead of `write` and compete with
+it for the file system, and the synthetic build is 15% faster than unbounded (7.4 s to 6.3 s, 12 s less system time). The
+one-page edit uses about 1.4 s more user CPU (the nodes with two producers hash on entry, in parallel) for a faster wall
+time.
+
+Against the targets of section 9.2:
+
+| Target | Result | |
+|---|---|---|
+| Synthetic 32k, clean build: wall under 30 s | 6.3 s (7.2 s writing the cache) | met |
+| Synthetic 32k, clean build: peak RSS under 1.5 GB | 1.08 GB (1.22 GB writing the cache) | met (2.3 GB before) |
+| Synthetic 32k, one page edited: under 2 s from the disk cache | 1.6 s | met |
+| aspire data: render the API pages, wall under 60 s | 4.0 s | met |
+| aspire data: render the API pages, peak RSS under 2.5 GB | 1.1 GB (1.4 GB writing the cache) | met |
+
+GC modes, measured on head (clean builds without the cache, runs interleaved, median of 3, wall and peak RSS):
+
+| GC | synthetic 32000 | aspire API pages |
+|---|---|---|
+| non concurrent workstation (default) | 6.4-6.6 s, 1.08 GB | 4.3 s, 1.0-1.2 GB |
+| concurrent workstation (`DOTNET_gcConcurrent=1`) | 7.6 s, 1.37 GB | 4.5 s, 1.17 GB |
+| `DOTNET_gcServer=1` | 6.7 s, 1.08 GB | 4.3 s, 1.05 GB |
+| Server GC (DATAS) published with `-p:ServerGarbageCollection=true` | 6.3-6.4 s, 1.35-1.46 GB | 2.9-3.3 s, 1.1 GB |
+
+`DOTNET_gcServer=1` changes nothing measurable on the native AOT binary, which is linked with the workstation GC
+(`libRuntime.WorkstationGC.a`): the "Server GC with DATAS" rows of the phase 5 table and of the .NET 11 measurements
+used it, so they measured the workstation GC. Server GC compiled in (`libRuntime.ServerGC.a`) is 24 to 32% faster on the
+aspire pages and ties on the synthetic site, at the cost of a higher peak (1.46 GB on the synthetic site, at the edge of
+its target). The non concurrent workstation GC stays the default here, since this change is about memory; switching to
+Server GC is a decision of its own (finding 8).
 
 ## Findings
 
@@ -267,7 +328,7 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    consider leaving `pages`/`hrefs` out of the per-page hash (they are a function of the source file and its data,
    which are already in the unit's key).
 
-3. *Mostly fixed in phase 5 (see above; the pages waiting in channels remain).* **Every intermediate content stays in memory until the build ends (open question 18 matters).** A heap dump of the
+3. *Fixed: phase 5 for results and sources, the bounded channels change for the files kept by every node to detect duplicate paths (see above).* **Every intermediate content stays in memory until the build ends (open question 18 matters).** A heap dump of the
    32k synthetic build (`--nav index`, JIT build, during `write`) holds 2.8 GB in 4.1 million objects, mostly 128,000
    strings over 10 KB: four UTF-16 copies of each page (front matter, Markdown, render and layout outputs) kept by
    `StepRun.Results` (each `UnitResult` keeps its output files), plus about 32,000 parsed page templates kept by the
@@ -303,11 +364,18 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    (714 MB for 78.5 MB), within the target. The render and layout steps parse each page's template once, which is
    cheap next to findings 1 to 3.
 
-7. *Re-measured in phase 5: non concurrent stays the default.* **The GC mode matters as much as the code on .NET 11.** Background GCs throttle allocating threads, which made the
+7. *Re-measured in phase 5 and with the bounded channels: non concurrent stays the default (finding 8).* **The GC mode matters as much as the code on .NET 11.** Background GCs throttle allocating threads, which made the
    allocation heavy `limit:` loop 40% slower than on .NET 10 until `douze` turned concurrent GC off (".NET 11 and
    runtime async" above). Re-measure the GC modes (concurrent, non concurrent, Server GC with DATAS) after each memory
    change of phase 5: once findings 1 and 3 cut the allocation rate and the live set, concurrent GC or a lower peak RSS
    from a heap limit (`GCHeapHardLimit`, `GCConserveMemory`) may become the better trade.
+
+8. **Server GC must be compiled in to be measured.** A native AOT binary links one GC: `DOTNET_gcServer=1` has no effect
+   on the published `douze` (workstation GC), so the Server GC rows measured before the bounded channels change were the
+   workstation GC. Published with `-p:ServerGarbageCollection=true`, Server GC with DATAS builds the aspire pages 24 to 32%
+   faster (2.9 to 3.3 s against 4.3 s) and the synthetic site in the same time, with a peak 10 to 35% higher (1.35 to 1.46
+   GB on the synthetic site against 1.08). Worth deciding on its own: it trades the memory margin of 9.2 for speed on
+   data heavy sites.
 
 Suggested order for phase 5: finding 2 (hash caching, it also makes cache keys cheap), then 3 (results and content
 retention, which the disk cache design decides anyway), then 4 and 5. Finding 1 is a Fluid change and can land at any
