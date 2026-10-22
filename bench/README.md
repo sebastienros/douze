@@ -447,6 +447,52 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    the compiler emits Satori's write barriers into the code. A binary linked with the Server GC, though, runs as
    workstation with `DOTNET_gcServer=0` (6.5 s, 1.11 GB on the synthetic site) and as Server GC without it.
 
+10. **Images, social images and Markdown twins of the target site.** Measured on the target site (clean builds,
+    `--no-cache --trace-units`, unit time summed per step), with the base and this change built back to back on the
+    same site; the machine ran other builds at the same time (load average 25 to 30), so the absolute times are
+    inflated and only the ratios matter. The outputs are byte identical: the API reference pages and twins (48,155
+    files), the pages with their image variants (every file but the dated RSS feed) and the social images (527 files),
+    each through a workflow of those steps only, and on the full build the images, social images, dashboard pages and
+    a sample of the twins.
+
+    | What | Before | After |
+    |---|---:|---:|
+    | `{% image %}` page with 58 tags (light and dark), per render (15 renders) | 19.6 s (8.4 s on a quieter machine) | 0.95 to 1.9 s |
+    | `render` step, unit time | 573 s | 167 s |
+    | Social image (`og`), per card, median (522 cards) | 125 ms (82 ms quieter) | 28 ms |
+    | `og` step, unit time | 145 s | 54 s |
+    | Markdown twins (`api-render-md`), per page, median (24,096 pages) | 1.49 ms | 0.26 ms |
+    | HTML pages of the same data (`api-render`), per page, median | 0.24 ms | 0.22 ms |
+
+    - *Images.* Variants were already memoized for the build, but a page encoded its variants one after the other in
+      its render (58 WebP encodes of large screenshots, about 145 ms each), and the locale copies rendered at the same
+      time waited on the same `Lazy` blocking a thread pool thread each. Variants are now memoized as tasks run on the
+      thread pool, all the variants of a source are started before the first is awaited, and the `liquid` step starts
+      the variants of the page's image tags whose arguments are literals before it renders the page
+      (`ImageTag.PrefetchAsync`), so a page costs its slowest image rather than the sum. The file names keep the hash
+      of the encoded bytes, so the markup still waits for the encodes. The NetVips calls are as they were (one
+      `thumbnail` and one save per variant, `keep=none`, no resize at the source's width); WebP encoding is the cost.
+      What is left: the copies of a page still render (and wait) once per locale, and tags inside includes and
+      shortcodes, or with variable arguments, are not prefetched.
+    - *Social images.* Per card, the SVG (with the 400 KB background PNG inlined as base64) was rasterized by librsvg
+      and written as a PNG, read back, the text composited, the card encoded. The rasterized SVG is now memoized by
+      content and size as raw pixels (`ImageProcessor.Rasterize`, within 256 MB; the cards of the target site share
+      a handful of backgrounds, by topic), the text layers take fewer libvips operations (each takes process wide
+      locks, `vips_cache_operation_buildp` and the argument table, which 14 parallel cards contend for), and the font
+      files and inlined images are read once per build. What is left per card: the Pango text under libvips' global
+      text lock, and the PNG encode (deflate at the default compression, a third of the card), which the byte
+      identical output pins.
+    - *Markdown twins.* The Markdown output path itself costs nothing measurable (`encode: html` or `protect: none`
+      give the same times): the twin templates look their module up in route lists of 1,810 to 10,634 items with
+      `find_index`, then `slice | where`, a scan per page, O(pages × routes) per build. `where` and `find_index` with
+      a string over a data array of 32 items or more are now answered from an index built once per array and member
+      (`MemberIndex`, Fluid's answers), and `slice` of a data array is a data array whose item reads are recorded as
+      reads of the array's items, so that `where` over a slice uses the array's index.
+
+    Seen on the way, outside this change: the source snapshot scans `node_modules` of the target site with an
+    `lstat` per file (`SourceSnapshot.StatAsync`), up to 10 s of a build on this machine, and the full build peaks
+    at 15 to 21 GB.
+
 Suggested order for phase 5: finding 2 (hash caching, it also makes cache keys cheap), then 3 (results and content
 retention, which the disk cache design decides anyway), then 4 and 5. Finding 1 is a Fluid change and can land at any
 time.
