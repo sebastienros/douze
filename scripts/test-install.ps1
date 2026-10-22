@@ -3,7 +3,7 @@
 Tests install.sh and install.ps1: installs douze with each of them, runs it, updates and uninstalls it.
 
 .DESCRIPTION
-Installs from the packages of a folder (served as a local feed by test-feed.py) or from a feed. Each script installs
+Installs from the packages of a folder (served as a local feed by test-feed.cs) or from a feed. Each script installs
 the latest preview into a temporary folder; the installed douze prints its version, builds a site whose image needs
 libvips (and the Sample site), and is uninstalled. install.sh runs on Linux and macOS, install.ps1 on PowerShell 7,
 and on Windows PowerShell 5.1 on Windows.
@@ -49,10 +49,11 @@ function Invoke-Checked([string] $Command, [string[]] $Arguments) {
 $server = $null
 try {
     if ($Packages) {
-        $python = @('python3', 'python') | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
         $port = Get-Random -Minimum 20000 -Maximum 40000
-        $server = Start-Process $python -ArgumentList @((Join-Path $PSScriptRoot 'test-feed.py'), (Resolve-Path $Packages).Path, $port) -PassThru -NoNewWindow
-        $Feed = "http://127.0.0.1:$port/index.json"
+        $feedApp = Join-Path $PSScriptRoot 'test-feed.cs'
+        Invoke-Checked 'dotnet' @('build', $feedApp)
+        $server = Start-Process 'dotnet' -ArgumentList @('run', '--no-build', $feedApp, '--', (Resolve-Path $Packages).Path, $port) -PassThru -NoNewWindow
+        $Feed = "http://localhost:$port/index.json"
     }
     if (-not $Feed) { throw 'pass -Packages or -Feed' }
 
@@ -70,7 +71,7 @@ try {
         catch {
         }
         if ((Get-Date) -gt $deadline) { throw "$Feed does not answer, or does not list $Version" }
-        Start-Sleep -Seconds 5
+        Start-Sleep -Seconds $(if ($server) { 1 } else { 5 })
     }
 
     $runs = @()
@@ -150,6 +151,10 @@ try {
     Write-Host "install.sh and install.ps1 installed, ran and uninstalled douze ($($runs -join ', '))."
 }
 finally {
-    if ($server) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+    if ($server) {
+        # dotnet run starts the server as a child process: stop it through the feed.
+        try { Invoke-WebRequest "http://localhost:$port/shutdown" -UseBasicParsing | Out-Null } catch { }
+        Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+    }
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }

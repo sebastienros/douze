@@ -99,6 +99,7 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
   (`TagRendering.RenderBodyAsync` does), and records the files it reads (`DependencyTracker.RecordTemplate`, absent
   files included). In a Markdown page, block HTML from a tag is written as a raw region
   (`RawRegionExtension.Encode`: one line, so that it stays in the tag's list item).
+- Repository scripts and helpers are C# file-based apps (`dotnet run scripts/<name>.cs`), not Python; their packages are versioned in `Directory.Packages.props`. Shell and PowerShell stay for the install scripts that users run (`install.sh`, `install.ps1`) and their test driver.
 - Shortcode names are file names: lowercase letters, digits and underscores; a new built-in tag must be registered in
   `LiquidOptions.CreateParser`, so that a shortcode cannot hide it.
 
@@ -132,7 +133,7 @@ scripts/compare-sample.sh <base-ref>
 
 ## Releases
 
-- `tool-packages.yml` (a reusable workflow) builds what a version ships: the native AOT tool package of each platform (libvips included, no symbols), the CoreCLR fallback `any` (with the libvips of every platform under `runtimes/<rid>/native`), the pointer package, and a release archive per platform (`douze-<version>-<rid>.tar.gz`, `.zip` on Windows, `SHA256SUMS`). It tests `install.sh` and `install.ps1` against the packages on Linux, macOS and Windows (`scripts/test-install.ps1`, which serves them with `scripts/test-feed.py`). PR checks run the same test with the package of their platform.
+- `tool-packages.yml` (a reusable workflow) builds what a version ships: the native AOT tool package of each platform (libvips included, no symbols), the CoreCLR fallback `any` (with the libvips of every platform under `runtimes/<rid>/native`), the pointer package, and a release archive per platform (`douze-<version>-<rid>.tar.gz`, `.zip` on Windows, `SHA256SUMS`). It tests `install.sh` and `install.ps1` against the packages on Linux, macOS and Windows (`scripts/test-install.ps1`, which serves them with `scripts/test-feed.cs`). PR checks run the same test with the package of their platform.
 - Every push to `main` pushes these packages to Feedz with the version `<VersionPrefix>-preview.<run number>` (`build.yml`), then tests the install scripts against Feedz.
 - Pushing a `v*` tag pushes them to nuget.org, then creates a GitHub Release with the archives and the install scripts (`publish.yml`). Publishing uses NuGet trusted publishing through the `release` environment, so there is no NuGet API key secret. Running `publish.yml` by hand (`gh workflow run publish.yml --ref <branch>`) is a dry run: it builds and tests everything and publishes nothing.
 - `install.sh` and `install.ps1` are minimal NuGet clients: they read the flat container of the feed (nuget.org, Feedz for previews) for `douze.<rid>` and extract its tool folder into `<install dir>/<version>`, linked from `<install dir>/bin`.
