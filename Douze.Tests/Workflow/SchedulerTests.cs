@@ -551,6 +551,62 @@ public class SchedulerTests
     }
 
     [Fact]
+    public async Task AddedOutputsAreUnitOutputs()
+    {
+        var site = await new FakeSite().WithFilesAsync("/a.txt", "/b.txt");
+        var cache = Path.Combine(Path.GetTempPath(), "douze-tests", Guid.NewGuid().ToString("N"));
+
+        var graph = new FakeWorkflow()
+            .Add("pages", d => new FakeMapStep(d)
+            {
+                // A unit adds a file as a tag does; both units add the same shared one.
+                Process = (f, context, _) =>
+                {
+                    context.AddOutput(new VirtualFile($"/extra{f.Path.FullName}", FileContent.FromText("extra"), Metadata.Empty, null, Provenance.Source));
+                    context.AddOutput(new VirtualFile("/shared.txt", FileContent.FromText("shared"), Metadata.Empty, null, Provenance.Source));
+                    return new(FileList.Of(f));
+                },
+            }, inputs: ["**"])
+            .Write("write", "pages")
+            .Build();
+
+        Task<BuildResult> BuildAsync() => SiteBuilder.BuildAsync(graph, site.Options, new BuildOptions
+        {
+            MaxDegreeOfParallelism = 4,
+            KeepFiles = true,
+            CacheDirectory = cache,
+            Trace = NullTraceRecorder.Instance,
+            View = Douze.Progress.SilentProgressView.Discard,
+            Cancellation = Ct,
+        });
+
+        try
+        {
+            var first = await BuildAsync();
+            Assert.True(first.Succeeded, string.Join("\n", first.Errors));
+
+            var unit = first["pages"].Results.Single(x => x.Key.Unit == "/a.txt");
+            Assert.Equal(["/a.txt", "/extra/a.txt", "/shared.txt"], unit.Files.Paths());
+            Assert.All(unit.Files.Skip(1), x => Assert.Equal(new Provenance("pages", unit.Inputs), x.Provenance));
+            Assert.Equal(unit.Outputs, unit.Files.Select(x => x.Ref));
+            Assert.Equal("shared", await site.Output.ReadAllTextAsync("/shared.txt"));
+            Assert.Equal(["/a.txt", "/b.txt", "/extra/a.txt", "/extra/b.txt", "/shared.txt"], first.Outputs.Select(x => x.Path.FullName).Distinct());
+
+            var second = await BuildAsync();
+            Assert.True(second.Succeeded, string.Join("\n", second.Errors));
+
+            var replayed = second["pages"].Results.Single(x => x.Key.Unit == "/b.txt");
+            Assert.True(replayed.Replayed);
+            Assert.Equal(["/b.txt", "/extra/b.txt", "/shared.txt"], replayed.Files.Paths());
+            Assert.Equal("extra", await replayed.Files[1].Content.ReadTextAsync(Ct));
+        }
+        finally
+        {
+            Directory.Delete(cache, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SameGraphRunTwiceYieldsIdenticalOutputsAndResultKeys()
     {
         var paths = Enumerable.Range(0, 30).Select(i => $"/{(char)('a' + i % 3)}/{i:00}.txt").ToArray();

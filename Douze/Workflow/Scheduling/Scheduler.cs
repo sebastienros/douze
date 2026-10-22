@@ -856,7 +856,7 @@ internal sealed class Scheduler
 
             try
             {
-                output = await body(context, ct);
+                output = WithAddedOutputs(await body(context, ct), context, inputs);
                 contributions = Contribute(output);
                 CheckContents(output, inputFiles);
             }
@@ -893,6 +893,32 @@ internal sealed class Scheduler
             });
 
             return files;
+        }
+
+        /// <summary>
+        /// Appends the files the unit added with <see cref="StepContext.AddOutput"/> (a tag that produced an image) to the
+        /// files its step returned, with the unit's provenance (its step and inputs, as a replay restores them). They are
+        /// outputs like the others: stored with the result, replayed with it.
+        /// </summary>
+        private StepOutput WithAddedOutputs(StepOutput output, StepContext context, ImmutableArray<FileRef> inputs)
+        {
+            var added = context.AddedOutputs;
+
+            if (added.Count == 0)
+            {
+                return output;
+            }
+
+            var provenance = new Provenance(Name, inputs);
+            var files = new List<VirtualFile>(output.Files.Count + added.Count);
+            files.AddRange(output.Files.AsEnumerable());
+
+            foreach (var file in added)
+            {
+                files.Add(new VirtualFile(file.Path, file.Content, file.Metadata, file.ContentType, provenance, file.LastWriteTimeUtc, file.SourcePath));
+            }
+
+            return output with { Files = FileList.Of(files) };
         }
 
         /// <summary>

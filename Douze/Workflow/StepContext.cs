@@ -43,6 +43,50 @@ internal sealed class StepContext
 
     public void Log(LogLevel level, string message) => Build.View.Message(level, StepName, message);
 
+    private readonly Lock _addedLock = new();
+    private List<VirtualFile>? _added;
+
+    /// <summary>
+    /// Adds a file to the outputs of the current unit, besides what the step returns: a tag that produces a file (an
+    /// image variant) calls it through the ambient values (<see cref="AmbientKeys.StepContext"/>). Outputs are stored
+    /// with the unit's result and replayed with it; their provenance is the unit's. Two units may add the same file
+    /// (same path, content and metadata): <c>write</c> accepts identical files for one path and writes it once. A file
+    /// added twice by one unit is kept once.
+    /// </summary>
+    public void AddOutput(VirtualFile file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+
+        lock (_addedLock)
+        {
+            _added ??= [];
+
+            foreach (var added in _added)
+            {
+                if (added.Path == file.Path && added.Ref == file.Ref)
+                {
+                    return;
+                }
+            }
+
+            _added.Add(file);
+        }
+    }
+
+    /// <summary>
+    /// The files added so far with <see cref="AddOutput"/>, sorted by path; read by the scheduler when the unit ends.
+    /// </summary>
+    public IReadOnlyList<VirtualFile> AddedOutputs
+    {
+        get
+        {
+            lock (_addedLock)
+            {
+                return _added == null ? [] : [.. _added.OrderBy(x => x.Path)];
+            }
+        }
+    }
+
     /// <summary>
     /// A template context whose model is <paramref name="model"/>, with the ambient values every render needs: the
     /// scopes, the dependency tracker of the unit, the file being rendered, the site's locales, this context and the

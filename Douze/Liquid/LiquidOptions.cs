@@ -27,6 +27,7 @@ internal static class LiquidOptions
 
         HtmlFilters.Register(builder);
         MarkdownFilters.Register(builder);
+        ImageFilters.Register(builder);
 
         return builder.Build();
     }
@@ -43,6 +44,7 @@ internal static class LiquidOptions
 
         MarkdownTags.Register(parser);
         DiagnosticTags.Register(parser);
+        ImageTag.Register(parser);
 
         return parser;
     }

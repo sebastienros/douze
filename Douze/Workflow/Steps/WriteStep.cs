@@ -5,12 +5,16 @@ namespace Douze.Workflow.Steps;
 
 /// <summary>
 /// <c>uses: write</c>. Writes each file to the output folder and passes it through, so that later steps can run after
-/// it. Two files with the same output path are an error.
+/// it. Two files with the same output path are an error, unless they are the same file (path, content and metadata): an
+/// image variant used by two pages is produced by both, and written once.
 /// </summary>
 internal sealed class WriteStep : Step, IMapStep, IReplayObserver
 {
-    // Output paths and what produced them: not the files, whose contents would stay in memory until the build ends.
-    private readonly ConcurrentDictionary<FPath, string> _written = new();
+    // Output paths, what produced them and when they are written: not the files, whose contents would stay in memory
+    // until the build ends.
+    private readonly ConcurrentDictionary<FPath, Registration> _written = new();
+
+    private sealed record Registration(string Producer, FileRef Ref, Task Written);
 
     public WriteStep(StepDefinition definition) : base(definition)
     {
@@ -27,12 +31,30 @@ internal sealed class WriteStep : Step, IMapStep, IReplayObserver
 
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
-        Register(file);
+        var writing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // Creates the directory too.
-        await using (var stream = await context.Build.Output.CreateFileAsync(file.Path))
+        if (Register(file, writing.Task) is { } written)
         {
-            await file.Content.CopyToAsync(stream, ct);
+            // The same file, written by another unit.
+            await written.WaitAsync(ct);
+        }
+        else
+        {
+            try
+            {
+                // Creates the directory too.
+                await using (var stream = await context.Build.Output.CreateFileAsync(file.Path))
+                {
+                    await file.Content.CopyToAsync(stream, ct);
+                }
+
+                writing.SetResult();
+            }
+            catch (Exception e)
+            {
+                writing.SetException(e);
+                throw;
+            }
         }
 
         // The result is reused while the file is in the output folder as written.
@@ -53,17 +75,33 @@ internal sealed class WriteStep : Step, IMapStep, IReplayObserver
     {
         foreach (var file in inputs)
         {
-            Register(file);
+            Register(file, Task.CompletedTask);
         }
     }
 
-    private void Register(VirtualFile file)
+    /// <summary>
+    /// Registers the output path of <paramref name="file"/>, written once <paramref name="written"/> completes. Returns
+    /// null when the path is new, or when the same file (same <see cref="FileRef"/>) was registered first, the task
+    /// that completes once that one is written.
+    /// </summary>
+    /// <exception cref="DouzeException">Another file has the path.</exception>
+    private Task? Register(VirtualFile file, Task written)
     {
-        if (!_written.TryAdd(file.Path, Describe(file)))
+        var registration = new Registration(Describe(file), file.Ref, written);
+        var existing = _written.GetOrAdd(file.Path, registration);
+
+        if (ReferenceEquals(existing, registration))
         {
-            var (first, second) = Order(_written[file.Path], Describe(file));
-            throw new DouzeException($"output '{file.Path}' is produced by both {first} and {second}");
+            return null;
         }
+
+        if (existing.Ref == registration.Ref)
+        {
+            return existing.Written;
+        }
+
+        var (first, second) = Order(existing.Producer, registration.Producer);
+        throw new DouzeException($"output '{file.Path}' is produced by both {first} and {second}");
     }
 
     private static string Describe(VirtualFile file)

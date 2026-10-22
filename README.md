@@ -7,7 +7,7 @@ Stupidly simple, blazing fast static site generator
 dotnet tool install -g douze --prerelease
 ```
 
-The package is native AOT on Windows, Linux and macOS (x64 and arm64) and needs no .NET runtime. On other platforms, and for the preview packages of the Feedz feed, which are framework dependent, it runs on the .NET 11 runtime.
+The package is native AOT on Windows, Linux and macOS (x64 and arm64) and needs no .NET runtime. On other platforms, and for the preview packages of the Feedz feed, which are framework dependent, it runs on the .NET 11 runtime. The native AOT packages include libvips, which the image features use (see "images"); the framework dependent packages do not, and their image features report how to get it.
 
 # usage
 
@@ -186,6 +186,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -222,7 +223,7 @@ markdown:
   aside: { tag: aside, class: aside, kinds: [note, tip, caution, danger], titles: { note: Note }, icons: { note: "<svg>...</svg>" } }
   links: true                                   # .md links to page urls
   code: { class-prefix: language-, passthrough: [mermaid] }
-  images: { widths: [640, 1280], formats: [webp], quality: 80, output: assets/images, loading: lazy }   # read, not used yet
+  images: { widths: [640, 1280], formats: [webp], quality: 80, output: assets/images, loading: lazy }   # defaults of the image features
 ```
 
 Without the section, Markdown is CommonMark with no extension. With it, `extensions` defaults to the list above; it
@@ -470,6 +471,77 @@ Install it with {% badge "v2", variant: "note" %}.
 - The `liquid` step's `strict: true` makes an undefined variable an error rather than nothing; shortcode templates
   are not strict, so their optional arguments work.
 - The `liquid` step's `protect: none` renders the fences of Markdown pages as Liquid.
+
+# images
+
+The `image` tag, in a page or a layout, makes the variants of a source image and writes their markup:
+
+```liquid
+{% image "images/dashboard.png", alt: "The dashboard", widths: [640, 1280], formats: ["webp", "png"], sizes: "(min-width: 60em) 50vw, 100vw", class: "figure" %}
+{% image "/images/arch.svg", alt: "Architecture" %}
+{% image light: "images/a-light.png", dark: "images/a-dark.png", alt: "The flow" %}
+```
+
+- The source is relative to the page's folder, or to the content folder when it starts with `/`. It is a dependency
+  of the page: changing the image renders the page again.
+- Each variant (a width, a format) is written to `output` (default `/assets/images/`) as
+  `<name>-<width>.<hash>.<ext>`, the hash being that of the variant, so a changed image gets new names. Variants are
+  never wider than the source; metadata (EXIF, XMP, ICC) is stripped; a variant used by several pages is written once.
+- The markup is a `<picture>` with a `<source>` per format but the last, whose `srcset` lists every width, and an
+  `<img>` of the last format with its largest width, `width`, `height` (no layout shift), `alt`, `loading` (`lazy`),
+  `decoding="async"`, `class`, and any other named argument as an attribute (`true` without a value). One format gives
+  a plain `<img>`, with a `srcset` for several widths.
+- `light` and `dark` give one `<picture>` whose dark sources have `media="(prefers-color-scheme: dark)"`; with
+  `theme: "attribute"`, two elements with `data-theme="light"` and `data-theme="dark"`, for a site that toggles a theme
+  attribute and hides one in CSS.
+- An SVG or a GIF is copied as it is (`<name>.<hash>.<ext>`), its size read from the file (an SVG's `width` and
+  `height`, or its `viewBox`).
+- `widths`, `formats` (`webp`, `avif`, `png`, `jpeg`), `quality` (default 80), `output` and `loading` default to the
+  `images` settings of the `markdown` section; without widths, the source's width, without formats, its format.
+- Arguments take strings, numbers, `true`, `false`, lists (`[640, 1280]`) and variables (`page.hero`).
+
+`{{ "images/a.png" | image_url: width: 400, format: "webp" }}` makes one variant and returns its url (`og:image`, CSS);
+`{{ "images/a.png" | image_size }}` returns `{ width, height }`.
+
+For Markdown images (`![alt](images/x.png)`), three steps do the same without a tag:
+
+```yaml
+  images:    { inputs: "docs/**/*.{png,jpg,jpeg,webp,avif,gif,svg}", uses: images, with: { widths: [640, 1280], formats: [webp] } }
+  image-map: { needs: images, uses: image-map }
+  pictures:  { needs: [markdown, image-map], uses: pictures }
+  write:     { needs: [layout, images], uses: write }
+```
+
+`images` emits the variants and the original (fingerprinted) of each image instead of the file, each with `image`:
+`{ source, url, width, height, format, variants: [{ url, width, height, format }] }`. `image-map` collects them as
+`images`, by source url (`images["/docs/images/x.png"]`), for templates and `pictures`, which rewrites the `<img>` of
+the images it knows into the tag's markup, keeping their other attributes. A page depends on the images it shows only.
+
+Image processing uses libvips (NetVips), included in the native AOT packages. Without it, a build that uses no image
+feature works, and the units that need it fail with the steps to get it; SVG and GIF images never need it.
+
+# social images
+
+The `social-image` step renders an Open Graph image per page: an SVG Liquid template rasterized as the background,
+with text laid out over it.
+
+```yaml
+  og: { needs: pages, uses: social-image, match: "docs/**/*.md",
+        with: { template: og/card.svg.liquid, width: 1200, height: 630, output: "og/{{ slug }}.png", skip: "og == false",
+                text: [ { value: "{{ title }}", font: "Outfit Bold 56", fontfile: assets/fonts/Outfit-Bold.ttf, x: 80, y: 160, width: 1040, height: 220, color: "#ffffff" },
+                        { value: "{{ description }}", font: "Outfit 30", fontfile: assets/fonts/Outfit-Regular.ttf, x: 80, y: 400, width: 1040, height: 150, color: "#c8c8d0", align: center } ] } }
+```
+
+- `template` is in the includes folder and renders with the page's model; images it references by a relative path
+  (to the template's folder, or to the content folder with `/`) are inlined, and are dependencies of the page.
+- Each `text` block renders its `value` (a Liquid template) with Pango as plain text: `font` (a Pango font: family,
+  style, size in pixels), wrapped at `width`, clipped at `height`, aligned `left`, `center` or `right` in its box,
+  colored (`#rrggbb` or `#rrggbbaa`), at `x`, `y`. `fontfile` (relative to the source folder) loads a font file first:
+  containers usually have no system fonts.
+- `output` (a Liquid template) is the image's path; `skip` (a Liquid condition) leaves a page without one; `width` and
+  `height` default to 1200 and 630.
+- The step passes every page through unchanged and adds the image to the page's outputs: it sits in the page chain,
+  not on a branch. A layout computes the url with the same template: `{{ page | social_image_url: "og/{{ slug }}.png" }}`.
 
 # commands
 
