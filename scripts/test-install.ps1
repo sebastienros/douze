@@ -63,9 +63,9 @@ try {
         try {
             $index = Invoke-RestMethod $Feed
             $base = ($index.resources | Where-Object { $_.'@type' -eq 'PackageBaseAddress/3.0.0' } | Select-Object -First 1).'@id'.TrimEnd('/')
-            if (-not $Version) { break }
-            # Any RID package: each is pushed before the pointer package.
-            $listed = (Invoke-RestMethod "$base/douze.linux-x64/index.json").versions
+            if ($Packages -or -not $Version) { break }
+            # The pointer package, pushed after the RID-specific packages.
+            $listed = (Invoke-RestMethod "$base/douze/index.json").versions
             if ($listed -contains $Version.ToLowerInvariant()) { break }
         }
         catch {
