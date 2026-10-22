@@ -31,8 +31,8 @@ public sealed class ToolInstallerTests : IDisposable
     public ToolInstallerTests()
     {
         var port = FreePort();
-        _registry = new Uri($"http://127.0.0.1:{port}/registry/");
-        _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+        _registry = new Uri($"http://localhost:{port}/registry/");
+        _listener.Prefixes.Add($"http://localhost:{port}/");
         _listener.Start();
         _ = Task.Run(ServeAsync);
     }
