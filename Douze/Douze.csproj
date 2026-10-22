@@ -1,7 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Opt-in Satori GC (experimental, third party runtime build; version in global.json): faster, more memory.
-       dotnet publish Douze -c Release -p:UseSatoriGC=true (bench/README.md, finding 9). -->
+  <!-- Native AOT builds of douze (publish, and the RID-specific tool packages) use the Satori GC: an experimental third
+       party build of the runtime, faster and using more memory on large sites (bench/README.md, finding 9); its version
+       is in global.json. -p:UseSatoriGC=false builds with the standard GC. Builds, tests and the CoreCLR fallback
+       package (PublishAot=false) use the standard runtime. -->
+  <PropertyGroup>
+    <UseSatoriGC Condition="'$(UseSatoriGC)' == '' and '$(PublishAot)' != 'false' and ('$(_IsPublishing)' == 'true' or ('$(PackTool)' == 'true' and '$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != 'any'))">true</UseSatoriGC>
+  </PropertyGroup>
   <Import Project="Sdk.props" Sdk="PublishWithSatoriGC" Condition="'$(UseSatoriGC)' == 'true'" />
 
   <PropertyGroup>
@@ -24,7 +29,7 @@
     <PublishAot>true</PublishAot>
     <!-- The tool has no use for its XML documentation, and the .NET 11 SDK's native AOT publish doesn't copy it to bin. -->
     <PublishDocumentationFile>false</PublishDocumentationFile>
-    <!-- A build is a batch job: background GC only throttles the allocating threads (bench/README.md, .NET 11). -->
+    <!-- With the standard GC: a build is a batch job, background GC only throttles the allocating threads (bench/README.md, .NET 11). -->
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <ToolPackageRuntimeIdentifiers>win-x64;win-arm64;linux-x64;linux-arm64;osx-x64;osx-arm64;any</ToolPackageRuntimeIdentifiers>
 

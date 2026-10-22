@@ -388,7 +388,10 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    | aspire API pages, clean, no cache | 4.41 s, 1.20 GB | 3.35 s, 1.09 GB | 2.88 s, 1.40 GB |
    | synthetic 32000, one page edited | 1.51 s, 0.58 GB | 1.04 s, 0.65 GB | 1.05 s, 0.70 GB |
 
-   It misses the synthetic site's 1.5 GB target, so it stays opt-in. A native AOT binary cannot switch to it at run time:
+   On a 500 page synthetic site the three take the same time (0.18 to 0.20 s clean, 0.05 to 0.07 s for an edit) and Satori
+   peaks lower than the default (114 MB against 167 MB; Server GC 99 MB). Satori is the default of native AOT builds
+   since (`-p:UseSatoriGC=false` opts out), accepting the synthetic 32k site's peak over the 1.5 GB target of 9.2 for
+   the speed. A native AOT binary cannot switch to it at run time:
    the compiler emits Satori's write barriers into the code. A binary linked with the Server GC, though, runs as
    workstation with `DOTNET_gcServer=0` (6.5 s, 1.11 GB on the synthetic site) and as Server GC without it.
 

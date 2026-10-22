@@ -2547,6 +2547,12 @@ phase 5 base measured the same day): synthetic 32k clean 6.3 s and 1.08 GB (base
 writing the cache; one page edited 1.6 s; aspire API pages 4.0 s and 1.1 GB (base 4.3 s and 2.43 GB), 1.4 GB writing the
 cache. Every target of this table that phases up to 5 own is met.
 
+*Satori GC* (decided by the user after the bounded channels change, `bench/README.md` finding 9): native AOT builds use
+the experimental Satori GC (`PublishWithSatoriGC`, `-p:UseSatoriGC=false` opts out). It builds the synthetic 32k site in
+5.5 s instead of 6.4 s and the aspire pages in 2.9 s instead of 4.4 s, and peaks at 1.88 GB and 1.40 GB: the synthetic
+site's 1.5 GB target is knowingly missed for the speed (the standard GC meets it, 1.07 GB). Small sites peak lower
+than with the standard GC (114 MB against 167 MB for 500 pages). Re-measure when Douze moves to the stable .NET 11.
+
 ### 9.3 Validation beyond tests
 
 - Build the Sample and a copy of the Sample with a `douze.yml` that reproduces the default
