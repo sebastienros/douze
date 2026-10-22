@@ -90,4 +90,20 @@ public class PermalinkStepTests : StepTestBase
         // The permalink read site data: the unit depends on what 'blog' resolves to.
         Assert.Contains(result["permalink"].Results.Single().Dependencies.Lookups, x => x.Key == "blog" && x.Hash != DependencySet.Absent);
     }
+
+    [Fact]
+    public async Task LocaleRootIsStripped()
+    {
+        await Source.WriteTextFileAsync("/_content/docs/guide.md", "guide");
+        await Source.WriteTextFileAsync("/_content/docs/ja/guide.md", "guide");
+        await Source.WriteTextFileAsync("/_content/about.md", "about");
+        await Source.WriteTextFileAsync("/_content/docs/feed.html", "---\npermalink: /docs/feed.xml\n---\n");
+        Site = await SiteOptions.DetectAsync(Source, Output, null, null, Douze.Workflow.Yaml.WorkflowLoader.Load("site:\n  locales: { default: en, root: docs, languages: { ja: {} } }\n", "douze.yml").Site);
+
+        var result = await BuildSuccessfullyAsync(Permalink());
+
+        // An explicit permalink is a url: kept as is.
+        Assert.Equal(["/about/index.md", "/docs/feed.xml", "/guide/index.md", "/ja/guide/index.md"], Paths(result));
+        Assert.Equal("/ja/guide/index.html", Outputs(result["permalink"]).Single(x => x.Path == "/ja/guide/index.md").Metadata.Own["url"]!.GetValue<string>());
+    }
 }

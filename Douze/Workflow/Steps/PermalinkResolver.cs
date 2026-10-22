@@ -21,7 +21,9 @@ internal static class PermalinkResolver
     /// <c>permalink</c> is <c>false</c>. A <c>permalink</c> is a Liquid template rendered with the metadata; a result
     /// without an extension is a folder (<c>blog/post</c> is <c>/blog/post/index.html</c>). Without a <c>permalink</c>,
     /// a page <c>name.html</c> becomes <c>name/index.html</c> (<c>index.html</c> stays in place) and other files keep
-    /// their path. <paramref name="root"/> is removed from the start of the result.
+    /// their path. <paramref name="root"/> is removed from the start of the result, or the locale root
+    /// (<see cref="LocaleSet.Root"/>) for a file under it, so that a page of <c>&lt;root&gt;/ja/</c> is under
+    /// <c>/ja/</c>.
     /// </summary>
     /// <remarks>
     /// A Markdown file (<c>.md</c>) is a page too, whose content is not HTML yet: its HTML output path keeps the
@@ -31,6 +33,8 @@ internal static class PermalinkResolver
     /// </remarks>
     public static async ValueTask<FPath?> ResolveAsync(VirtualFile file, Metadata metadata, StepContext context, FPath root, CancellationToken ct)
     {
+        root = EffectiveRoot(file.Path, root, context.Build.Locales);
+
         if (!context.Scopes.TryResolve(metadata, Key, null, context.Dependencies, out var node, out _))
         {
             return Default(file.Path, root);
@@ -78,6 +82,19 @@ internal static class PermalinkResolver
         }
 
         return StepPaths.StripRoot(path, root);
+    }
+
+    /// <summary>
+    /// The locale root when <paramref name="path"/> is under it and it is inside <paramref name="root"/>,
+    /// <paramref name="root"/> otherwise.
+    /// </summary>
+    private static FPath EffectiveRoot(FPath path, FPath root, LocaleSet locales)
+    {
+        return locales.IsEnabled
+            && locales.Root.FullName.StartsWith(root.FullName, StringComparison.Ordinal)
+            && path.FullName.StartsWith(locales.Root.FullName, StringComparison.Ordinal)
+            ? locales.Root
+            : root;
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using Douze.FileSystems;
 using Douze.Workflow.Steps;
 using SharpYaml.Model;
 
@@ -98,6 +99,12 @@ internal static class WorkflowLoader
                 continue;
             }
 
+            if (key == "locales")
+            {
+                site = site with { Locales = ReadLocales(yaml, value!, errors) };
+                continue;
+            }
+
             if (YamlSource.Scalar(value!) is not { } text)
             {
                 errors.Add(new($"'{key}' must be {(key == "parallelism" ? "a positive integer" : "a string")}", yaml.Location(value!)));
@@ -143,6 +150,196 @@ internal static class WorkflowLoader
         }
 
         return site;
+    }
+
+    private static readonly ImmutableArray<string> LocaleKeys = ["default", "root", "fallback", "languages", "strings"];
+
+    private static readonly ImmutableArray<string> LanguageKeys = ["label", "lang", "dir"];
+
+    /// <summary>
+    /// Reads <c>site.locales</c>, or returns null after adding its errors.
+    /// </summary>
+    private static LocaleSet? ReadLocales(YamlSource yaml, YamlElement node, List<WorkflowValidationError> errors)
+    {
+        if (node is not YamlMapping mapping)
+        {
+            errors.Add(new("'locales' must be a mapping", yaml.Location(node)));
+            return null;
+        }
+
+        var errorCount = errors.Count;
+        string? defaultKey = null;
+        string? root = null;
+        var fallback = false;
+        var strings = LocaleSet.DefaultStrings;
+        var languages = new List<LanguageSettings>();
+
+        foreach (var (key, keyNode, value) in yaml.Entries(mapping, errors))
+        {
+            if (!LocaleKeys.Contains(key))
+            {
+                errors.Add(new($"unknown key '{key}' in 'site.locales'; expected {Expected(LocaleKeys)}", yaml.Location(keyNode)));
+                continue;
+            }
+
+            if (YamlSource.IsNull(value))
+            {
+                continue;
+            }
+
+            if (key == "languages")
+            {
+                ReadLanguages(yaml, value!, languages, errors);
+                continue;
+            }
+
+            if (YamlSource.Scalar(value!) is not { } text)
+            {
+                errors.Add(new($"'{key}' must be {(key == "fallback" ? "true or false" : "a string")}", yaml.Location(value!)));
+                continue;
+            }
+
+            switch (key)
+            {
+                case "default":
+                    if (!IsLocaleFolder(text))
+                    {
+                        errors.Add(new("'default' must be a locale folder name", yaml.Location(value!)));
+                        break;
+                    }
+
+                    defaultKey = text;
+                    break;
+
+                case "root":
+                    if (text.Split('/', '\\').Contains(".."))
+                    {
+                        errors.Add(new("'root' must be a folder inside the content folder", yaml.Location(value!)));
+                        break;
+                    }
+
+                    root = StepPaths.Directory(text) == FPath.Root ? null : text;
+                    break;
+
+                case "fallback":
+                    if (!bool.TryParse(text, out fallback))
+                    {
+                        errors.Add(new("'fallback' must be true or false", yaml.Location(value!)));
+                    }
+
+                    break;
+
+                case "strings":
+                    strings = text;
+                    break;
+            }
+        }
+
+        if (defaultKey == null && errors.Count == errorCount)
+        {
+            errors.Add(new("'site.locales' needs 'default', the locale whose pages have no url prefix", yaml.Location(node)));
+        }
+
+        if (errors.Count > errorCount)
+        {
+            return null;
+        }
+
+        // The default locale may be listed with the others, for its label, lang and dir; it has no folder.
+        var defaultLocale = (languages.FirstOrDefault(x => x.Key == defaultKey) ?? new LanguageSettings(defaultKey!, null, null, null)).ToLocale("");
+
+        return new LocaleSet(
+            defaultLocale,
+            [.. languages.Where(x => x.Key != defaultKey).Select(x => x.ToLocale("/" + x.Key))],
+            root,
+            fallback,
+            strings);
+    }
+
+    private static void ReadLanguages(YamlSource yaml, YamlElement node, List<LanguageSettings> languages, List<WorkflowValidationError> errors)
+    {
+        if (node is not YamlMapping mapping)
+        {
+            errors.Add(new("'languages' must be a mapping of locale folders to settings", yaml.Location(node)));
+            return;
+        }
+
+        foreach (var (folder, folderNode, value) in yaml.Entries(mapping, errors))
+        {
+            if (!IsLocaleFolder(folder))
+            {
+                errors.Add(new($"'{folder}' is not a locale folder name", yaml.Location(folderNode)));
+                continue;
+            }
+
+            string? label = null, lang = null, dir = null;
+
+            if (!YamlSource.IsNull(value))
+            {
+                if (value is not YamlMapping settings)
+                {
+                    errors.Add(new($"the settings of locale '{folder}' must be a mapping of 'label', 'lang' and 'dir'", yaml.Location(value!)));
+                    continue;
+                }
+
+                foreach (var (key, keyNode, setting) in yaml.Entries(settings, errors))
+                {
+                    if (!LanguageKeys.Contains(key))
+                    {
+                        errors.Add(new($"unknown key '{key}' in 'site.locales.languages.{folder}'; expected {Expected(LanguageKeys)}", yaml.Location(keyNode)));
+                        continue;
+                    }
+
+                    if (YamlSource.IsNull(setting))
+                    {
+                        continue;
+                    }
+
+                    if (YamlSource.Scalar(setting!) is not { } text)
+                    {
+                        errors.Add(new($"'{key}' must be a string", yaml.Location(setting!)));
+                        continue;
+                    }
+
+                    switch (key)
+                    {
+                        case "label":
+                            label = text;
+                            break;
+                        case "lang":
+                            lang = text;
+                            break;
+                        default:
+                            if (text is not ("ltr" or "rtl"))
+                            {
+                                errors.Add(new("'dir' must be 'ltr' or 'rtl'", yaml.Location(setting!)));
+                                break;
+                            }
+
+                            dir = text;
+                            break;
+                    }
+                }
+            }
+
+            languages.Add(new LanguageSettings(folder, label, lang, dir));
+        }
+    }
+
+    // A single folder name: no separators or spaces, not '.' or '..'.
+    private static bool IsLocaleFolder(string name)
+    {
+        return name.Length > 0 && name is not ("." or "..") && name.IndexOfAny(['/', '\\', ' ']) < 0;
+    }
+
+    private static string Expected(ImmutableArray<string> keys)
+    {
+        return string.Join(", ", keys[..^1].Select(x => $"'{x}'")) + $" or '{keys[^1]}'";
+    }
+
+    private sealed record LanguageSettings(string Key, string? Label, string? Lang, string? Dir)
+    {
+        public Locale ToLocale(string prefix) => new(Key, Label ?? Key, Lang ?? Key, Dir ?? "ltr", prefix);
     }
 
     private static ImmutableArray<StepDefinition>? ReadSteps(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)

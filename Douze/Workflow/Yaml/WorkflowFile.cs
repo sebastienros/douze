@@ -22,4 +22,5 @@ internal sealed record SiteSettings
     public string? Output { get; init; }               // relative to the source folder, or absolute
     public string? Url { get; init; }
     public int? Parallelism { get; init; }
+    public LocaleSet? Locales { get; init; }           // site.locales; SiteOptions resolves its root in the content folder
 }

@@ -18,7 +18,7 @@ internal static partial class WorkflowSchema
 
     public static readonly ImmutableArray<string> TopLevelKeys = ["site", "steps"];
 
-    public static readonly ImmutableArray<string> SiteKeys = ["content", "data", "includes", "output", "url", "parallelism"];
+    public static readonly ImmutableArray<string> SiteKeys = ["content", "data", "includes", "output", "url", "parallelism", "locales"];
 
     /// <summary>
     /// The step fields, in the order <see cref="ToYaml"/> writes them.

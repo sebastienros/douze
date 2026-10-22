@@ -67,17 +67,25 @@ internal sealed class BuildContext : IAsyncDisposable
     }
 
     /// <summary>
-    /// What templates see of the site settings, under <c>site</c>: <c>url</c> when it is set. The other settings
-    /// (folders, output, parallelism) configure the build and are not exposed.
+    /// What templates see of the site settings, under <c>site</c>: <c>url</c> when it is set, and <c>locales</c>
+    /// (<see cref="LocaleSet.ToNode"/>) when the site has locales. The other settings (folders, output, parallelism)
+    /// configure the build and are not exposed.
     /// </summary>
     private static NodeObject SiteValues(SiteOptions site)
     {
-        if (site.Url == null)
+        var values = new NodeObject();
+
+        if (site.Url != null)
         {
-            return new NodeObject();
+            values["url"] = NodeValue.Create(site.Url);
         }
 
-        return new NodeObject { ["site"] = new NodeObject { ["url"] = NodeValue.Create(site.Url) } };
+        if (site.Locales.IsEnabled)
+        {
+            values["locales"] = site.Locales.ToNode();
+        }
+
+        return values.Count == 0 ? new NodeObject() : new NodeObject { ["site"] = values };
     }
 
     /// <summary>
@@ -98,10 +106,25 @@ internal sealed class BuildContext : IAsyncDisposable
     public SemaphoreSlim ProcessSlots { get; }      // slots for external processes (command steps)
     public CancellationToken Cancellation { get; }  // user cancellation (Ctrl+C)
     public string TempRoot { get; }                 // <cache dir>/tmp/<build id>/ for batch commands, created on demand, deleted by DisposeAsync
-    public ScopeSet BaseScopes { get; }             // the site settings templates see (site.url), below every contribution
+    public ScopeSet BaseScopes { get; }             // the site settings templates see (site.url, site.locales), below every contribution
+    public LocaleSet Locales => Site.Locales;       // site.locales; LocaleSet.None when absent
     public ImmutableArray<FPath> ExcludedSourceFolders { get; }  // the output and cache folders, when they are inside the source folder: never sources
     public string? CacheRoot { get; }               // --cache-dir, or <source>/.douze/; null for a site not on disk
     public BuildCache? Cache { get; }               // the disk cache in <cache root>/cache/; null with --no-cache or when another build holds it
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _warned = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Reports a warning of <paramref name="step"/> the first time the build sees <paramref name="message"/>, such as a
+    /// missing translation that many pages use.
+    /// </summary>
+    public void WarnOnce(string step, string message)
+    {
+        if (_warned.TryAdd(message, true))
+        {
+            View.Message(LogLevel.Warning, step, message);
+        }
+    }
 
     /// <summary>
     /// Releases the slots and deletes <see cref="TempRoot"/>, unless <c>--verbose</c> asked to keep what the batch
