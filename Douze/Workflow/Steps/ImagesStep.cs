@@ -69,7 +69,7 @@ internal sealed class ImagesStep : Step, IMapStep
     {
         var build = context.Build;
         var bytes = await file.Content.ReadBytesAsync(ct);
-        var (set, outputs) = ImageBuilder.Build(() => build.Images, ImageSources.Url(file.Path, build.Site.ContentFolder), bytes, _request!, original: true);
+        var (set, outputs) = await ImageBuilder.BuildAsync(() => build.Images, ImageSources.Url(file.Path, build.Site.ContentFolder), bytes, _request!, original: true);
 
         // One node shared by every output: nodes are never changed once published.
         var image = set.ToNode();

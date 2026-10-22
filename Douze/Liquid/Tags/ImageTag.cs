@@ -1,11 +1,13 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.Encodings.Web;
 using Douze.FileSystems;
 using Douze.Images;
 using Douze.Workflow;
 using Fluid;
 using Fluid.Ast;
+using Fluid.Parser;
 using Fluid.Values;
 using Parlot.Fluent;
 using static Parlot.Fluent.Parsers;
@@ -32,9 +34,97 @@ internal static class ImageTag
 
     internal sealed record ImageArgument(string? Name, Expression Value);
 
+    // The image tags of a template whose arguments are all literals, found once per parsed template.
+    private static readonly ConditionalWeakTable<IFluidTemplate, IReadOnlyList<IReadOnlyList<ImageArgument>>> LiteralTags = new();
+
     public static void Register(FluidParser parser)
     {
         parser.RegisterParserTag("image", Arguments, RenderAsync);
+    }
+
+    /// <summary>
+    /// Starts encoding the variants of the image tags of <paramref name="template"/> whose arguments are literals (the
+    /// tags of the page itself, not those of its includes), before the render meets them one after the other, so that
+    /// the images of a page are encoded in parallel (<see cref="ImageBuilder.Prefetch"/>). Nothing is recorded: the
+    /// tags read their sources again when they render, and meet the errors.
+    /// </summary>
+    public static async ValueTask PrefetchAsync(IFluidTemplate template, TemplateContext context)
+    {
+        var tags = LiteralTags.GetValue(template, static x => FindLiteralTags(x));
+
+        if (tags.Count == 0 || !context.AmbientValues.ContainsKey(AmbientKeys.StepContext))
+        {
+            return;
+        }
+
+        var images = ImageContext.From(context);
+
+        foreach (var arguments in tags)
+        {
+            try
+            {
+                var values = new Dictionary<string, FluidValue>(StringComparer.Ordinal);
+                var sources = new List<string>();
+
+                foreach (var argument in arguments)
+                {
+                    var value = await argument.Value.EvaluateAsync(context);
+
+                    if (argument.Name is null or "light" or "dark")
+                    {
+                        sources.Add(value.ToStringValue(context));
+                    }
+                    else if (Known.Contains(argument.Name, StringComparer.Ordinal))
+                    {
+                        values[argument.Name] = value;
+                    }
+                }
+
+                var request = await RequestAsync(images.Build, values, context);
+
+                foreach (var source in sources)
+                {
+                    await images.PrefetchAsync(source, request);
+                }
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // The tag reports it when it renders.
+            }
+        }
+    }
+
+    /// <summary>
+    /// The image tags of a template whose arguments are literals (strings, numbers, booleans, lists of those), in
+    /// blocks too.
+    /// </summary>
+    internal static IReadOnlyList<IReadOnlyList<ImageArgument>> FindLiteralTags(IFluidTemplate template)
+    {
+        if (template is not IStatementList)
+        {
+            return [];
+        }
+
+        var finder = new LiteralTagFinder();
+        finder.VisitTemplate(template);
+        return finder.Tags;
+    }
+
+    private sealed class LiteralTagFinder : AstVisitor
+    {
+        public List<IReadOnlyList<ImageArgument>> Tags { get; } = [];
+
+        protected override Statement VisitParserTagStatement<T>(ParserTagStatement<T> parserTagStatement)
+        {
+            if (parserTagStatement.Value is IReadOnlyList<ImageArgument> arguments && arguments.All(x => IsLiteral(x.Value)))
+            {
+                Tags.Add(arguments);
+            }
+
+            return parserTagStatement;
+        }
+
+        private static bool IsLiteral(Expression expression) => expression is LiteralExpression || expression is ListExpression list && list.Items.All(IsLiteral);
     }
 
     private static Parser<IReadOnlyList<ImageArgument>> CreateArguments()
@@ -226,6 +316,8 @@ internal static class ImageTag
     /// </summary>
     private sealed class ListExpression(IReadOnlyList<Expression> items) : Expression
     {
+        public IReadOnlyList<Expression> Items => items;
+
         public override async ValueTask<FluidValue> EvaluateAsync(TemplateContext context)
         {
             var values = new FluidValue[items.Count];
@@ -301,6 +393,20 @@ internal sealed class ImageContext
     }
 
     /// <summary>
+    /// Starts encoding the variants of a source image that the render will ask for (<see cref="ImageTag.PrefetchAsync"/>),
+    /// without recording it as a dependency.
+    /// </summary>
+    public async ValueTask PrefetchAsync(string src, ImageRequest request)
+    {
+        var path = await ResolveAsync(src);
+
+        if ((await Build.Source.GetFileEntryAsync(path)).Exists)
+        {
+            ImageBuilder.Prefetch(() => Build.Images, await ImageSources.ReadAsync(Build.Source, path, src, null), request);
+        }
+    }
+
+    /// <summary>
     /// Reads a source image (recorded as a dependency of the unit), produces its variants, adds them to the outputs of
     /// the unit and returns their set.
     /// </summary>
@@ -308,7 +414,7 @@ internal sealed class ImageContext
     {
         var path = await ResolveAsync(src);
         var bytes = await ImageSources.ReadAsync(Build.Source, path, src, Step.Dependencies);
-        var (set, files) = ImageBuilder.Build(() => Build.Images, ImageSources.Url(path, Build.Site.ContentFolder), bytes, request, original: false);
+        var (set, files) = await ImageBuilder.BuildAsync(() => Build.Images, ImageSources.Url(path, Build.Site.ContentFolder), bytes, request, original: false);
 
         foreach (var file in files)
         {

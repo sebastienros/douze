@@ -6,6 +6,7 @@ using Douze.Markdown;
 using Douze.Tests.Images;
 using Douze.Tests.Workflow.Cache;
 using Douze.Workflow;
+using Fluid;
 using Xunit;
 
 namespace Douze.Tests.Liquid.Tags;
@@ -26,6 +27,22 @@ public partial class ImageTagTests : CacheTestBase
 
     [GeneratedRegex(@"\.[0-9a-f]{8}\.")]
     private static partial Regex Hash();
+
+    [Fact]
+    public void TagsWithLiteralArgumentsArePrefetched()
+    {
+        var template = Douze.Liquid.LiquidOptions.CreateParser().Parse("""
+            {% image "a.png", widths: [640, 1280], formats: ["webp"], alt: "A" %}
+            {% if x %}{% for i in (1..2) %}{% image light: "b.png", dark: "c.png", quality: 80 %}{% endfor %}{% endif %}
+            {% capture c %}{% image "d.png" %}{% endcapture %}
+            {% image page.image %}
+            {% image "e.png", widths: [w] %}
+            """);
+
+        var found = Douze.Liquid.Tags.ImageTag.FindLiteralTags(template);
+
+        Assert.Equal(["a.png", "b.png", "d.png"], found.Select(x => ((Fluid.Ast.LiteralExpression)x[0].Value).Value.ToStringValue(new TemplateContext())));
+    }
 
     [Fact]
     public async Task PictureWithSourcesSrcsetSizesAndTheSizeOfTheFallback()

@@ -27,7 +27,15 @@ internal sealed class ImageProcessor
     // libvips' largest image dimension (VIPS_MAX_COORD).
     private const int MaxCoordinate = 10_000_000;
 
-    private readonly ConcurrentDictionary<(Hash128 Source, ImageVariant Variant), Lazy<ProcessedImage>> _variants = new();
+    /// <summary>
+    /// The most memory the memoized rasters of a build use (<see cref="Rasterize"/>): 256 MB, about 80 backgrounds of
+    /// 1200 by 630.
+    /// </summary>
+    public const long RasterBudget = 256L * 1024 * 1024;
+
+    private readonly ConcurrentDictionary<(Hash128 Source, ImageVariant Variant), Lazy<Task<ProcessedImage>>> _variants = new();
+    private readonly ConcurrentDictionary<(Hash128 Svg, int Width, int Height), Lazy<Raster>> _rasters = new();
+    private long _rasterBytes;
 
     private ImageProcessor()
     {
@@ -117,26 +125,32 @@ internal sealed class ImageProcessor
     }
 
     /// <summary>
-    /// Encodes a variant: shrink on load, auto rotation and premultiplied alpha (<c>thumbnail</c>), never wider than the
-    /// source, metadata stripped. Memoized by source content and variant for the build, unless
-    /// <paramref name="memoize"/> is false (a source processed once, by the <c>images</c> step, would only stay in memory).
+    /// A variant of a source, memoized by source content and variant for the build and encoded on the thread pool: the
+    /// pages that use one image (and the fallback copies of a page) encode it once, and a page that uses several
+    /// encodes them in parallel when it starts them before awaiting them (<see cref="ImageBuilder.Prefetch"/>).
     /// </summary>
-    /// <exception cref="DouzeException">libvips cannot read the source or encode the variant.</exception>
-    public ProcessedImage Variant(ReadOnlyMemory<byte> source, ImageVariant variant, bool memoize = true)
+    /// <exception cref="DouzeException">The format cannot be encoded, libvips cannot read the source or encode the variant.</exception>
+    public Task<ProcessedImage> VariantAsync(ReadOnlyMemory<byte> source, ImageVariant variant)
     {
         var format = ImageFormats.Encodable(variant.Format) ?? throw new DouzeException($"cannot encode images as '{variant.Format}'; expected {ImageFormats.EncodableNames}");
-
-        if (!memoize)
-        {
-            return Encode(source, variant, format);
-        }
-
         var key = (Hash128.Of(source.Span), variant);
 
         return _variants.GetOrAdd(
             key,
-            static (key, state) => new Lazy<ProcessedImage>(() => Encode(state.Source, key.Variant, state.Format), LazyThreadSafetyMode.ExecutionAndPublication),
+            static (key, state) => new Lazy<Task<ProcessedImage>>(() => Task.Run(() => Encode(state.Source, key.Variant, state.Format)), LazyThreadSafetyMode.ExecutionAndPublication),
             (Source: source, Format: format)).Value;
+    }
+
+    /// <summary>
+    /// Encodes a variant: shrink on load, auto rotation and premultiplied alpha (<c>thumbnail</c>), never wider than the
+    /// source, metadata stripped. Not memoized: for a source processed once (the <c>images</c> step), whose variants
+    /// would only stay in memory.
+    /// </summary>
+    /// <exception cref="DouzeException">The format cannot be encoded, libvips cannot read the source or encode the variant.</exception>
+    public ProcessedImage Encode(ReadOnlyMemory<byte> source, ImageVariant variant)
+    {
+        var format = ImageFormats.Encodable(variant.Format) ?? throw new DouzeException($"cannot encode images as '{variant.Format}'; expected {ImageFormats.EncodableNames}");
+        return Encode(source, variant, format);
     }
 
     private static ProcessedImage Encode(ReadOnlyMemory<byte> source, ImageVariant variant, ImageFormat format)
@@ -168,32 +182,54 @@ internal sealed class ImageProcessor
 
     /// <summary>
     /// Rasterizes an SVG at <paramref name="width"/> by <paramref name="height"/> (stretched when its aspect differs),
-    /// as a PNG with an alpha channel.
+    /// as sRGB pixels with an alpha channel. Memoized by SVG and size for the build, within
+    /// <see cref="RasterBudget"/>: the social images of pages with the same background SVG rasterize it once.
     /// </summary>
     /// <exception cref="DouzeException">libvips cannot read the SVG.</exception>
-    public ReadOnlyMemory<byte> Rasterize(string svg, int width, int height)
+    public Raster Rasterize(string svg, int width, int height)
+    {
+        var key = (Hash128.OfText(svg), width, height);
+
+        if (_rasters.TryGetValue(key, out var memoized))
+        {
+            return memoized.Value;
+        }
+
+        var size = (long)width * height * 4;
+
+        if (Interlocked.Add(ref _rasterBytes, size) > RasterBudget)
+        {
+            Interlocked.Add(ref _rasterBytes, -size);
+            return RasterizeOnce(svg, width, height);
+        }
+
+        var lazy = _rasters.GetOrAdd(key, static (key, svg) => new Lazy<Raster>(() => RasterizeOnce(svg, key.Width, key.Height), LazyThreadSafetyMode.ExecutionAndPublication), svg);
+        return lazy.Value;
+    }
+
+    private static Raster RasterizeOnce(string svg, int width, int height)
     {
         return Run(() =>
         {
             using var image = Image.ThumbnailBuffer(Encoding.UTF8.GetBytes(svg), width, height: height, size: Enums.Size.Force);
             using var rgba = WithAlpha(image);
-            return (ReadOnlyMemory<byte>)rgba.WriteToBuffer(".png[keep=none]");
+            using var bytes = rgba.Format == Enums.BandFormat.Uchar ? rgba.Copy() : rgba.Cast(Enums.BandFormat.Uchar);
+            return new Raster(bytes.WriteToMemory<byte>(), bytes.Width, bytes.Height, bytes.Xres, bytes.Yres);
         });
     }
 
     /// <summary>
-    /// Renders each text block with Pango and composites it over <paramref name="background"/> (an encoded image),
-    /// as a PNG.
+    /// Renders each text block with Pango and composites it over <paramref name="background"/>, as a PNG.
     /// </summary>
-    /// <exception cref="DouzeException">libvips cannot read the background, a color is invalid, or a font file cannot be loaded.</exception>
-    public ReadOnlyMemory<byte> Compose(ReadOnlyMemory<byte> background, IReadOnlyList<TextBlock> blocks)
+    /// <exception cref="DouzeException">A color is invalid, or a font file cannot be loaded.</exception>
+    public ReadOnlyMemory<byte> Compose(Raster background, IReadOnlyList<TextBlock> blocks)
     {
         var colors = blocks.Select(x => ParseColor(x.Color)).ToArray();
 
         return Run(() =>
         {
-            using var loaded = Image.NewFromBuffer(background.Span);
-            var canvas = WithAlpha(loaded);
+            using var loaded = Image.NewFromMemory(background.Pixels, background.Width, background.Height, 4, Enums.BandFormat.Uchar);
+            var canvas = loaded.Copy(interpretation: Enums.Interpretation.Srgb, xres: background.XResolution, yres: background.YResolution);
 
             try
             {
@@ -255,15 +291,36 @@ internal sealed class ImageProcessor
             return null;
         }
 
-        using var mask = rendered.Width > block.Width || rendered.Height > block.Height
+        // As few libvips operations as possible: each takes process wide locks, which the parallel units contend for.
+        using var cropped = rendered.Width > block.Width || rendered.Height > block.Height
             ? rendered.Crop(0, 0, Math.Min(rendered.Width, block.Width), Math.Min(rendered.Height, block.Height))
-            : rendered.Copy();
+            : null;
 
-        using var alpha = color.A >= 255 ? mask.Copy() : (mask * (color.A / 255)).Cast(Enums.BandFormat.Uchar);
-        using var fill = mask.NewFromImage([color.R, color.G, color.B]);
-        using var joined = fill.Bandjoin(alpha);
+        var mask = cropped ?? rendered;
+
+        using var scaled = color.A >= 255 ? null : mask * (color.A / 255);
+        using var faded = scaled?.Cast(Enums.BandFormat.Uchar);
+        using var fill = Fill(mask.Width, mask.Height, color);
+        using var joined = fill.Bandjoin(faded ?? mask);
 
         return joined.Copy(interpretation: Enums.Interpretation.Srgb);
+    }
+
+    /// <summary>
+    /// A three band image of one color, made from memory rather than by a chain of operations.
+    /// </summary>
+    private static Image Fill(int width, int height, (double R, double G, double B, double A) color)
+    {
+        var pixels = new byte[width * height * 3];
+        var pattern = pixels.AsSpan();
+        byte[] rgb = [(byte)color.R, (byte)color.G, (byte)color.B];
+
+        for (var i = 0; i < pixels.Length; i += 3)
+        {
+            rgb.CopyTo(pattern[i..]);
+        }
+
+        return Image.NewFromMemory(pixels, width, height, 3, Enums.BandFormat.Uchar);
     }
 
     /// <summary>

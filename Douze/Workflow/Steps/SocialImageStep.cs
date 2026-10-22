@@ -35,6 +35,20 @@ internal sealed partial class SocialImageStep : Step, IMapStep
     // Font files copied to the temporary folder, where Pango reads them, by content hash.
     private readonly ConcurrentDictionary<Hash128, Lazy<Task<string>>> _fonts = new();
 
+    // The files the cards read (font files, images inlined in the SVG), read once per build: every card reads the same.
+    private readonly ConcurrentDictionary<FPath, Lazy<Task<SourceFile>>> _sources = new();
+
+    private sealed record SourceFile(byte[] Bytes, Hash128 Hash)
+    {
+        private string? _dataUri;
+
+        public string DataUri(FPath path)
+        {
+            var type = (ImageFormats.Sniff(Bytes) ?? ImageFormats.FromExtension(path.GetExtensionWithDot()))?.ContentType ?? "application/octet-stream";
+            return _dataUri ??= $"data:{type};base64,{Convert.ToBase64String(Bytes)}";
+        }
+    }
+
     private sealed record TextOptions(string Value, string Font, string? FontFile, int X, int Y, int? Width, int? Height, string Color, string Align);
 
     public SocialImageStep(StepDefinition definition) : base(definition)
@@ -61,6 +75,7 @@ internal sealed partial class SocialImageStep : Step, IMapStep
     public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
     {
         _fonts.Clear();
+        _sources.Clear();
         return default;
     }
 
@@ -214,7 +229,7 @@ internal sealed partial class SocialImageStep : Step, IMapStep
     /// Replaces the relative image references of the SVG (<c>href</c>, <c>xlink:href</c>) by data URIs, recording the
     /// files as dependencies of the unit.
     /// </summary>
-    private static async ValueTask<string> InlineImagesAsync(string svg, FPath directory, StepContext context)
+    private async ValueTask<string> InlineImagesAsync(string svg, FPath directory, StepContext context)
     {
         var matches = Reference().Matches(svg);
 
@@ -235,11 +250,10 @@ internal sealed partial class SocialImageStep : Step, IMapStep
                 continue;
             }
 
-            var bytes = await ImageSources.ReadAsync(context.Build.Source, path, value.Value, context.Dependencies);
-            var type = (ImageFormats.Sniff(bytes.Span) ?? ImageFormats.FromExtension(path.GetExtensionWithDot()))?.ContentType ?? "application/octet-stream";
+            var file = await ReadAsync(path, value.Value, context);
 
             builder.Append(svg, position, value.Index - position);
-            builder.Append("data:").Append(type).Append(";base64,").Append(Convert.ToBase64String(bytes.Span));
+            builder.Append(file.DataUri(path));
             position = value.Index + value.Length;
         }
 
@@ -264,8 +278,7 @@ internal sealed partial class SocialImageStep : Step, IMapStep
             throw new DouzeException($"font file '{fontFile}' not found");
         }
 
-        var bytes = await ImageSources.ReadAsync(source, path, fontFile, context.Dependencies);
-        var hash = Hash128.Of(bytes.Span);
+        var (bytes, hash) = await ReadAsync(path, fontFile, context);
 
         return await _fonts.GetOrAdd(hash, static (hash, state) => new Lazy<Task<string>>(async () =>
         {
@@ -275,6 +288,22 @@ internal sealed partial class SocialImageStep : Step, IMapStep
             var file = Path.Combine(folder, hash + state.Path.GetExtensionWithDot().ToLowerInvariant());
             await File.WriteAllBytesAsync(file, state.Bytes);
             return file;
-        }, LazyThreadSafetyMode.ExecutionAndPublication), (Context: context, Path: path, Bytes: bytes.ToArray())).Value;
+        }, LazyThreadSafetyMode.ExecutionAndPublication), (Context: context, Path: path, Bytes: bytes)).Value;
+    }
+
+    /// <summary>
+    /// A file of the source folder, read once per build, recorded as a dependency of the unit.
+    /// </summary>
+    /// <exception cref="DouzeException">The file does not exist.</exception>
+    private async ValueTask<SourceFile> ReadAsync(FPath path, string src, StepContext context)
+    {
+        var file = await _sources.GetOrAdd(path, static (path, state) => new Lazy<Task<SourceFile>>(async () =>
+        {
+            var bytes = (await ImageSources.ReadAsync(state.Source, path, state.Src, null)).ToArray();
+            return new SourceFile(bytes, Hash128.Of(bytes));
+        }, LazyThreadSafetyMode.ExecutionAndPublication), (Source: context.Build.Source, Src: src)).Value;
+
+        context.Dependencies.RecordTemplate(path, file.Hash);
+        return file;
     }
 }

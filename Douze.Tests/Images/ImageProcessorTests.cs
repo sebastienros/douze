@@ -13,9 +13,9 @@ public class ImageProcessorTests
         var images = TestImages.RequireLibvips();
         var source = TestImages.Solid(1600, 900, (10, 20, 30));
 
-        var webp = images.Variant(source, new ImageVariant(400, "webp", 80));
-        var avif = images.Variant(source, new ImageVariant(400, "avif", 60));
-        var jpeg = images.Variant(source, new ImageVariant(null, "jpg", 80));
+        var webp = images.Encode(source, new ImageVariant(400, "webp", 80));
+        var avif = images.Encode(source, new ImageVariant(400, "avif", 60));
+        var jpeg = images.Encode(source, new ImageVariant(null, "jpg", 80));
 
         Assert.Equal((400, 225), (webp.Width, webp.Height));
         Assert.Equal((400, 225, "webpload_buffer", 3), TestImages.Describe(webp.Bytes));
@@ -28,7 +28,7 @@ public class ImageProcessorTests
     {
         var images = TestImages.RequireLibvips();
 
-        var variant = images.Variant(TestImages.Solid(300, 100, (0, 0, 0)), new ImageVariant(1200, "png", 0));
+        var variant = images.Encode(TestImages.Solid(300, 100, (0, 0, 0)), new ImageVariant(1200, "png", 0));
 
         Assert.Equal((300, 100), (variant.Width, variant.Height));
     }
@@ -42,7 +42,7 @@ public class ImageProcessorTests
         using var tagged = plain.Mutate(x => x.Set(GValue.BlobType, "xmp-data", Encoding.UTF8.GetBytes(new string('x', 2000))));
         var source = tagged.WriteToBuffer(".jpg[Q=90]");
 
-        var variant = images.Variant(source, new ImageVariant(200, "webp", 80));
+        var variant = images.Encode(source, new ImageVariant(200, "webp", 80));
         using var kept = Image.ThumbnailBuffer(source, 200);
         var keepAll = kept.WriteToBuffer(".webp[Q=80]");
 
@@ -52,16 +52,17 @@ public class ImageProcessorTests
     }
 
     [Fact]
-    public void VariantsAreMemoizedForTheBuild()
+    public async Task VariantsAreMemoizedForTheBuild()
     {
         var images = TestImages.RequireLibvips();
         var source = TestImages.Solid(200, 100, (0, 0, 0));
 
-        var first = images.Variant(source, new ImageVariant(50, "webp", 80));
-        var second = images.Variant(source.ToArray(), new ImageVariant(50, "webp", 80));
+        var first = images.VariantAsync(source, new ImageVariant(50, "webp", 80));
+        var second = images.VariantAsync(source.ToArray(), new ImageVariant(50, "webp", 80));
 
         Assert.Same(first, second);
-        Assert.NotSame(first, images.Variant(source, new ImageVariant(50, "webp", 70)));
+        Assert.NotSame(first, images.VariantAsync(source, new ImageVariant(50, "webp", 70)));
+        Assert.Same(await first, await second);
     }
 
     [Fact]
@@ -74,7 +75,7 @@ public class ImageProcessorTests
         var source = rotated.WriteToBuffer(".jpg");
 
         Assert.Equal(new ImageInfo(400, 600, "jpeg", false), images.Probe(source));
-        Assert.Equal((200, 300), Size(images.Variant(source, new ImageVariant(200, "png", 0))));
+        Assert.Equal((200, 300), Size(images.Encode(source, new ImageVariant(200, "png", 0))));
 
         static (int, int) Size(ProcessedImage image) => (image.Width, image.Height);
     }
@@ -96,8 +97,9 @@ public class ImageProcessorTests
         var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"63\"><rect width=\"120\" height=\"63\" fill=\"#204080\"/></svg>";
 
         var background = images.Rasterize(svg, 1200, 630);
-        Assert.Equal((1200, 630, "pngload_buffer", 4), TestImages.Describe(background));
-        Assert.Equal([32, 64, 128, 255], TestImages.Pixel(background, 600, 300));
+        Assert.Equal((1200, 630, 1200 * 630 * 4), (background.Width, background.Height, background.Pixels.Length));
+        Assert.Equal([32, 64, 128, 255], background.Pixels.AsSpan((300 * 1200 + 600) * 4, 4).ToArray());
+        Assert.Same(background, images.Rasterize(svg, 1200, 630));
 
         var font = TestImages.FontFile();
         var blocks = new List<TextBlock>
