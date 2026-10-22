@@ -1041,7 +1041,7 @@ to `UseAdvancedExtensions()`; a list maps to the Markdig extension names through
 `post1.html`), so the derived content type is `text/html`. Changing the extension
 here, rather than in `permalink` as today, is what lets later steps match on `**/*.html`.
 
-**`paginate`** (map 1 to n, default match: `**/*.html`, `**/*.md` and the `**/*.liquid` output templates). Reproduces `PaginationProcessor` on top of
+**`paginate`** (map 1 to n, default match: `**/*.html`, `**/*.md` and the output templates, `**/*.{json,liquid,xml,txt}`). Reproduces `PaginationProcessor` on top of
 scopes: `pagination.data` names a key resolved through `Scopes.TryResolve`; `size`, `alias`,
 `resolve: values` behave as today. For each page it creates `file.With(...)` with Own =
 shallow clone + `pagination` (`items`, `pageNumber`, `pages`, `page.next/previous/first/last`) +

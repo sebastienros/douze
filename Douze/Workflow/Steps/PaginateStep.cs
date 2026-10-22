@@ -20,7 +20,8 @@ namespace Douze.Workflow.Steps;
 /// </remarks>
 internal sealed class PaginateStep : Step, IMapStep
 {
-    private static readonly GlobSet Pages = GlobSet.Parse(["**/*.html", "**/*.md", "**/*.liquid"]);   // pages and output templates
+    // Pages and output templates: a paginated `x.json.liquid` is `x.json` once the permalink step gave it its default path.
+    private static readonly GlobSet Pages = GlobSet.Parse(["**/*.html", "**/*.md", "**/*.json", "**/*.liquid", "**/*.xml", "**/*.txt"]);
 
     private readonly FPath? _root;
 
