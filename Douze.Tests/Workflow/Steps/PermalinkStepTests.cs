@@ -92,6 +92,18 @@ public class PermalinkStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task LiquidTemplatesLoseTheirExtension()
+    {
+        await Source.WriteTextFileAsync("/feed.xml.liquid", "feed");
+        await Source.WriteTextFileAsync("/about.html.liquid", "about");
+        await Source.WriteTextFileAsync("/raw.liquid", "raw");
+
+        var result = await BuildSuccessfullyAsync(Permalink());
+
+        Assert.Equal(["/about/index.html", "/feed.xml", "/raw.liquid"], Paths(result));
+    }
+
+    [Fact]
     public async Task LocaleRootIsStripped()
     {
         await Source.WriteTextFileAsync("/_content/docs/guide.md", "guide");

@@ -122,4 +122,23 @@ public class LiquidStepTests : StepTestBase
             Step("api", "liquid", inputs: ["**"], with: With(("template", NodeValue.Create("package.liquid")))))));
         Assert.Equal("step 'api' uses 'liquid' with 'template' but 'permalink' is missing", missing.Errors.Single().Message);
     }
+
+    [Fact]
+    public async Task OutputTemplatesRenderEndToEnd()
+    {
+        await Source.WriteTextFileAsync("/_data/layout.yml", "page.html");
+        await Source.WriteTextFileAsync("/_includes/page.html", "<html>{{ content }}</html>");
+        await Source.WriteTextFileAsync("/_content/a.md", "---\ndate: 2020-01-01\n---\na");
+        await Source.WriteTextFileAsync("/_content/b.md", "---\ndate: 2020-01-02\n---\nb");
+        await Source.WriteTextFileAsync("/_content/sitemap.xml.liquid", "---\npermalink: /sitemap.xml\n---\n<urlset>{% for p in collections.all %}<url>{{ p.data.url | replace: 'index.html', '' }}</url>{% endfor %}</urlset>");
+        await Source.WriteTextFileAsync("/_content/robots.txt.liquid", "Sitemap: {{ '/sitemap.xml' | absolute_url }}");
+        Site = await SiteOptions.DetectAsync(Source, Output, null, null, new Douze.Workflow.Yaml.SiteSettings { Url = "https://example.com" });
+
+        var result = await BuildSuccessfullyAsync();
+
+        // Not a page: no layout, not in the collections.
+        Assert.Equal("<urlset><url>/a/</url><url>/b/</url></urlset>", await Output.ReadAllTextAsync("/sitemap.xml"));
+        Assert.Equal("Sitemap: https://example.com/sitemap.xml", await Output.ReadAllTextAsync("/robots.txt"));
+        Assert.Equal("application/xml", Outputs(result["render"]).Single(x => x.Path == "/sitemap.xml").EffectiveContentType);
+    }
 }
