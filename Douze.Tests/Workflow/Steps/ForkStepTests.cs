@@ -56,6 +56,17 @@ public class ForkStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task SkipsTheFilesOfACondition()
+    {
+        await Source.WriteTextFileAsync("/docs/a.md", "---\ntitle: A\ncopy: false\n---\nA");
+        await Source.WriteTextFileAsync("/docs/b.md", "---\ntitle: B\n---\nB");
+
+        var result = await BuildSuccessfullyAsync(Twins(With(("permalink", NodeValue.Create("{{ url | replace: '/index.html', '/page.md' }}")), ("skip", NodeValue.Create("copy == false")))));
+
+        Assert.Equal(["/docs/a/index.md", "/docs/b/index.md", "/docs/b/page.md"], Outputs(result["twins"]).Select(x => x.Path.FullName).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public async Task TwinIsWrittenAsMarkdownNextToThePage()
     {
         await Source.WriteTextFileAsync("/docs/a.md", "---\ntitle: A\n---\n# {{ title }}");

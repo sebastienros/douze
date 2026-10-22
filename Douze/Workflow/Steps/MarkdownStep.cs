@@ -59,7 +59,8 @@ internal sealed class MarkdownStep : Step, IMapStep
     /// <summary>
     /// The Markdown options: a result rendered with other options is not reused.
     /// </summary>
-    public override Hash128 CacheVersion => _renderer?.Options.Hash ?? Hash128.Empty;
+    // Version 2: typographic apostrophes with smartypants.
+    public override Hash128 CacheVersion => Hash128.Combine(_renderer?.Options.Hash ?? Hash128.Empty, Hash128.OfText("2"));
 
     public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
     {
