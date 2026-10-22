@@ -649,38 +649,21 @@ internal sealed class Scheduler
                 }
             }, token);
 
-            // One loop per unit that can run at once, each taking the next file: a rebuild replays tens of thousands of
-            // units of a few microseconds, which a shared enumerator would serialize.
-            var processing = Task.WhenAll(Enumerable.Range(0, Context.MaxDegreeOfParallelism).Select(_ => Task.Run(async () =>
+            var options = new ParallelOptions { MaxDegreeOfParallelism = Context.MaxDegreeOfParallelism, CancellationToken = token };
+
+            var processing = Parallel.ForEachAsync(work.Reader.ReadAllAsync(token), options, async (file, ct) =>
             {
-                try
-                {
-                    while (await work.Reader.WaitToReadAsync(token))
-                    {
-                        while (work.Reader.TryRead(out var file))
-                        {
-                            token.ThrowIfCancellationRequested();
+                // Loaded before the slot is taken when its hash is not known: the read overlaps with the units that
+                // run, and the hash of the input ref never blocks a thread. Content whose hash is known (from the
+                // cache) is read only if the unit runs.
+                await file.Content.EnsureHashAsync(ct);
 
-                            // Loaded before the slot is taken when its hash is not known: the read overlaps with the
-                            // units that run, and the hash of the input ref never blocks a thread. Content whose hash
-                            // is known (from the cache) is read only if the unit runs.
-                            await file.Content.EnsureHashAsync(token);
-
-                            await RunUnitAsync(new UnitKey(Name, file.Path.FullName), [file], [file.Ref], async (context, ct) =>
-                            {
-                                var outputs = await step.ProcessAsync(file, context, ct);
-                                return new StepOutput(outputs);
-                            }, file.Path, token);
-                        }
-                    }
-                }
-                catch (Exception e) when (e is not OperationCanceledException)
+                await RunUnitAsync(new UnitKey(Name, file.Path.FullName), [file], [file.Ref], async (context, ct) =>
                 {
-                    // The other loops stop too.
-                    _stepCts.Cancel();
-                    throw;
-                }
-            }, token)));
+                    var outputs = await step.ProcessAsync(file, context, ct);
+                    return new StepOutput(outputs);
+                }, file.Path, ct);
+            });
 
             try
             {
