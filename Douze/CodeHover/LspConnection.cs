@@ -64,7 +64,8 @@ internal sealed class LspConnection
     /// Sends a request whose parameters <paramref name="writeParams"/> writes (an object or an array), and returns its
     /// result.
     /// </summary>
-    /// <exception cref="DouzeException">The server answered with an error, or failed.</exception>
+    /// <exception cref="LspErrorException">The server answered with an error.</exception>
+    /// <exception cref="DouzeException">The server failed.</exception>
     public async Task<JsonElement> RequestAsync(string method, Action<Utf8JsonWriter> writeParams, CancellationToken ct)
     {
         var response = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -414,7 +415,7 @@ internal sealed class LspConnection
         if (root.TryGetProperty("error", out var error))
         {
             var message = error.TryGetProperty("message", out var m) ? m.GetString() : error.GetRawText();
-            response.TrySetException(new DouzeException($"{_name}: {message}"));
+            response.TrySetException(new LspErrorException($"{_name}: {message}"));
             return;
         }
 
@@ -481,3 +482,9 @@ internal sealed class LspConnection
         }
     }
 }
+
+/// <summary>
+/// The error a language server answered a request with: about that request (such as a hover of a symbol it cannot
+/// resolve), while the server goes on.
+/// </summary>
+internal sealed class LspErrorException(string message) : DouzeException(message);

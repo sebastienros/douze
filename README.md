@@ -219,7 +219,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write` |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `twoslash`, `csharp`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `twoslash`, `csharp`, `go`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -656,6 +656,29 @@ same renderer shows them.
 
 Outcomes, errors included, are kept in the cache like the `twoslash` step's. `docs/code-hover-steps.md` has the design,
 the costs and the plan for other languages.
+
+# go
+
+The `go` step does the same for Go fences with gopls: every fence of `languages` (`go`, `golang`; only those whose meta
+has the `trigger` word when it is set) gets a `data-twoslash` attribute with the hovers of its symbols and its errors.
+
+````yaml
+  go: { needs: markdown, uses: go,
+        with: { errors: warn, ignore: [UnusedVar],
+                modules: { default: { requires: { github.com/redis/go-redis/v9: v9.7.0 } } } } }
+````
+
+- Each snippet is a package of its own (`s<n>/main.go`, or the file name of its `title`) in a generated module: a
+  snippet without a `package` clause gets `package main`, and statements outside a function go in `func _() { ... }`.
+- `modules` maps names to their `requires` (module paths to versions, for third-party imports, added with `go get`),
+  `files` (shared files of the source folder: a package of stubs at `api/api.go` is imported as `snippets/api`),
+  `titles` and `patterns`. A fence uses the module of its meta's `module=name`, else the first whose `titles` end its
+  `title`, else the first whose `patterns` match its code, else `default`.
+- Errors fail the build, or warn with `errors: warn`; `ignore` lists diagnostic codes (`UnusedVar`, `UnusedImport`,
+  `BrokenImport`...) that are neither reported nor rendered.
+- gopls has no prebuilt binaries: on first use, `go install golang.org/x/tools/gopls@<version>` builds it into
+  `<cache>/tools/gopls/<version>/` (`version`, or `path` to a gopls). It needs Go (`go`, or the `PATH`'s), which also
+  adds the requirements and loads the packages; the Go version is part of the outcomes' key.
 
 # commands
 

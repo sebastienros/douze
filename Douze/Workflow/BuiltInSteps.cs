@@ -31,5 +31,6 @@ internal static class BuiltInSteps
             ["fork"] = static d => new ForkStep(d),
             ["twoslash"] = static d => new TwoslashStep(d),
             ["csharp"] = static d => new CSharpStep(d),
+            ["go"] = static d => new GoStep(d),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 }

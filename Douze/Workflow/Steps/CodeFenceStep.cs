@@ -17,11 +17,11 @@ namespace Douze.Workflow.Steps;
 internal sealed record CodeFence(int File, int Index, int TagEnd, string Language, string Meta, string Code, Hash128 Key);
 
 /// <summary>
-/// What the steps that check code fences with a language server share (<c>twoslash</c>, <c>csharp</c>): every fence that
-/// the <c>markdown</c> step wrote as <c>&lt;pre data-lang="..." data-meta="..."&gt;</c> and that the step selects (by
-/// its language and meta) gets a <c>data-twoslash</c> attribute holding the result for its code in twoslash's shape
-/// (<see cref="TwoslashResult"/>), which the highlighter renders: the hovers and the errors, whatever the language. The
-/// fence itself is left as it is.
+/// What the steps that check code fences with a language server share (<c>twoslash</c>, <c>csharp</c>, <c>go</c>):
+/// every fence that the <c>markdown</c> step wrote as <c>&lt;pre data-lang="..." data-meta="..."&gt;</c> and that the
+/// step selects (by its language and meta) gets a <c>data-twoslash</c> attribute holding the result for its code in
+/// twoslash's shape (<see cref="TwoslashResult"/>), which the highlighter renders: the hovers and the errors, whatever
+/// the language. The fence itself is left as it is.
 /// </summary>
 /// <remarks>
 /// <para>The step is a reduce: the fences of every page are checked at once, by the step's engine. Each outcome (the

@@ -1,19 +1,23 @@
+using System.Diagnostics;
 using System.Formats.Tar;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Douze.Progress;
+using Douze.Tracing;
+using Douze.Workflow.Commands;
 
 namespace Douze.Tools;
 
 /// <summary>
 /// Installs tools published as npm packages (<see cref="NpmTool"/>) or NuGet packages (<see cref="NuGetTool"/>) into a
 /// tools folder, once: <c>&lt;tools&gt;/&lt;name&gt;/&lt;version&gt;/&lt;platform&gt;/</c> holds the content of the
-/// package (an npm tarball, a <c>.nupkg</c> zip). The package is downloaded from the registry, verified against its
-/// integrity (the one Douze knows for the default version, the registry's otherwise) and extracted; later builds reuse
-/// the folder without any request, so a build that has its tools works offline. Concurrent installs of the same tool, from threads or processes, download it once (a lock file
-/// next to the folder).
+/// package (an npm tarball, a <c>.nupkg</c> zip); a tool built from Go source (<see cref="GoTool"/>) is built with
+/// <c>go install</c> into <c>&lt;tools&gt;/&lt;name&gt;/&lt;version&gt;/</c>. The package is downloaded from the
+/// registry, verified against its integrity (the one Douze knows for the default version, the registry's otherwise) and
+/// extracted; later builds reuse the folder without any request, so a build that has its tools works offline.
+/// Concurrent installs of the same tool, from threads or processes, download it once (a lock file next to the folder).
 /// </summary>
 internal sealed class ToolInstaller
 {
@@ -128,6 +132,99 @@ internal sealed class ToolInstaller
             tool.DefaultVersion == version && tool.KnownIntegrity.TryGetValue(platform, out var known)
                 ? (url, known)
                 : (url, await ResolveNuGetIntegrityAsync(package, version, ct)), ct);
+        return Path.Combine(folder, executable);
+    }
+
+    /// <summary>
+    /// Returns the path of the binary of <paramref name="tool"/> <paramref name="version"/>, building it first when
+    /// needed with <c>go install</c> (the <c>go</c> executable <paramref name="go"/>) into
+    /// <c>&lt;tools&gt;/&lt;name&gt;/&lt;version&gt;/</c>. The module proxy and the checksum database of the Go
+    /// environment verify what it downloads.
+    /// </summary>
+    /// <exception cref="DouzeException">The version is invalid, or <c>go install</c> failed.</exception>
+    public async Task<string> InstallAsync(GoTool tool, string version, string go, CancellationToken ct)
+    {
+        if (version.Length == 0 || version.IndexOfAny(['/', '\\', '@', ' ']) >= 0 || version.Contains("..", StringComparison.Ordinal))
+        {
+            throw new DouzeException($"'{version}' is not a version of {tool.Name}");
+        }
+
+        var folder = Path.Combine(_root, tool.Name, version);
+        var executable = tool.Executable + (OperatingSystem.IsWindows() ? ".exe" : "");
+
+        if (File.Exists(Path.Combine(folder, Marker)))
+        {
+            return Path.Combine(folder, executable);
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(folder)!);
+        using var lockFile = await LockAsync(folder + ".lock", tool.Name, ct);
+
+        // Installed by another build while this one waited.
+        if (File.Exists(Path.Combine(folder, Marker)))
+        {
+            return Path.Combine(folder, executable);
+        }
+
+        _log(LogLevel.Info, $"installing {tool.Name} {version} with go install {tool.Module}@{version}");
+
+        var temporary = Path.Combine(Path.GetDirectoryName(folder)!, $".{version}.{Guid.NewGuid():N}");
+        Directory.CreateDirectory(temporary);
+
+        try
+        {
+            var info = new ProcessStartInfo(go)
+            {
+                ArgumentList = { "install", $"{tool.Module}@{version}" },
+                WorkingDirectory = temporary,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            info.Environment["GOBIN"] = temporary;
+            info.Environment["GOWORK"] = "off";
+
+            // Flags for the site's own module (-mod=vendor) break an install outside a module.
+            info.Environment.Remove("GOFLAGS");
+
+            var result = await ProcessRunner.RunAsync(info, null, captureOutput: true, null, LockTimeout, NullTraceRecorder.Instance, tool.Name, $" (go install {tool.Module}@{version})", ct);
+
+            if (result.ExitCode != 0)
+            {
+                throw new DouzeException($"cannot install {tool.Name} {version} with go install: {ProcessRunner.Tail(System.Text.Encoding.UTF8.GetString(result.Stdout.Span) + Environment.NewLine + result.Stderr, 10)}");
+            }
+
+            if (!File.Exists(Path.Combine(temporary, executable)))
+            {
+                throw new DouzeException($"go install {tool.Module}@{version} wrote no '{executable}'");
+            }
+
+            await File.WriteAllTextAsync(Path.Combine(temporary, Marker), $"{tool.Module}@{version}\n", ct);
+
+            if (Directory.Exists(folder))
+            {
+                // A previous install that stopped before its marker.
+                Directory.Delete(folder, recursive: true);
+            }
+
+            Directory.Move(temporary, folder);
+        }
+        finally
+        {
+            if (Directory.Exists(temporary))
+            {
+                try
+                {
+                    Directory.Delete(temporary, recursive: true);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+
+        _log(LogLevel.Info, $"installed {tool.Name} {version} in {folder}");
         return Path.Combine(folder, executable);
     }
 
