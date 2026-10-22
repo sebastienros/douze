@@ -66,6 +66,21 @@ internal sealed class IncrementalBuilder : IDisposable
     /// </summary>
     public async Task<RebuildResult?> BuildAsync(ChangeSet? changes, IProgressView view, CancellationToken ct)
     {
+        try
+        {
+            return await BuildCoreAsync(changes, view, ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // What the session kept may not match the source folder anymore: the next build scans it.
+            _sources = null;
+            _templates?.InvalidateAll();
+            throw;
+        }
+    }
+
+    private async Task<RebuildResult?> BuildCoreAsync(ChangeSet? changes, IProgressView view, CancellationToken ct)
+    {
         if (!await LoadAsync(view))
         {
             return null;

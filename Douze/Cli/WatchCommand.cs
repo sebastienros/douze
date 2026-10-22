@@ -41,7 +41,7 @@ internal static class WatchCommand
 
         using (var view = ViewSelector.Select(commandLine))
         {
-            result = await builder.BuildAsync(null, view, token);
+            result = await BuildAsync(builder, null, view, token);
 
             if (result != null)
             {
@@ -101,7 +101,7 @@ internal static class WatchCommand
                 }
 
                 using var view = RebuildView(commandLine, changes);
-                var rebuilt = await builder.BuildAsync(changes, view, token);
+                var rebuilt = await BuildAsync(builder, changes, view, token);
 
                 if (rebuilt == null)
                 {
@@ -126,6 +126,23 @@ internal static class WatchCommand
         }
 
         return ExitCodes.Success;
+    }
+
+    /// <summary>
+    /// Builds, and reports an exception the build did not turn into build errors (the source folder changing under its
+    /// feet, a disk full): the session goes on, and the next change builds again. Returns null then.
+    /// </summary>
+    private static async Task<RebuildResult?> BuildAsync(IncrementalBuilder builder, ChangeSet? changes, IProgressView view, CancellationToken ct)
+    {
+        try
+        {
+            return await builder.BuildAsync(changes, view, ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            view.Message(LogLevel.Error, null, $"the build stopped: {e.Message}");
+            return null;
+        }
     }
 
     private static IProgressView RebuildView(CommandLine commandLine, ChangeSet changes)

@@ -37,19 +37,21 @@ internal sealed class SourceSnapshot
     {
         var entries = await source.EnumerateFileSystemEntriesAsync(FPath.Root, recursive: true, filter: null);
         var paths = entries.Where(x => !x.IsDirectory).Select(x => x.Path.ToAbsolute()).Where(x => !excluded.Any(x.IsInDirectory)).Distinct().ToArray();
-        var stats = new (long, DateTime)[paths.Length];
+        var stats = new (long, DateTime)?[paths.Length];
 
         await Parallel.ForAsync(0, paths.Length, new ParallelOptions { MaxDegreeOfParallelism = parallelism, CancellationToken = ct }, async (i, _) =>
         {
-            var info = await source.GetFileMetadataAsync(paths[i]);
-            stats[i] = (info.Length, info.LastWriteTimeUtc);
+            stats[i] = await StatAsync(source, paths[i]);
         });
 
         var files = new Dictionary<FPath, (long, DateTime)>(paths.Length);
 
         for (var i = 0; i < paths.Length; i++)
         {
-            files[paths[i]] = stats[i];
+            if (stats[i] is { } stat)
+            {
+                files[paths[i]] = stat;
+            }
         }
 
         return new SourceSnapshot(files);
@@ -72,12 +74,11 @@ internal sealed class SourceSnapshot
             var directory = new FPath(path.FullName.TrimEnd('/') + "/");
             var file = new FPath(path.FullName.TrimEnd('/'));
 
-            if (file.IsFile && (await source.GetFileEntryAsync(file)).Exists)
+            if (file.IsFile && await StatAsync(source, file) is { } stat)
             {
-                var info = await source.GetFileMetadataAsync(file);
                 var added = !_files.ContainsKey(file);
                 listChanged |= added;
-                _files[file] = (info.Length, info.LastWriteTimeUtc);
+                _files[file] = stat;
                 kinds.Add((path, added ? ChangeKind.Added : ChangeKind.Modified));
                 continue;
             }
@@ -114,15 +115,39 @@ internal sealed class SourceSnapshot
                         continue;
                     }
 
-                    var info = await source.GetFileMetadataAsync(under);
-                    _files[under] = (info.Length, info.LastWriteTimeUtc);
-                    listChanged = true;
+                    if (await StatAsync(source, under) is { } underStat)
+                    {
+                        _files[under] = underStat;
+                        listChanged = true;
+                    }
                 }
             }
         }
 
         Refresh(listChanged);
         return kinds;
+    }
+
+    /// <summary>
+    /// The length and modification time of a file, or null when it is not there (anymore: an editor saving a file may
+    /// write a temporary file and rename it; the watcher reports both).
+    /// </summary>
+    private static async ValueTask<(long, DateTime)?> StatAsync(IFileSystem source, FPath path)
+    {
+        try
+        {
+            if (!(await source.GetFileEntryAsync(path)).Exists)
+            {
+                return null;
+            }
+
+            var info = await source.GetFileMetadataAsync(path);
+            return (info.Length, info.LastWriteTimeUtc);
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
     }
 
     private void Refresh(bool listChanged)
