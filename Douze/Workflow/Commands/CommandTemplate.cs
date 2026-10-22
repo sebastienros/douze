@@ -90,7 +90,7 @@ internal sealed class CommandTemplate
             }
 
             new NameCollector(names).VisitTemplate(template);
-            return template;
+            return Liquid.TextSpanPreparer.Prepare(template);
         }
 
         static string FirstLine(string error)
