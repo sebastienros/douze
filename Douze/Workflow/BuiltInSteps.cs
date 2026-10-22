@@ -15,6 +15,7 @@ internal static class BuiltInSteps
             ["frontmatter"] = static d => new FrontMatterStep(d),
             ["parse"] = static d => new ParseStep(d),
             ["markdown"] = static d => new MarkdownStep(d),
+            ["headings"] = static d => new HeadingsStep(d),
             ["paginate"] = static d => new PaginateStep(d),
             ["permalink"] = static d => new PermalinkStep(d),
             ["collect"] = static d => new CollectStep(d),
