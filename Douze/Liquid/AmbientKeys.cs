@@ -13,4 +13,7 @@ internal static class AmbientKeys
 
     /// <summary>The <see cref="Workflow.VirtualFile"/> being rendered.</summary>
     public const string File = "douze:file";
+
+    /// <summary>The <see cref="Workflow.StepContext"/> of the unit being rendered: tags add outputs to it.</summary>
+    public const string StepContext = "douze:step-context";
 }
