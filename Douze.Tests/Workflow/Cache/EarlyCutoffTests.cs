@@ -207,8 +207,10 @@ public class EarlyCutoffTests : CacheTestBase
         Assert.Contains("a body", await OutputAsync("/posts/a/index.html"));
     }
 
-    [Fact]
-    public async Task AddingATranslationRerunsOnlyThePagesOfItsUrl()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AddingATranslationRerunsOnlyThePagesOfItsUrl(bool fallback)
     {
         await Source.WriteTextFileAsync("/_content/docs/index.md", "home");
         await Source.WriteTextFileAsync("/_content/docs/guide.md", "guide");
@@ -217,7 +219,7 @@ public class EarlyCutoffTests : CacheTestBase
         await Source.WriteTextFileAsync("/_content/about.md", "about");
 
         Site = await SiteOptions.DetectAsync(Source, Output, null, null, Douze.Workflow.Yaml.WorkflowLoader.Load(
-            "site:\n  locales: { default: en, root: docs, fallback: true, languages: { ja: { lang: ja } } }\n", "douze.yml").Site);
+            $"site:\n  locales: {{ default: en, root: docs, fallback: {(fallback ? "true" : "false")}, languages: {{ ja: {{ lang: ja }} }} }}\n", "douze.yml").Site);
 
         var workflow = new WorkflowDefinition([
             new StepDefinition { Name = "pages", Inputs = ["_content/**"], Uses = "frontmatter" },
@@ -230,15 +232,19 @@ public class EarlyCutoffTests : CacheTestBase
 
         await Source.WriteTextFileAsync("/_content/docs/guide.md", "{% for a in alternates %}{{ a.url }} {% endfor %}");
         var first = await BuildCachedAsync(workflow);
-        Assert.Equal("/guide/ ", await OutputAsync("/guide/index.md"));
-        Assert.Equal("/guide/ ", await OutputAsync("/ja/guide/index.md"));
+
+        // With fallback, /ja/guide/ is served by a copy of /guide/: both list both urls.
+        var alternates = fallback ? "/guide/ /ja/guide/ " : "/guide/ ";
+        Assert.Equal(alternates, await OutputAsync("/guide/index.md"));
+        Assert.Equal(fallback, (await Output.GetFileEntryAsync("/ja/guide/index.md")).Exists);
 
         await Source.WriteTextFileAsync("/_content/docs/ja/guide.md", "ガイド");
         var result = await BuildCachedAsync(workflow);
 
-        // The new page, and the page whose url it translates; not the other pages, which looked for other urls.
+        // The new page, and the page whose url it translates; not the other pages, which looked for other urls. With
+        // fallback, the alternates of /guide/ are the same: it does not render again.
         Assert.Equal(["/guide/index.md", "/ja/guide/index.md"], Executed(result, "localize"));
-        Assert.Equal(["/guide/index.md", "/ja/guide/index.md"], Executed(result, "render"));
+        Assert.Equal(fallback ? ["/ja/guide/index.md"] : ["/guide/index.md", "/ja/guide/index.md"], Executed(result, "render"));
         Assert.Equal("/guide/ /ja/guide/ ", await OutputAsync("/guide/index.md"));
         Assert.Equal("ガイド", await OutputAsync("/ja/guide/index.md"));
         Assert.True(first.UnitsExecuted > result.UnitsExecuted);

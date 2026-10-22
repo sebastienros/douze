@@ -116,6 +116,27 @@ public class LocalizeStepTests : StepTestBase
         // The translated page is not copied, and is the only one at its url.
         Assert.Single(Outputs(result["localize"]), x => x.Path == "/ja/guide/index.md");
         Assert.Null(File(result, "/ja/guide/index.md").Metadata.Own["fallback"]);
+
+        // Every url of the default locale is served in every locale: the alternates of the pages and of the copies
+        // list every language.
+        string[] all = ["en en /guide/", "ja ja /ja/guide/", "ar ar /ar/guide/"];
+        Assert.Equal(all, Alternates(guide));
+        Assert.Equal(all, Alternates(copy));
+        Assert.Equal(all, Alternates(File(result, "/ja/guide/index.md")));
+        Assert.Equal(["en en /", "ja ja /ja/", "ar ar /ar/"], Alternates(File(result, "/ar/index.md")));
+    }
+
+    [Fact]
+    public async Task APageOnlyTranslatedIsNotServedElsewhere()
+    {
+        await WriteSiteAsync(fallback: true);
+        await Source.WriteTextFileAsync("/docs/ja/news.md", "ニュース");
+
+        var result = await BuildSuccessfullyAsync(Localize());
+
+        // No page of the default locale at /news/: no copies, and the alternates are the pages that exist.
+        Assert.Equal(["ja ja /ja/news/"], Alternates(File(result, "/ja/news/index.md")));
+        Assert.DoesNotContain(Outputs(result["localize"]), x => x.Path.FullName.EndsWith("/news/index.md", StringComparison.Ordinal) && x.Path != "/ja/news/index.md");
     }
 
     [Fact]

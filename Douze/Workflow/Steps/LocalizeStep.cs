@@ -6,11 +6,13 @@ namespace Douze.Workflow.Steps;
 /// <c>uses: localize</c>. Sets the locale of every page under the locale root (<c>site.locales.root</c>): <c>locale</c>
 /// (the key of the locale folder the page is in, or the default locale), <c>lang</c>, <c>dir</c>, <c>locale_url</c>
 /// (its normalized url without the locale prefix: what the page is called in every locale) and <c>alternates</c>, the
-/// <c>{ locale, lang, url }</c> of every locale that has a page at that <c>locale_url</c>, found in
+/// <c>{ locale, lang, url }</c> of every locale that serves a page at that <c>locale_url</c>, found in
 /// <c>collections.urls</c> (<c>with.collections</c> names another collect step's scope key). With
 /// <c>site.locales.fallback</c>, a page of the default locale is also copied under every locale that has no page at its
 /// url: the copy shares the content, and has the locale's <c>locale</c>, <c>lang</c>, <c>dir</c>, the prefixed
-/// <c>url</c>, <c>fallback: true</c> and <c>original_url</c>. Pages outside the locale root pass through.
+/// <c>url</c>, <c>fallback: true</c> and <c>original_url</c>. A locale then serves every url the default locale has,
+/// translated or not, so the alternates of those pages, and of their copies, list every locale. Pages outside the
+/// locale root pass through.
 /// </summary>
 /// <remarks>
 /// Runs after <c>permalink</c> and <c>collect</c>. A page depends on the presence of the urls it looked for in
@@ -72,11 +74,13 @@ internal sealed class LocalizeStep : Step, IMapStep
             }
         }
 
+        // With fallback, a url of the default locale (All[0]) is served in every locale, by a translation or a copy.
+        var servedEverywhere = locales.Fallback && exists[0];
         var alternates = new NodeArray();
 
         for (var i = 0; i < locales.All.Length; i++)
         {
-            if (exists[i])
+            if (exists[i] || servedEverywhere)
             {
                 var other = locales.All[i];
 

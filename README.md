@@ -377,14 +377,17 @@ A page of `docs/ja/` is a page of `ja`, any other page under `docs` is a page of
 in every locale: `/guide/`) and `alternates`, the `{ locale, lang, url }` of the locales that have a page at that
 url, for `hreflang` links and language switchers. With `fallback: true`, a page of the default locale is copied under
 each locale that does not translate it, with the locale's `locale`, `lang`, `dir` and url, `fallback: true` and
-`original_url`, so that the layout renders it in the locale with a notice. Copies are not in the collections.
+`original_url`, so that the layout renders it in the locale with a notice. Copies are not in the collections. Every
+url of the default locale is then served in every locale, so the `alternates` of its pages and of their copies list
+every language of `site.locales`.
 
 ```yaml
 localize: { needs: [permalink, collections], uses: localize }
 ```
 
-A page depends on the urls it looked for only: adding `docs/ja/guide.md` builds `/guide/` again, not the other
-pages.
+A page depends on the urls it looked for only: adding `docs/ja/guide.md` runs `localize` for `/guide/` again, not for
+the other pages, and with `fallback: true` the pages after it do not render again when their `alternates` are the
+same.
 
 | Filter | Result |
 |---|---|
