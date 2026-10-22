@@ -70,7 +70,13 @@ internal sealed record MarkdownOptions
     /// <summary>
     /// A hash of every option: a result rendered with other options is not reused.
     /// </summary>
-    public Hash128 Hash => _hash.Get(this, static x => Hash128.OfText(x.Canonical()));
+    /// <summary>
+    /// Changes when the rendering of the same options changes (a Douze extension, a Markdig update): every step that
+    /// renders Markdown folds <see cref="Hash"/> into its cache version. Version 2: typographic apostrophes.
+    /// </summary>
+    private static readonly Hash128 RenderingVersion = Hash128.OfText("markdown-2");
+
+    public Hash128 Hash => _hash.Get(this, static x => Hash128.Combine(Hash128.OfText(x.Canonical()), RenderingVersion));
 
     public bool Equals(MarkdownOptions? other) => other is not null && (ReferenceEquals(this, other) || Hash == other.Hash);
 
