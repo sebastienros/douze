@@ -231,6 +231,29 @@ public sealed class BuildCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task TruncatedPackDiscardsTheCache()
+    {
+        using (var cache = Open())
+        {
+            await PutAsync(cache, "/a.md", Input("/a.md"), Input("/a.md").With("step", content: FileContent.FromText(new string('a', 4096))));
+            cache.Save(succeeded: true);
+        }
+
+        // A build that stopped while the system was writing the pack (a power loss) leaves it shorter than its blobs.
+        var pack = Assert.Single(Packs);
+        var bytes = await File.ReadAllBytesAsync(pack, Ct);
+        await File.WriteAllBytesAsync(pack, bytes[..(bytes.Length / 2)], Ct);
+
+        using (var cache = Open())
+        {
+            Assert.Equal(0, cache.PreviousUnits);
+            Assert.Empty(Packs);
+        }
+
+        Assert.Contains(_messages, x => x.Level == LogLevel.Warning && x.Message.Contains("is shorter than its blobs"));
+    }
+
+    [Fact]
     public void ACacheInUseIsNotShared()
     {
         using var first = Open();

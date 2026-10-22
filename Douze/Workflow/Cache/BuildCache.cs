@@ -115,11 +115,27 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
                 return new CacheIndex();
             }
 
-            foreach (var pack in index.Packs)
+            // A pack shorter than the blobs the index places in it was truncated (a build that stopped while the
+            // system was writing it): the index is not usable.
+            var lengths = new long[index.Packs.Count];
+
+            for (var i = 0; i < lengths.Length; i++)
             {
-                if (!File.Exists(Path.Combine(directory, PacksFolder, pack)))
+                var pack = new FileInfo(Path.Combine(directory, PacksFolder, index.Packs[i]));
+
+                if (!pack.Exists)
                 {
-                    throw new InvalidDataException($"the pack '{pack}' is missing");
+                    throw new InvalidDataException($"the pack '{index.Packs[i]}' is missing");
+                }
+
+                lengths[i] = pack.Length;
+            }
+
+            foreach (var entry in index.Blobs.Values)
+            {
+                if (entry.Location.Offset + entry.Location.Length > lengths[entry.Location.Pack])
+                {
+                    throw new InvalidDataException($"the pack '{index.Packs[entry.Location.Pack]}' is shorter than its blobs");
                 }
             }
 
