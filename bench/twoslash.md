@@ -1,6 +1,6 @@
 # twoslash with TypeScript 7
 
-The `twoslash` step (README, "twoslash") against the target site's twoslash pipeline: its code worker renders the
+The `hover-typescript` step (README, "hover-typescript") against the target site's twoslash pipeline: its code worker renders the
 TypeScript fences with Expressive Code and its twoslash plugin, on TypeScript 6.0.3 in Node, with a 6.5 MB generated
 declaration file that the snippets import. Measured on 2026-10-22 on macOS arm64 (14 cores), with TypeScript 7.0.2
 (the step's default engine), TypeScript 7.1.0-beta and tsrs 0.18.0 (TypeScript 7.1.0-dev.20260929).

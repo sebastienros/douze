@@ -920,7 +920,7 @@ exact markup of its highlighter. A C# highlighter (TextMateSharp needs a native 
 grammars) would be weaker and would still not do twoslash. The worker mode makes the cost one process for the build,
 started while the earlier steps run.
 
-**Twoslash without Node (TypeScript 7).** The `twoslash` built-in step (README, "twoslash") computes twoslash's
+**Twoslash without Node (TypeScript 7).** The `hover-typescript` built-in step (README, "hover-typescript") computes twoslash's
 results with the language server of TypeScript 7 (Microsoft's native compiler, or tsrs, its Rust port), which Douze
 downloads (an npm platform package fetched over HTTP, its integrity pinned): the step runs after `markdown`, before the code worker, and adds `data-twoslash` (twoslash's
 `{ code, nodes }`) to every twoslash fence. The worker keeps its highlighter and its twoslash plugin, and gives the

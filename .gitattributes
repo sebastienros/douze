@@ -1,0 +1,4 @@
+# LF line ends on every platform, whatever core.autocrlf says: the raw string literals of the sources are part of what
+# Douze prints and generates (the release packages for Windows are built on Windows), and tests compare their output and
+# the fixtures byte for byte.
+* text=auto eol=lf

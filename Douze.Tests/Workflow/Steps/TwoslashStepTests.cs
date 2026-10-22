@@ -66,7 +66,7 @@ public sealed partial class TwoslashStepTests : CacheTestBase
         return StepTestBase.Workflow(
             StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
             StepTestBase.Step("markdown", "markdown", needs: ["pages"]),
-            StepTestBase.Step("twoslash", "twoslash", needs: ["markdown"], with: with),
+            StepTestBase.Step("twoslash", "hover-typescript", needs: ["markdown"], with: with),
             StepTestBase.Step("write", "write", needs: ["twoslash"]));
     }
 
@@ -458,7 +458,7 @@ public sealed partial class TwoslashStepTests : CacheTestBase
 
         var e = await Assert.ThrowsAsync<WorkflowValidationException>(() => BuildAsync(StepTestBase.Workflow(
             StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
-            StepTestBase.Step("twoslash", "twoslash", needs: ["pages"], with: StepTestBase.With(("compiler", new NodeObject { ["strictt"] = NodeValue.Create(true) })))), Options()));
+            StepTestBase.Step("twoslash", "hover-typescript", needs: ["pages"], with: StepTestBase.With(("compiler", new NodeObject { ["strictt"] = NodeValue.Create(true) })))), Options()));
 
         Assert.Contains("unknown compiler option 'strictt'; did you mean 'strict'?", e.Message);
     }
