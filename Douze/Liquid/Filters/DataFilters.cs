@@ -6,8 +6,8 @@ using Fluid.Values;
 namespace Douze.Liquid.Filters;
 
 /// <summary>
-/// Filters over lists: <c>where_exp</c>, <c>group_by_exp</c>, <c>sort_by</c>, <c>index_by</c>, and <c>jsonify</c>, the
-/// <c>json</c> filter.
+/// Filters over lists: <c>where_exp</c>, <c>group_by_exp</c>, <c>sort_by</c>, <c>index_by</c>, <c>jsonify</c>, the
+/// <c>json</c> filter, and Fluid's <c>where</c>, <c>find_index</c> and <c>slice</c> with fast paths for data arrays.
 /// </summary>
 internal static class DataFilters
 {
