@@ -7,13 +7,36 @@ Stupidly simple, blazing fast static site generator
 
 # installation
 
-Every push to `main` publishes a preview to feedz.io:
+Douze is a native executable for Windows, Linux and macOS (x64 and arm64), with libvips for the image features (see
+"images"). There is no stable release yet: every push to `main` publishes a preview.
+
+As a .NET tool, from the preview feed (the package of the machine's platform is the native build; elsewhere it runs on
+the .NET 11 runtime):
 
 ```
 dotnet tool install -g douze --prerelease --add-source https://f.feedz.io/sebastienros/douze/nuget/index.json
+dotnet tool update -g douze --prerelease --add-source https://f.feedz.io/sebastienros/douze/nuget/index.json
 ```
 
-The package is native AOT on Windows, Linux and macOS (x64 and arm64) and needs no .NET runtime. On other platforms, and for the preview packages of the Feedz feed, which are framework dependent, it runs on the .NET 11 runtime. The native AOT packages include libvips, which the image features use (see "images"); the framework dependent packages do not, and their image features report how to get it.
+Without .NET, with the install scripts, which download the native build into `~/.douze` (`%LOCALAPPDATA%\douze` on
+Windows) and add it to the `PATH`; running them again updates douze:
+
+```
+curl -fsSL https://github.com/sebastienros/douze/releases/latest/download/install.sh | sh -s -- --preview
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/sebastienros/douze/releases/latest/download/install.ps1))) -Preview
+```
+
+They take `--preview` (`-Preview`), `--version <version>`, `--install-dir <dir>`, `--no-modify-path`, `--feed <url>`
+and `--uninstall`. Without `--preview` they install the latest stable version (the latest preview while there is
+none), so `irm <url of install.ps1> | iex` works too. The scripts of `main` are also at
+`https://raw.githubusercontent.com/sebastienros/douze/main/install.sh` (and `install.ps1`). These URLs need the
+repository to be public, and the `releases/latest` ones a stable release (GitHub's latest release skips previews).
+
+Or download the archive of your platform from the [releases](https://github.com/sebastienros/douze/releases) page
+(`douze-<version>-<rid>.tar.gz`, `.zip` for Windows, checked by `SHA256SUMS`) and put its folder on the `PATH`.
 
 # usage
 

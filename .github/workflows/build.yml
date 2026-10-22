@@ -7,15 +7,23 @@ on:
     - 'doc/**'
     - 'README.md'
 
-jobs:
-  build:
+permissions:
+  contents: read
 
+# Previews are published in order.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+jobs:
+  test:
     # Don't run on forks
     if: github.repository == 'sebastienros/douze'
     runs-on: ubuntu-latest
-    env:
-        DOTNET_NOLOGO: true
-        DOTNET_CLI_TELEMETRY_OPTOUT: 1
 
     steps:
     - uses: actions/checkout@v7
@@ -26,16 +34,53 @@ jobs:
     - name: Test
       run: dotnet test -c Release
 
-    # Preview packages are framework dependent: native AOT packages are only produced when publishing a release.
-    - name: Pack preview packages
-      run: dotnet pack Douze --output artifacts --configuration Release --property:PackTool=true --property:PublishAot=false --property:ToolPackageRuntimeIdentifiers= --property:VersionSuffix=preview-$GITHUB_RUN_NUMBER --property:ContinuousIntegrationBuild=True
+  # The packages of a release, with the preview version <VersionPrefix>-preview.<run number>.
+  packages:
+    # Don't run on forks
+    if: github.repository == 'sebastienros/douze'
+    uses: ./.github/workflows/tool-packages.yml
 
+  push:
+    needs: [test, packages]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+
+    - uses: actions/download-artifact@v7
+      with:
+        pattern: tool-*
+        path: tool-artifacts
+        merge-multiple: true
+
+    # RID-specific packages (and the fallback, any) must be available before the top-level pointer package.
     - name: Push preview packages to Feedz
-      shell: bash
       env:
         FEEDZ_IO_API_KEY: ${{ secrets.FEEDZ_IO_API_KEY }}
+        VERSION: ${{ needs.packages.outputs.version }}
       run: |
         set -euo pipefail
-        for package in artifacts/*.nupkg; do
-          dotnet nuget push "$package" --api-key "$FEEDZ_IO_API_KEY" --source https://f.feedz.io/sebastienros/douze/nuget/index.json --skip-duplicate
+        FEED=https://f.feedz.io/sebastienros/douze/nuget/index.json
+        for package in tool-artifacts/Douze.[a-z]*.nupkg; do
+          dotnet nuget push "$package" --api-key "$FEEDZ_IO_API_KEY" --source "$FEED" --skip-duplicate
         done
+        dotnet nuget push "tool-artifacts/Douze.$VERSION.nupkg" --api-key "$FEEDZ_IO_API_KEY" --source "$FEED" --skip-duplicate
+
+  # The install scripts, from the feed, as users run them.
+  install-from-feedz:
+    name: install from Feedz (${{ matrix.os }})
+    needs: [packages, push]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Install, run and uninstall the preview with install.sh and install.ps1
+      shell: pwsh
+      run: ./scripts/test-install.ps1 -Feed https://f.feedz.io/sebastienros/douze/nuget/index.json -Version '${{ needs.packages.outputs.version }}'
