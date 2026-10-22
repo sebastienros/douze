@@ -40,8 +40,9 @@ internal abstract class Step : IAsyncDisposable
     public virtual Hash128 CacheVersion => Hash128.Empty;
 
     /// <summary>
-    /// Whether the units of the step record what they read through the scopes (<see cref="ScopeSet.TryResolve"/>). When
-    /// they do not, as a command does, a result depends on every scope of the step and is reused only when none changed.
+    /// Whether the units of the step record what they read through the scopes (<see cref="ScopeSet.TryResolve"/>). A
+    /// step that reads scopes without recording must return false: its results then depend on every scope of the step
+    /// and are reused only when none changed. A command step reads no scopes at all, so it keeps the default.
     /// </summary>
     public virtual bool TracksDependencies => true;
 

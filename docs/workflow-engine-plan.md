@@ -1752,6 +1752,17 @@ correctness over minimal rebuilds.
   users.
 - `write` records the files it wrote with their length and modification time (`DependencySet.Written`): a replay
   writes nothing, so it checks that the output file is still there, unchanged; otherwise it runs again.
+- Completeness (checked by the review of phase 5, `ValueAccessSurfaceTests`): every member of `FluidValue` that exposes
+  the content of a `NodeObjectValue` or `NodeArrayValue` records what it exposes, including the value on the *right* of
+  `==` and `contains`, which the comparison of the left value reads (`Equals` marks the other value read whole), and
+  `ToNumberValue`, which counts the items or members like Fluid's own values (`empty` and the `default` filter compare
+  it to 0; before the review it was 0, so `{{ collections.post | default: 'none' }}` rendered `none`). Fluid's filters
+  enumerate (`EnumerateAsync`, read whole) except `first`, `last` and `slice`, which read the count and the items they
+  use, as `for` and `tablerow` do (`IFluidArray`). A new `FluidValue` member exposing content must record, or the test
+  table must grow with it.
+- A step with `ReadsContent` false cannot emit an input's content (`Scheduler.CheckContents`, a unit failure): its keys
+  leave contents out, so after a content edit the unit replays, and the cache would restore the old content (it stores
+  no blob for an output whose content is an input's). `collect` emits no files.
 
 ### 7.4 Disk cache (phase 5)
 
@@ -1792,13 +1803,23 @@ A version mismatch in `index.json` discards the cache.
   replayed output reads its content and its metadata from the packs only if a step reads them; a replayed site scope
   reads its values only when a unit resolves one of its keys and runs (checking lookups needs the key hashes only).
 - **Source files** are not read when their length and modification time match the previous build's (`SourceStat`);
-  a file whose time is within 2 s of the build that recorded it is read again (a change in the same second).
+  a file whose time is within 2 s of the build that recorded it is read again (a change in the same second). The window
+  is sound for a one-shot build: a stat is recorded only when the file's time is older than the build's start by more
+  than the time stamp granularity of any file system in use (2 s on FAT, less elsewhere), so a later edit of the same
+  length gets a later time stamp. An edit *during* a build, after the file was read, is seen by the next build the same
+  way (its time stamp is newer). What the window cannot catch is a tool that restores the previous length and time stamp
+  with other content, as for every build tool keyed on stat. Phase 6 must take the reference time from each rebuild's
+  start, not from when the cache was opened (`BuildCache._started`), or every file edited while watching is re-read on
+  every rebuild (correct, but wasted).
 - **Retention.** A successful build keeps the units it used, replayed or ran: the results of an edited page's previous
   version, or of a deleted page, are dropped, so the cache does not grow with edits (switching between two branches
   rebuilds what differs). A failed or cancelled build keeps the previous units too. When less than half the bytes of
   the packs are in use (and they hold more than 4 MB), the used blobs are copied to a new pack and the others deleted.
 - An index of another format or Douze version is discarded (info message); a damaged one is discarded with a
-  warning; a cache that another build holds (`lock`) is not used, with a warning.
+  warning, including an index whose packs are shorter than the blobs it places in them (the packs are not flushed to
+  disk before the index is renamed into place, so a power loss can truncate one); a cache that another build holds
+  (`lock`) is not used, with a warning. A blob that cannot be read during a build fails the unit that reads it with a
+  message naming `--no-cache`.
 
 ### 7.5 Watch mode (phase 6)
 
@@ -2329,6 +2350,32 @@ from the disk cache.
 - **Left for phase 6.** Deletions and renames (stale outputs are not removed), keeping results in memory across
   rebuilds, `TemplateLoader.Invalidate` use. A worker command step starts its process even when every unit replays.
 
+**Review of phase 5** (the planning model's pass of 8.0; the verdict: phase 6 can start from this branch):
+
+- Fixed, each with a test: the value on the right of `==` or `contains` was not recorded when the left value was a
+  node value (7.3, `ValueAccessSurfaceTests`, which checks Fluid's whole surface); `NodeArrayValue` and
+  `NodeObjectValue` returned 0 from `ToNumberValue`, so `empty` and `default` treated every node array and object as
+  empty (a Liquid bridge bug older than phase 5); `TextContent` published its encoded bytes as a nullable struct, which a
+  reader can see half written on ARM64 (the same class of race as the two found by the phase); an index whose packs were
+  truncated was used and failed the units reading the missing blobs (7.4); a step with `ReadsContent` false that passed
+  contents through would replay the old content after an edit (7.3, `Scheduler.CheckContents`).
+- Checked and sound: the publication of `Metadata._load`, `HashSlot`, `NodeHashCache`, `BuildCache._writer` and
+  `_packs`, `TemplateLoader.ParseSlot` and `FileContent.Hash` (every lazily set value is a reference, or a struct
+  published behind a volatile flag written after it); `Save` (liveness through the children of node and metadata blobs,
+  compaction, the index renamed into place, a failed build keeping the previous units); the skipped blobs of outputs
+  equal to an input (restored from the input, which the key guarantees is the same); `ResolveHash` with the settings
+  and the folder walk (a data file added on the path changes the hash only when it defines the key, the 1b gap);
+  command steps without scope dependencies (`run`, `env` and worker options render with the command model only, and
+  workers receive the own metadata, which is in the input ref); the 2 s window (7.4); the result keys' dates (needed
+  by `frontmatter` only, harmless elsewhere).
+- Left as is, with the reason: `IncrementalEqualsCleanTests` covers modifications only, as phase 5 requires (adds,
+  deletes and renames are phase 6's, with the key test of 7.5); peak RSS (9.2, risk 6, below); `BuildCache._metadata`
+  keeps every restored metadata for the build (unloaded unless read; bounded by the site); `ReplayState` re-reads each
+  template once per build although `TemplateLoader` read it too (one read per template); `TemplateLoader` keeps the
+  parsed includes of every content hash it saw (grows in watch mode, phase 6 with `Invalidate`); `find`, `sum: 'prop'`
+  and `where` on node objects follow Fluid's dictionary conventions only partly (a Liquid bridge follow-up, not a cache
+  one); a worker's process starts even when every unit replays.
+
 ### Phase 6: watch mode, dev server, live reload (High, review)
 
 **Goal.** `douze watch` and `douze serve` with partial replays, deletions and renames handled
@@ -2343,6 +2390,12 @@ removed), `Douze/Liquid/TemplateLoader.cs` (`Invalidate`), README section "Watch
 First task: verify `System.Net.HttpListener` under the AOT publish on macOS and Linux; if it
 warns or fails, implement `DevServer` on `TcpListener` with a minimal HTTP/1.1 responder (GET
 only, `Content-Type` by extension, `Connection: close`, SSE for `/__douze/events`).
+
+From the review of phase 5, phase 6 also takes: the reference time of the source stat cache from each rebuild's start
+(7.4); `TemplateLoader.Invalidate` dropping the include hashes and parsed templates of the invalidated file, not only
+its resolution; the worker process of a command step started only once a unit runs; and the key test extended to adds,
+deletes and renames (`IncrementalEqualsCleanTests`, whose edits are modifications only). The backpressure of risk 6 lands
+before phase 6 starts.
 
 **Tests.** `ChangeSetTests` (4: debounce merges events, rename is delete plus add, output and cache
 folders ignored, mapping to root nodes), `IncrementalBuilderTests` (6: delete removes outputs,
@@ -2443,7 +2496,8 @@ others are slower, none lowers the peak, which is the live set).
 
 *Phase 5 results* (`bench/README.md`, "Phase 5"): every target is met except the synthetic site's peak RSS (2.3 GB
 clean without the cache, 2.7 GB writing it, against 1.5 GB): pages wait in the unbounded channels in front of `write`,
-the slowest step; backpressure on the channels that do not feed a barrier is the follow-up.
+the slowest step; backpressure on the channels that do not feed a barrier is the follow-up, as a change of its own
+before phase 6 (risk 6).
 
 ### 9.3 Validation beyond tests
 
@@ -2521,6 +2575,14 @@ Each item has a recommended answer; implementers use it unless the user decides 
 6. **Unbounded channels.** Memory is bounded by the number of files because content is shared,
    and a bounded channel feeding a reduce barrier cannot deadlock (the reduce node drains
    continuously). Recommended: unbounded; revisit only if the benchmark shows pressure.
+   *Phase 5 and its review:* the benchmark shows it (9.2): the 32k synthetic site peaks at 2.3 GB against 1.5 GB because
+   the pages rendered ahead of `write` wait in its channel. The fix is backpressure on the channels whose consumer is a
+   map step (a bounded channel, about `2 × MaxDegreeOfParallelism` files), with two rules: a unit releases its work slot
+   before it writes its outputs (the consumer needs the slot to drain), and a node that stops early (failure, skip,
+   cancellation) keeps draining its inputs so that its producers never block. Channels feeding a reduce or group
+   barrier stay unbounded. Recommended: a change of its own between phases 5 and 6 (`Scheduler.cs` only, with the
+   benchmark as acceptance), not inside phase 6: watch mode keeps results across rebuilds and would meet the same
+   pressure, and the two rules are easier to get right in a change that does nothing else.
 
 7. **Global CPU slots and command steps.** A command step waiting on an external process should
    not hold a CPU slot. Recommended (and specified in 2.6): command steps take slots from
