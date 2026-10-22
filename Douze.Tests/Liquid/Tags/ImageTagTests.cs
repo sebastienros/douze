@@ -271,7 +271,7 @@ public partial class ImageTagTests : CacheTestBase
 
         var error = Assert.Single(result.Errors);
         Assert.Equal("/png/index.html", error.File?.FullName);
-        Assert.StartsWith("image processing needs libvips, which cannot be loaded (Unable to load shared library 'libvips.42.dylib'). The douze tool packages of win-x64", error.Message);
+        Assert.StartsWith("image processing needs libvips, which cannot be loaded (Unable to load shared library 'libvips.42.dylib'). Douze includes it on win-x64", error.Message);
         Assert.True(await Output.GetFileEntryAsync("/svg/index.html") is { Exists: true });
         Assert.True(await Output.GetFileEntryAsync("/plain/index.html") is { Exists: true });
     }
