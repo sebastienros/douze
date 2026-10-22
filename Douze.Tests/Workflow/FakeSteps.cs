@@ -30,9 +30,14 @@ internal sealed class FakeMapStep : Step, IMapStep
 
     public GlobSet? Default { get; init; }
 
+    /// <summary>Whether the step claims to read the contents of its inputs.</summary>
+    public bool Contents { get; init; } = true;
+
     public override GlobSet DefaultMatch => Default ?? GlobSet.All;
 
     public override StepShape NativeShape => StepShape.Map;
+
+    public override bool ReadsContent => Contents;
 
     public ConcurrentQueue<FPath> Started { get; } = new();
 

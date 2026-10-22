@@ -347,6 +347,22 @@ public class SchedulerTests
     }
 
     [Fact]
+    public async Task AStepThatDoesNotReadContentsCannotPassThemThrough()
+    {
+        var site = await new FakeSite().WithFilesAsync("/a.md");
+
+        // Its result keys leave contents out: a replay after an edit would restore the old content.
+        var graph = new FakeWorkflow()
+            .Add("meta", d => new FakeMapStep(d) { Contents = false, Process = (f, _, _) => new(FileList.Of(f)) }, inputs: ["**"])
+            .Build();
+
+        var result = await site.BuildAsync(graph);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("error: meta: /a.md: step 'meta' does not read contents but emits '/a.md' with the content of an input", Assert.Single(result.Errors).ToString());
+    }
+
+    [Fact]
     public async Task ExceptionInInitializeFailsTheStep()
     {
         var site = await new FakeSite().WithFilesAsync("/a.md");

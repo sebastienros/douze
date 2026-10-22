@@ -727,6 +727,7 @@ internal sealed class Scheduler
                 {
                     output = await body(context, ct);
                     contributions = Contribute(output);
+                    CheckContents(output, inputFiles);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -773,6 +774,31 @@ internal sealed class Scheduler
 
             Run.AddUnitDone();
             Context.View.StepProgress(Run);
+        }
+
+        /// <summary>
+        /// A step that does not read the contents of its inputs (<see cref="Step.ReadsContent"/>) leaves them out of its
+        /// result keys, so a unit is replayed after a content changed: an output with the content of an input would then
+        /// be restored with the old content. Such a step cannot pass contents through.
+        /// </summary>
+        private void CheckContents(StepOutput output, IReadOnlyList<VirtualFile> inputFiles)
+        {
+            if (Node.Step.ReadsContent || output.Files.Count == 0)
+            {
+                return;
+            }
+
+            var files = output.Files;
+
+            for (var i = 0; i < files.Count; i++)
+            {
+                var file = files[i];
+
+                if (inputFiles.Any(x => x.ContentHash == file.ContentHash))
+                {
+                    throw new InvalidOperationException($"step '{Name}' does not read contents but emits '{file.Path}' with the content of an input");
+                }
+            }
         }
 
         /// <summary>
