@@ -36,6 +36,11 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
   markup: raw regions (`RawRegionExtension`), asides (`AsideExtension`), code fences (`CodeFenceRenderer`), `.md`
   links (`LinkRewriter`). `HeadingScanner` and `Slugger` give the `headings` step the headings of rendered HTML.
 - `Douze/Liquid/`: the Fluid bridge. `TemplateLoader` parses templates once per content hash and serves includes; `MetadataValue` is the model of every render.
+  `DouzeParser` (the parser of a build, from `LiquidOptions.CreateParser`) exposes Fluid's protected argument and
+  expression parsers to Douze's tags in `Tags/`: shortcodes (`ShortcodeRegistry`, scanned by `BuildContext.CreateAsync`
+  before any template is parsed, `ShortcodeTag`, `ShortcodeModel`), `markdown`, `include_markdown` and `slot`
+  (`MarkdownTags`), `error` and `warn` (`DiagnosticTags`). `FenceTable` protects the fences of Markdown pages in the
+  `liquid` step.
 - `Douze/Progress/`: the views of a build: `PlainProgressView` (a line per step), `SpectreProgressView` (live table and summary with a timeline), `SilentProgressView`; `StepSummary` formats what they share.
 - `Douze/Tracing/`: `TraceRecorder` records build, step, command and (with `--trace-units`) unit spans; `ChromeTraceWriter` writes them for Perfetto (`--trace`), `TimelineHtmlWriter` into the self-contained `timeline.html` (`--timeline`).
 - `Douze.Tests.FakeTool/`: the fake external tool of the command step tests, launched with `dotnet Douze.Tests.FakeTool.dll <mode>`; it is in `Douze.slnx` so that it builds in the configuration of the tests.
@@ -50,6 +55,14 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 - Data files are keyed by file name: `_data/colors.json` is `colors`. The nearest scope wins: own data, folder data (nearest folder first), site data, the `site:` settings of `douze.yml` (`site.url`, whose `site` object is completed rather than hidden by a `site` data object), then the front matter of layouts.
 - Collection items (`collections.all`, `collections.<tag>`) are sorted by date ascending, using front matter `date` if defined, or `page.date` (the file date) otherwise, then by path (ordinal). This matches Eleventy.
 - Pagination pages (`pagination.pages`, `page.next`, ...) only link pages generated from the same template.
+- Tags reach the build through the ambient values of the render (`AmbientKeys`: the step context, the page's model,
+  the tracker, whether the output is Markdown, the page's fence table), never through statics. A tag that renders
+  Markdown uses `TagRendering.RenderMarkdownAsync` (the site's pipeline), restores the page's fences in a body before
+  (`TagRendering.RenderBodyAsync` does), and records the files it reads (`DependencyTracker.RecordTemplate`, absent
+  files included). In a Markdown page, block HTML from a tag is written as a raw region
+  (`RawRegionExtension.Encode`: one line, so that it stays in the tag's list item).
+- Shortcode names are file names: lowercase letters, digits and underscores; a new built-in tag must be registered in
+  `LiquidOptions.CreateParser`, so that a shortcode cannot hide it.
 
 ## Build and test
 

@@ -437,6 +437,37 @@ error after a fence are the original lines, `with.protect: none`. `MarkdownStepT
 **Acceptance.** The Sample's new docs section (5.3) has tabs, asides, steps and a badge, converted from a component
 Markdown page kept next to it as documentation; the engine plan's shared criteria.
 
+*As implemented:*
+
+- Raw regions are a single line, written at the tag's position: `\u001E`, the HTML with every newline replaced by
+  `\u001D` (U+001E and U+001D removed from the HTML), `\u001E`. A line whose first non-space character is U+001E and
+  whose last is U+001E is a region; the renderer writes the HTML with its newlines back. One line cannot be split by
+  the container rules of Markdig, so a region placed at the tag's column stays in the tag's list item or block quote
+  with no prefix to compute (the converter found 59 paired shortcodes and 398 includes in list items, mostly tabs in
+  steps). The multi-line marker form, the marker prefixes and the "region not closed" warning are gone; what is left
+  of a region that does not start a line is removed (`\u001E`) or turned back into newlines (`\u001D`).
+- Whether a render produces Markdown is the ambient `AmbientKeys.Markdown`, set by the `liquid` step for a Markdown
+  file and by `include_markdown` for the include's render, rather than the file's content type: a shortcode
+  template's own render produces HTML, so a shortcode used in it writes its output as it is, even in a Markdown page.
+- Shortcode bodies are not dedented (a converter writes them dedented). Fences are found after any indentation and
+  `>` prefixes, so that fences in list items and block quotes are protected; a fence that is not closed runs to the
+  end of the text, as in CommonMark.
+- The shortcodes are the `.liquid` and `.html` files of the folder (not its subfolders). Unknown front matter keys
+  are errors; `else`, `elsif`, `when` and `end<built-in tag>` are reserved names too. Registration is part of
+  `ScanAsync(source, folder, DouzeParser, ct)` (no separate `Register`); `ShortcodeDefinition` gains `LineOffset`
+  (the front matter lines, added to positions in the template). `DouzeParser` exposes `TagArguments` (Fluid's argument
+  list: literals and variables, no filters, as for filter arguments), `TagExpression` and `TagPosition`, each with the
+  tag's position, computed when an error or an include asks for it.
+- A shortcode template renders in its own `TemplateContext` (the model is read-only in Fluid) with the page's
+  ambient values except strict mode, the fences and the Markdown flag: optional named arguments work under
+  `with.strict`.
+- The `did you mean` of an unknown tag is added by the `liquid` step to the parse errors of pages (TemplateLoader is
+  unchanged). An invalid shortcode folder throws `WorkflowValidationException` from `BuildContext.CreateAsync`
+  (called by `SiteBuilder`), which `douze build` reports like the errors of `douze.yml` (exit code 2).
+- `{% slot "name" %}...{% endslot %}` is a built-in block: `<div data-slot="name">body</div>`, its body rendered like
+  a shortcode body, so that a shortcode template places the parts of its body with CSS or scripts.
+- Tags do not pass localized aside titles to the renderer yet: the `markdown` step does not resolve them either.
+
 **Where it lives and why.** Liquid tags backed by include files (the extension point a site author already knows),
 plus a Markdig extension for raw regions. Not a Fluid change: `RegisterParserBlock` and `RenderStatementsAsync` are
 enough. Not a Markdig extension recognizing `{% %}`: Liquid runs before Markdown by design (engine plan 4.6), and tags
@@ -642,6 +673,14 @@ page renders to HTML; include edit re-renders the page only (`EarlyCutoffTests`)
 `markdownify` with and without `inline`; `strip_markdown`; `excerpt` with and without the marker.
 
 **Acceptance.** Shared criteria; the Sample's docs section includes a shared Markdown partial.
+
+*As implemented:* in a Markdown page, every line of an include's output after the first is prefixed with the
+container prefix of the tag's line (its indentation and `>`, list markers as spaces), so that a multi-paragraph
+include in a list item stays in it (CommonMark strips that indentation, in fences too); at column 0 nothing changes.
+The include's front matter values are set in a child scope only for names that neither the page's local variables
+nor its model define, which is "below the page's" without a second model; named arguments are set after them. Paths
+are resolved like `.md` links (`LinkRewriter.Resolve`); a leading `/` is the content folder. `{% markdown %}` in a
+Markdown page writes a raw region. The tag (and `{% slot %}`) is in `MarkdownTags`; `strip_markdown` trims the text.
 
 **Where it lives and why.** Liquid tags and filters: the page's context is needed, and Fluid's `include` cannot
 return Markdown to the page's pass without this. Not a Markdig extension (`{% %}` is Liquid's).
@@ -1230,6 +1269,15 @@ with the file, satisfied by folder data, `strict` on an undefined variable.
 
 **Acceptance.** Shared criteria; `douze build` on a fixture with `{% error %}` exits 1 with the page and position.
 
+*As implemented:* `{% error %}` throws a `TemplateRenderException` with the tag's position and the path of the
+template being rendered (`AmbientKeys.TemplatePath`: the page, a layout, a shortcode, a Markdown include), so a tag in
+a layout is reported as `error: layout: /a/index.html: /_includes/base.html(2,1): <message>`; a tag inside a Fluid
+`{% include %}` has its position in the include but the including template's path (Fluid's include sets no ambient
+value). `{% warn %}` logs `<page>(<line>,<col>): <message>`.
+`require` treats a key that resolves to null as missing (`required keys 'title', 'description' are missing`). Strict
+mode throws `undefined variable 'x'` for a top-level name that resolves to nothing or to null; shortcode templates are
+not strict.
+
 **Where it lives and why.** Tags and options: a few lines each.
 
 ### 3.15 Fragment cache
@@ -1394,6 +1442,9 @@ site:
     redirects: redirects.json           # manifest of 3.13, relative to the output folder
   external: [pagefind]                  # output folders written by steps after write (3.17): never cleaned, served as they are
 ```
+
+*As implemented (shortcodes):* `site.shortcodes` is validated like the other folders and becomes
+`SiteOptions.ShortcodesFolder` (default `<includes>/shortcodes/`).
 
 `WorkflowSchema.SiteKeys` grows with `shortcodes`, `locales` and `serve`; the loader validates each field with the
 messages pattern of the engine plan 4.5 (`unknown key 'x' in 'site.locales'; expected 'default', 'root', 'fallback',
