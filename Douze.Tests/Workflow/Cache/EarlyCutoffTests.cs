@@ -101,7 +101,7 @@ public class EarlyCutoffTests : CacheTestBase
         Assert.Equal(["*"], Executed(result, "collections"));
         Assert.Equal(["/index.md", "/posts/b/index.md"], Executed(result, "render"));
         Assert.Equal(["/posts/b/index.html"], Executed(result, "layout"));
-        Assert.Equal(["featured", "post"], result.Scopes.Site.Single(x => x.Source == "step:collections").Values["collections"]!.AsObject().Select(x => x.Key).Where(x => x != "all").Order(StringComparer.Ordinal));
+        Assert.Equal(["featured", "post"], result.Scopes.Site.Single(x => x.Source == "step:collections").Values["collections"]!.AsObject().Select(x => x.Key).Where(x => x is not ("all" or "urls")).Order(StringComparer.Ordinal));
 
         // A title among the first two pages changes the nav, so every layout.
         await EditAsync("/_content/about.md", "---\ntitle: About us\ndate: 2020-01-02\n---\n{% for m in menu %}{{ m }} {% endfor %}", keepDate: true);

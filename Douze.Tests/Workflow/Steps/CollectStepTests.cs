@@ -71,4 +71,81 @@ public class CollectStepTests : StepTestBase
         var data = Assert.IsType<NodeValue<Metadata>>(item["data"]);
         Assert.Same(Outputs(result["pages"]).Single(x => x.Path == "/posts/a.html").Metadata, data.Value);
     }
+
+    private static WorkflowDefinition CollectWithUrls(NodeObject? with = null) => Workflow(
+        Step("pages", "frontmatter", inputs: ["**"]),
+        Step("permalink", "permalink", needs: ["pages"]),
+        Step("collections", "collect", needs: ["permalink"], with: with));
+
+    [Fact]
+    public async Task UrlsMapNormalizedUrlsToTheItemsOfAll()
+    {
+        await Source.WriteTextFileAsync("/index.md", "---\ndate: 2020-01-01\n---\nhome");
+        await Source.WriteTextFileAsync("/docs/a.md", "---\ndate: 2020-01-02\n---\na");
+        await Source.WriteTextFileAsync("/feed.html", "---\ndate: 2020-01-03\npermalink: feed.xml\n---\nfeed");
+        await Source.WriteTextFileAsync("/b.html", "---\ndate: 2020-01-04\npermalink: /docs/a/\n---\nsame url");
+
+        var result = await BuildSuccessfullyAsync(CollectWithUrls());
+
+        var collections = Contribution(result).Values["collections"]!.AsObject();
+        var urls = collections["urls"]!.AsObject();
+
+        // feed.xml is not a page; b.html has the url of a.md, which comes first in 'all'.
+        Assert.Equal(["/", "/docs/a/"], urls.Select(x => x.Key));
+
+        var all = collections["all"]!.AsArray();
+        Assert.Same(all[1], urls["/docs/a/"]);
+        Assert.Same(all[0], urls["/"]);
+    }
+
+    [Fact]
+    public async Task ReadingOneUrlRecordsThatMemberOnly()
+    {
+        await Source.WriteTextFileAsync("/docs/a.md", "---\ntitle: A\n---\na");
+        await Source.WriteTextFileAsync("/docs/b.md", "---\ntitle: B\n---\n{{ collections.urls['/docs/a/'].data.title }}");
+
+        var result = await BuildSuccessfullyAsync(Workflow(
+            Step("pages", "frontmatter", inputs: ["**"]),
+            Step("permalink", "permalink", needs: ["pages"]),
+            Step("collections", "collect", needs: ["permalink"]),
+            Step("render", "liquid", needs: ["permalink", "collections"])));
+
+        var unit = result["render"].Results.Single(x => x.Inputs.Single().Path == "/docs/b/index.md");
+        Assert.Equal("A", await TextAsync(unit.Files.Single()));
+
+        var lookup = Assert.Single(unit.Dependencies.Lookups, x => x.Key == "collections");
+        var urls = Assert.Single(lookup.Access!.Members);
+        Assert.Equal("urls", urls.Key);
+        Assert.Equal(["/docs/a/"], urls.Access.Members.Select(x => x.Key));
+    }
+
+    [Fact]
+    public async Task ContentIsExposedOnRequest()
+    {
+        await Source.WriteTextFileAsync("/a.md", "---\ntitle: A\n---\nbody of a");
+
+        var without = await BuildSuccessfullyAsync(CollectWithUrls());
+        Assert.False(without["collections"].Node.Step.ReadsContent);
+        Assert.Null(Contribution(without).Values["collections"]!["all"]![0]!["content"]);
+
+        Site = null;
+        var with = await BuildSuccessfullyAsync(CollectWithUrls(With(("content", NodeValue.Create(true)))));
+        Assert.True(with["collections"].Node.Step.ReadsContent);
+        Assert.Equal("body of a", Contribution(with).Values["collections"]!["all"]![0]!["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task NameIsTheScopeKey()
+    {
+        await Source.WriteTextFileAsync("/a.md", "a");
+
+        var result = await BuildSuccessfullyAsync(Workflow(
+            Step("pages", "frontmatter", inputs: ["**"]),
+            Step("permalink", "permalink", needs: ["pages"]),
+            Step("collections", "collect", needs: ["permalink"]),
+            Step("docs", "collect", needs: ["permalink"], with: With(("name", NodeValue.Create("docs"))))));
+
+        Assert.Equal(["docs", "collections"], result.Scopes.Site.Select(x => x.Values.Single().Key).OrderBy(x => x == "collections"));
+        Assert.Equal(["/a/"], result["docs"].Contributions.Site.Single().Values["docs"]!["urls"]!.AsObject().Select(x => x.Key));
+    }
 }
