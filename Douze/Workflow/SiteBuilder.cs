@@ -57,7 +57,14 @@ internal static class SiteBuilder
         {
             using (trace.Begin("cache", "io"))
             {
-                cache.Save(succeeded);
+                if (context.OwnsCache)
+                {
+                    cache.Save(succeeded);
+                }
+                else
+                {
+                    cache.Commit(succeeded);
+                }
             }
         }
 

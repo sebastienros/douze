@@ -27,7 +27,7 @@ internal sealed class BuildContext : IAsyncDisposable
         Parallelism = new SemaphoreSlim(parallelism, parallelism);
         ProcessSlots = new SemaphoreSlim(parallelism, parallelism);
 
-        Templates = new TemplateLoader(site.Source, [site.IncludesFolder], Liquid.LiquidOptions.CreateParser());
+        Templates = options.Templates ?? new TemplateLoader(site.Source, [site.IncludesFolder], Liquid.LiquidOptions.CreateParser());
         LiquidOptions = Liquid.LiquidOptions.Create(Templates);
 
         // A site that is not on disk (tests) has no cache unless a folder is given; its commands use the temp folder.
@@ -37,9 +37,15 @@ internal sealed class BuildContext : IAsyncDisposable
 
         ExcludedSourceFolders = [.. new[] { InsideSource(site, site.OutputDirectory), InsideSource(site, CacheRoot) }.OfType<FPath>()];
 
-        if (options.UseCache && CacheRoot != null)
+        if (options.Cache is { } shared)
+        {
+            Cache = shared;
+            Cache.BeginBuild();
+        }
+        else if (options.UseCache && CacheRoot != null)
         {
             Cache = BuildCache.Open(Path.Combine(CacheRoot, "cache"), view);
+            OwnsCache = true;
         }
 
         BaseScopes = ScopeSet.FromSettings(SiteValues(site));
@@ -48,7 +54,7 @@ internal sealed class BuildContext : IAsyncDisposable
     /// <summary>
     /// The virtual path of a folder of the disk when it is inside the source folder.
     /// </summary>
-    private static FPath? InsideSource(SiteOptions site, string? directory)
+    internal static FPath? InsideSource(SiteOptions site, string? directory)
     {
         if (site.SourceDirectory is not { } sourceDirectory || directory == null)
         {
@@ -102,6 +108,7 @@ internal sealed class BuildContext : IAsyncDisposable
     public ImmutableArray<FPath> ExcludedSourceFolders { get; }  // the output and cache folders, when they are inside the source folder: never sources
     public string? CacheRoot { get; }               // --cache-dir, or <source>/.douze/; null for a site not on disk
     public BuildCache? Cache { get; }               // the disk cache in <cache root>/cache/; null with --no-cache or when another build holds it
+    public bool OwnsCache { get; }                  // opened by this build, which saves it; false for BuildOptions.Cache, which the build commits
 
     /// <summary>
     /// Releases the slots and deletes <see cref="TempRoot"/>, unless <c>--verbose</c> asked to keep what the batch
@@ -111,7 +118,10 @@ internal sealed class BuildContext : IAsyncDisposable
     {
         Parallelism.Dispose();
         ProcessSlots.Dispose();
-        Cache?.Dispose();
+        if (OwnsCache)
+        {
+            Cache?.Dispose();
+        }
 
         try
         {
