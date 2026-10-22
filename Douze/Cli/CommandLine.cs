@@ -3,7 +3,7 @@ using Douze.Workflow;
 
 namespace Douze.Cli;
 
-internal enum Command { Build, Watch, Serve, WorkerHelper, Help, Version }
+internal enum Command { Build, Watch, Serve, Doctor, ToolsInstall, WorkerHelper, Help, Version }
 
 /// <summary>
 /// A command line usage error. Exit code 2.
@@ -20,6 +20,8 @@ internal sealed class CommandLine
           douze [build] [options]          build once (default command)
           douze watch [options]            build, then rebuild on changes
           douze serve [options]            watch + dev server with live reload
+          douze doctor [options]           check what the steps need (libvips, tools, commands) without building
+          douze tools install [options]    download the tools the steps need into the cache folder
           douze worker-helper              print douze-worker.mjs to stdout
 
         Options:
@@ -73,11 +75,23 @@ internal sealed class CommandLine
                 "build" => Command.Build,
                 "watch" => Command.Watch,
                 "serve" => Command.Serve,
+                "doctor" => Command.Doctor,
+                "tools" => Command.ToolsInstall,
                 "worker-helper" => Command.WorkerHelper,
                 var other => throw new CommandLineException($"unknown command '{other}'"),
             };
 
             i++;
+
+            if (result.Command == Command.ToolsInstall)
+            {
+                if (args.Count < 2 || args[1] != "install")
+                {
+                    throw new CommandLineException(args.Count < 2 || args[1].StartsWith('-') ? "'tools' needs a subcommand: 'tools install'" : $"unknown tools subcommand '{args[1]}'");
+                }
+
+                i++;
+            }
         }
 
         for (; i < args.Count; i++)
@@ -145,8 +159,8 @@ internal sealed class CommandLine
     }
 
     /// <summary>
-    /// Runs the command of <paramref name="args"/> and returns the exit code: 0 success, 1 build errors, 2 usage or
-    /// configuration error, 130 cancelled.
+    /// Runs the command of <paramref name="args"/> and returns the exit code: 0 success, 1 build errors (or a missing
+    /// requirement, a tool that cannot be installed), 2 usage or configuration error, 130 cancelled.
     /// </summary>
     public static async Task<int> RunAsync(string[] args)
     {
@@ -175,6 +189,12 @@ internal sealed class CommandLine
 
             case Command.WorkerHelper:
                 return WorkerHelperCommand.Run();
+
+            case Command.Doctor:
+                return await DoctorCommand.RunAsync(commandLine, Console.Out);
+
+            case Command.ToolsInstall:
+                return await ToolsCommand.InstallAsync(commandLine, Console.Out, Console.Error);
 
             case Command.Watch or Command.Serve:
                 return await WatchCommand.RunAsync(commandLine);

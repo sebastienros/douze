@@ -149,6 +149,7 @@ internal sealed class BuildContext : IAsyncDisposable
     public LocaleSet Locales => Site.Locales;       // site.locales; LocaleSet.None when absent
     public ImmutableArray<FPath> ExcludedSourceFolders { get; }  // the output and cache folders, when they are inside the source folder: never sources
     public string? CacheRoot { get; }               // --cache-dir, or <source>/.douze/; null for a site not on disk
+    public string ToolsRoot => Path.Combine(CacheRoot ?? Path.Combine(Path.GetTempPath(), DefaultCacheFolder), "tools");  // the tools Douze downloads (ToolInstaller)
     public BuildCache? Cache { get; }               // the disk cache in <cache root>/cache/; null with --no-cache or when another build holds it
     public bool OwnsCache { get; }                  // opened by this build, which saves it; false for BuildOptions.Cache, which the build commits
 

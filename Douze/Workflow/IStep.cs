@@ -53,6 +53,13 @@ internal abstract class Step : IAsyncDisposable
     public virtual bool ReadsContent => true;
 
     /// <summary>
+    /// What the step needs outside Douze (a native library, a tool, an executable), checked by <c>douze doctor</c> and
+    /// before every build: a build whose step misses one fails before any unit runs. Called before
+    /// <see cref="InitializeAsync"/>.
+    /// </summary>
+    public virtual IEnumerable<Requirement> Requirements(BuildContext context) => [];
+
+    /// <summary>
     /// Called once before the step receives its first unit: parse options, start workers.
     /// </summary>
     public virtual ValueTask InitializeAsync(BuildContext context, CancellationToken ct) => default;

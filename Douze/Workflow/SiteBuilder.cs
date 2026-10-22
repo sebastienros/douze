@@ -33,6 +33,22 @@ internal static class SiteBuilder
 
         view.BuildStarted(graph);
 
+        // A step whose requirement is missing would fail its units: the build fails before any runs.
+        IReadOnlyList<RequirementResult> requirements;
+
+        using (trace.Begin("requirements", "io"))
+        {
+            requirements = await Requirements.CheckAsync(graph, context, options.Cancellation);
+        }
+
+        if (requirements.Any(x => x.IsMissing))
+        {
+            var errors = requirements.Where(x => x.IsMissing).Select(x => new BuildError(x.Step, null, x.Requirement.Message(x.Status), null, null)).ToArray();
+            var failed = new BuildResult([.. graph.Nodes.Select(x => new StepRun(x) { State = StepState.Skipped })], errors, [], context.BaseScopes, trace.Session, stopwatch.Elapsed, cancelled: false);
+            view.BuildCompleted(failed);
+            return failed;
+        }
+
         SchedulerResult result;
 
         using (trace.Begin("build", "build"))

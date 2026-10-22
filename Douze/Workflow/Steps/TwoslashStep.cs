@@ -220,6 +220,25 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
         _toolIdentity = Hash128.Of(await File.ReadAllBytesAsync(path, ct));
     }
 
+    /// <summary>
+    /// The engine: the binary of <c>path</c>, or the version Douze downloads.
+    /// </summary>
+    public override IEnumerable<Requirement> Requirements(BuildContext context)
+    {
+        if (_path == null)
+        {
+            var alternative = _tool == NpmTool.Tsrs ? ", or use 'engine: typescript'" : "";
+            return [new NpmToolRequirement(_tool, _version, Installer(context.ToolsRoot, (level, message) => context.View.Message(level, Name, message)), $"set the option 'path' of step '{Name}' to a {_tool.Name} binary{alternative}")];
+        }
+
+        var path = ResolvePath(context);
+
+        return [Requirement.Create(_tool.Name, $"set the option 'path' of step '{Name}' to a {_tool.Name} binary, or remove it to download {_tool.Name} {_version}", _ =>
+            ValueTask.FromResult(File.Exists(path) ? RequirementStatus.Found(path: path) : RequirementStatus.Missing($"does not exist at '{path}'")))];
+    }
+
+    private ToolInstaller Installer(string root, Action<LogLevel, string> log) => new(root, _registry, log);
+
     private string ResolvePath(BuildContext context)
     {
         return Path.IsPathRooted(_path!) || context.Site.SourceDirectory is not { } source ? Path.GetFullPath(_path!) : Path.GetFullPath(Path.Combine(source, _path!));
@@ -396,10 +415,7 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
 
     private async Task<string> InstallAsync(StepContext context, CancellationToken ct)
     {
-        var build = context.Build;
-        var root = Path.Combine(build.CacheRoot ?? Path.Combine(Path.GetTempPath(), BuildContext.DefaultCacheFolder), "tools");
-        var installer = new ToolInstaller(root, _registry, context.Log);
-        return await installer.InstallAsync(_tool, _version, ct);
+        return await Installer(context.Build.ToolsRoot, context.Log).InstallAsync(_tool, _version, ct);
     }
 
     private static string FirstLine(string code)

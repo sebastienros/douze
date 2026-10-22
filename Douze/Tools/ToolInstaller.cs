@@ -58,6 +58,29 @@ internal sealed class ToolInstaller
     public string GetFolder(NpmTool tool, string version, string platform) => Path.Combine(_root, tool.Name, version, platform);
 
     /// <summary>
+    /// The path of the binary of <paramref name="tool"/> <paramref name="version"/> when it is installed for the current
+    /// platform (or <paramref name="platform"/>), null otherwise. Sends no request.
+    /// </summary>
+    public string? FindInstalled(NpmTool tool, string version, string? platform = null)
+    {
+        platform ??= NpmTool.CurrentPlatform;
+
+        return tool.Packages.ContainsKey(platform) && IsVersion(version) && File.Exists(Path.Combine(GetFolder(tool, version, platform), Marker))
+            ? GetExecutable(tool, version, platform)
+            : null;
+    }
+
+    private static bool IsVersion(string version)
+    {
+        return version.Length > 0 && !version.Contains('/', StringComparison.Ordinal) && !version.Contains('\\', StringComparison.Ordinal) && !version.Contains("..", StringComparison.Ordinal);
+    }
+
+    private string GetExecutable(NpmTool tool, string version, string platform)
+    {
+        return Path.Combine(GetFolder(tool, version, platform), tool.Executable + (platform.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : ""));
+    }
+
+    /// <summary>
     /// Returns the path of the binary of <paramref name="tool"/> <paramref name="version"/> for the current platform
     /// (or <paramref name="platform"/>), installing it first when needed.
     /// </summary>
@@ -72,13 +95,13 @@ internal sealed class ToolInstaller
             throw new DouzeException($"{tool.Name} has no package for the platform '{platform}' (it has {string.Join(", ", tool.Packages.Keys)}): set the path of a {tool.Name} binary");
         }
 
-        if (version.Length == 0 || version.Contains('/', StringComparison.Ordinal) || version.Contains('\\', StringComparison.Ordinal) || version.Contains("..", StringComparison.Ordinal))
+        if (!IsVersion(version))
         {
             throw new DouzeException($"'{version}' is not a version of {tool.Name}");
         }
 
         var folder = GetFolder(tool, version, platform);
-        var executable = Path.Combine(folder, tool.Executable + (platform.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : ""));
+        var executable = GetExecutable(tool, version, platform);
 
         if (File.Exists(Path.Combine(folder, Marker)))
         {

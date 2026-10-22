@@ -50,6 +50,8 @@ internal abstract class CommandStep : Step
     /// </summary>
     public override Hash128 CacheVersion => _cacheVersion;
 
+    public override IEnumerable<Requirement> Requirements(BuildContext context) => CommandRequirements.Create(Definition, context);
+
     public override async ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
     {
         _build = context;
