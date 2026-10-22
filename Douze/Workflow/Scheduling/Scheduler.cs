@@ -516,7 +516,7 @@ internal sealed class Scheduler
             {
                 // Not consumed: passed through at once, without waiting for the step.
                 Run.AddPassedThrough();
-                await Output.WriteAsync(file);
+                await Output.WriteAsync(file, token);
             }
         }
 
@@ -585,10 +585,8 @@ internal sealed class Scheduler
             Run.AddUnits(1);
             Run.UnitsFinal = true;
 
+            // RunUnitAsync publishes the contribution before it writes the outputs.
             await RunUnitAsync(new UnitKey(Name, UnitKey.ReduceUnit), files, Refs(files), (context, ct) => step.ProcessAllAsync(files, context, ct), null, token);
-
-            // Published before the channel completes, so dependents see a complete scope set when they start.
-            ContributionReady.TrySetResult();
         }
 
         private async Task RunGroupAsync(SourceFiles sources, CancellationToken token)
@@ -694,10 +692,10 @@ internal sealed class Scheduler
         }
 
         /// <summary>
-        /// Runs one unit under a work slot: creates its dependency tracker and span, writes its outputs to the channel as
-        /// soon as it is done, and records its result. Failures are reported, not thrown. With the cache, a unit whose
-        /// result key has a result whose dependencies did not change is replayed instead: its outputs (and its
-        /// contribution) come from the cache. A unit that runs stores its result.
+        /// Runs one unit under a work slot: creates its dependency tracker and span, and records its result; then, with
+        /// the slot released, writes its outputs to the channel. Failures are reported, not thrown. With the cache, a
+        /// unit whose result key has a result whose dependencies did not change is replayed instead: its outputs (and
+        /// its contribution) come from the cache. A unit that runs stores its result.
         /// </summary>
         private async Task RunUnitAsync(UnitKey key, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, CancellationToken ct)
         {
@@ -706,74 +704,98 @@ internal sealed class Scheduler
             var slots = Node.Definition.IsCommand ? Context.ProcessSlots : Context.Parallelism;
             await slots.WaitAsync(ct);
 
+            FileList? outputs;
+
             try
             {
-                var replay = _replay;
-                var resultKey = replay == null ? default : ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent, [.. inputFiles.Select(x => x.LastWriteTimeUtc)]);
-
-                if (replay != null && await TryReplayAsync(replay, resultKey, key, inputFiles, inputs, file, ct))
-                {
-                    return;
-                }
-
-                var deps = new DependencyTracker();
-                using var span = Context.Trace.Begin(Name, UnitCategory, key.Unit);
-                var context = new StepContext(Node.Definition, Run.Scopes, Context, deps, span);
-
-                StepOutput output;
-                ScopeSet? contributions;
-
-                try
-                {
-                    output = await body(context, ct);
-                    contributions = Contribute(output);
-                    CheckContents(output, inputFiles);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (Exception e)
-                {
-                    ReportFailure(BuildError.FromException(Name, file, e));
-                    Run.AddUnitDone();
-                    Context.View.StepProgress(Run);
-                    return;
-                }
-
-                var files = output.Files;
-
-                for (var i = 0; i < files.Count; i++)
-                {
-                    await Output.WriteAsync(files[i]);
-                }
-
-                Run.AddOut(files.Count);
-
-                var dependencies = deps.ToSet();
-
-                if (replay != null)
-                {
-                    dependencies = replay.Cache.Intern(dependencies);
-                    await StoreAsync(replay, resultKey, key, inputFiles, files, dependencies, contributions, ct);
-                }
-                else if (!dependencies.IsEmpty)
-                {
-                    dependencies = _scheduler._dependencySets.GetOrAdd(dependencies.Hash, dependencies);
-                }
-
-                Run.AddResult(new UnitResult(key, inputs, [.. files.AsEnumerable().Select(x => x.Ref)], dependencies)
-                {
-                    Files = Context.Options.KeepFiles ? [.. files.AsEnumerable()] : [],
-                });
+                outputs = await ProcessUnitAsync(key, inputFiles, inputs, body, file, ct);
             }
             finally
             {
                 slots.Release();
             }
 
+            if (outputs is not { } files)
+            {
+                return;
+            }
+
+            // Dependents start with the contribution of a reduce step: published as soon as it is known.
+            if (Node.Step.EffectiveShape == StepShape.Reduce)
+            {
+                ContributionReady.TrySetResult();
+            }
+
+            // Written without the slot, which another unit can use meanwhile.
+            for (var i = 0; i < files.Count; i++)
+            {
+                await Output.WriteAsync(files[i], ct);
+            }
+
             Run.AddUnitDone();
             Context.View.StepProgress(Run);
+        }
+
+        /// <summary>
+        /// The part of <see cref="RunUnitAsync"/> under the slot. Returns the outputs to write, or null when the unit is
+        /// done without outputs to write (it failed or was cancelled).
+        /// </summary>
+        private async ValueTask<FileList?> ProcessUnitAsync(UnitKey key, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, CancellationToken ct)
+        {
+            var replay = _replay;
+            var resultKey = replay == null ? default : ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent, [.. inputFiles.Select(x => x.LastWriteTimeUtc)]);
+
+            if (replay != null && await TryReplayAsync(replay, resultKey, key, inputFiles, inputs, file, ct) is (true, var replayed))
+            {
+                return replayed;
+            }
+
+            var deps = new DependencyTracker();
+            using var span = Context.Trace.Begin(Name, UnitCategory, key.Unit);
+            var context = new StepContext(Node.Definition, Run.Scopes, Context, deps, span);
+
+            StepOutput output;
+            ScopeSet? contributions;
+
+            try
+            {
+                output = await body(context, ct);
+                contributions = Contribute(output);
+                CheckContents(output, inputFiles);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return null;
+            }
+            catch (Exception e)
+            {
+                ReportFailure(BuildError.FromException(Name, file, e));
+                Run.AddUnitDone();
+                Context.View.StepProgress(Run);
+                return null;
+            }
+
+            var files = output.Files;
+            Run.AddOut(files.Count);
+
+            var dependencies = deps.ToSet();
+
+            if (replay != null)
+            {
+                dependencies = replay.Cache.Intern(dependencies);
+                await StoreAsync(replay, resultKey, key, inputFiles, files, dependencies, contributions, ct);
+            }
+            else if (!dependencies.IsEmpty)
+            {
+                dependencies = _scheduler._dependencySets.GetOrAdd(dependencies.Hash, dependencies);
+            }
+
+            Run.AddResult(new UnitResult(key, inputs, [.. files.AsEnumerable().Select(x => x.Ref)], dependencies)
+            {
+                Files = Context.Options.KeepFiles ? [.. files.AsEnumerable()] : [],
+            });
+
+            return files;
         }
 
         /// <summary>
@@ -829,20 +851,20 @@ internal sealed class Scheduler
 
         /// <summary>
         /// Replays a unit from the cache when its result key has a result whose dependencies did not change. Returns
-        /// whether it did; the unit is then done.
+        /// whether it did, with the outputs to write, or null when the replay failed (the unit is then done).
         /// </summary>
-        private async ValueTask<bool> TryReplayAsync(ReplayState replay, Hash128 resultKey, UnitKey key, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, FPath? file, CancellationToken ct)
+        private async ValueTask<(bool Replayed, FileList? Outputs)> TryReplayAsync(ReplayState replay, Hash128 resultKey, UnitKey key, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, FPath? file, CancellationToken ct)
         {
             if (!replay.Cache.TryGetUnit(resultKey, out var cached) || cached.Step != Name || cached.Unit != key.Unit)
             {
-                return false;
+                return (false, null);
             }
 
             var dependencies = replay.Cache.GetDependencies(cached);
 
             if (!await replay.IsUnchangedAsync(Name, Run.Scopes, dependencies, ct))
             {
-                return false;
+                return (false, null);
             }
 
             using var span = Context.Trace.Begin(Name, UnitCategory, key.Unit);
@@ -870,12 +892,7 @@ internal sealed class Scheduler
                 ReportFailure(BuildError.FromException(Name, file, e));
                 Run.AddUnitDone();
                 Context.View.StepProgress(Run);
-                return true;
-            }
-
-            foreach (var output in outputs)
-            {
-                await Output.WriteAsync(output);
+                return (true, null);
             }
 
             Run.AddOut(outputs.Length);
@@ -888,9 +905,7 @@ internal sealed class Scheduler
             });
 
             Run.AddUnitReplayed();
-            Run.AddUnitDone();
-            Context.View.StepProgress(Run);
-            return true;
+            return (true, FileList.Of(outputs));
         }
 
         /// <summary>

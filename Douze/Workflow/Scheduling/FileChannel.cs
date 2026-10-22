@@ -18,7 +18,7 @@ internal sealed class FileChannel
 
     public ChannelReader<VirtualFile> Subscribe(string consumer) => _channels[consumer].Reader;
 
-    public ValueTask WriteAsync(VirtualFile file)
+    public ValueTask WriteAsync(VirtualFile file, CancellationToken ct)
     {
         foreach (var channel in _channels.Values)
         {
