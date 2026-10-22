@@ -65,8 +65,17 @@ Every difference is TypeScript 7 printing quick info differently from TypeScript
 | Union members in another order | 4 | 4 |
 | `var Date: new () => Date` where TypeScript 5 prints `DateConstructor` and its overloads | 1 | 1 |
 
-`(+N overloads)` could be restored with a signature help request per call (the count of signatures), if the
-difference matters.
+`(+N overloads)` is now restored: at a call, the step asks the call's signature help for its signatures and adds the
+count (`TwoslashChecker`). On the same data set, with the step's results:
+
+| | Before | With the overload counts |
+|---|---|---|
+| Hover texts, docs and tags identical | 4,676 of 6,308 | 5,512 of 6,308 (the 796 others: `import` lines and `(alias)` printing, which the plugin rewrites, the type and const aliases, union order) |
+| Twoslash blocks byte-identical in the target site's build (English pages) | | 291 of 323, on 55 of 78 pages |
+
+The 32 blocks that still differ are the type and const aliases (the const's meaning first, its documentation, the
+type's union sorted), union members in another order, and the `Date` hover: TypeScript 7's quick info, which the
+step does not rewrite.
 
 ## Timings
 
