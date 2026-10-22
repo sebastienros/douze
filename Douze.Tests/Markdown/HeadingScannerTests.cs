@@ -55,4 +55,12 @@ public class HeadingScannerTests
         Assert.Equal("App\u00a0model", HeadingScanner.TextOf("App\u00a0model".AsSpan()));
         Assert.Equal("appmodel-x", Slugger.Slug("App\u00a0model x"));
     }
+
+    [Fact]
+    public void SkipsElementsWithAClass()
+    {
+        var html = "<h2>Page</h2><div class=\"card not-content\"><h3>Card</h3><div class=\"inner\"><h4>Inner</h4></div></div><h2>After</h2>";
+        Assert.Equal(["Page", "After"], HeadingScanner.Scan(html, ["not-content"]).Select(x => x.Text));
+        Assert.Equal(4, HeadingScanner.Scan(html).Count);
+    }
 }

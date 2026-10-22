@@ -24,7 +24,7 @@ internal static class HeadingScanner
 {
     private static readonly string[] SkippedElements = ["pre", "code", "script", "style", "template", "textarea"];
 
-    public static List<Heading> Scan(string html)
+    public static List<Heading> Scan(string html, IReadOnlyCollection<string>? skipClasses = null)
     {
         var headings = new List<Heading>();
         var i = 0;
@@ -35,6 +35,14 @@ internal static class HeadingScanner
             {
                 var close = html.IndexOf("-->", i + 4, StringComparison.Ordinal);
                 i = close < 0 ? html.Length : close + 3;
+                continue;
+            }
+
+            // An element with one of the skipped classes (a component whose headings are not the page's) is skipped
+            // whole, nested elements of the same name included.
+            if (skipClasses is { Count: > 0 } && SkippedByClass(html, i, skipClasses) is var (skippedName, afterOpen))
+            {
+                i = SkipElement(html, skippedName, afterOpen);
                 continue;
             }
 
@@ -279,6 +287,117 @@ internal static class HeadingScanner
 
         return value.Replace("&", "&amp;", StringComparison.Ordinal).Replace("<", "&lt;", StringComparison.Ordinal)
             .Replace(">", "&gt;", StringComparison.Ordinal).Replace("\"", "&quot;", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// When the tag at <paramref name="i"/> opens an element whose <c>class</c> attribute has one of
+    /// <paramref name="classes"/>: its name and the offset after its <c>&gt;</c>.
+    /// </summary>
+    private static (string Name, int AfterOpen)? SkippedByClass(string html, int i, IReadOnlyCollection<string> classes)
+    {
+        if (i + 1 >= html.Length || !char.IsLetter(html[i + 1]))
+        {
+            return null;
+        }
+
+        var nameEnd = i + 1;
+
+        while (nameEnd < html.Length && !IsNameEnd(html, nameEnd))
+        {
+            nameEnd++;
+        }
+
+        var close = html.IndexOf('>', nameEnd);
+
+        if (close < 0 || html[close - 1] == '/')
+        {
+            return null;
+        }
+
+        var attributes = html.AsSpan(nameEnd, close - nameEnd);
+        var classAttribute = attributes.IndexOf("class=", StringComparison.OrdinalIgnoreCase);
+
+        if (classAttribute < 0)
+        {
+            return null;
+        }
+
+        var valueStart = classAttribute + 6;
+
+        if (valueStart >= attributes.Length)
+        {
+            return null;
+        }
+
+        var quote = attributes[valueStart];
+        ReadOnlySpan<char> value;
+
+        if (quote is '"' or '\'')
+        {
+            var valueEnd = attributes[(valueStart + 1)..].IndexOf(quote);
+            value = valueEnd < 0 ? attributes[(valueStart + 1)..] : attributes.Slice(valueStart + 1, valueEnd);
+        }
+        else
+        {
+            var valueEnd = attributes[valueStart..].IndexOfAny(" \t\n\r");
+            value = valueEnd < 0 ? attributes[valueStart..] : attributes.Slice(valueStart, valueEnd);
+        }
+
+        foreach (var range in value.Split(' '))
+        {
+            var name = value[range];
+
+            foreach (var skipped in classes)
+            {
+                if (name.Equals(skipped, StringComparison.Ordinal))
+                {
+                    return (html.Substring(i + 1, nameEnd - i - 1), close + 1);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The offset after the closing tag of the element <paramref name="name"/> opened before <paramref name="i"/>,
+    /// counting nested elements of the same name; the end of the text when it is not closed.
+    /// </summary>
+    private static int SkipElement(string html, string name, int i)
+    {
+        var depth = 1;
+
+        while (depth > 0 && (i = html.IndexOf('<', i)) >= 0)
+        {
+            if (string.CompareOrdinal(html, i, "</", 0, 2) == 0 && string.Compare(html, i + 2, name, 0, name.Length, StringComparison.OrdinalIgnoreCase) == 0 && IsNameEnd(html, i + 2 + name.Length))
+            {
+                depth--;
+                var close = html.IndexOf('>', i);
+                i = close < 0 ? html.Length : close + 1;
+            }
+            else if (string.Compare(html, i + 1, name, 0, name.Length, StringComparison.OrdinalIgnoreCase) == 0 && IsNameEnd(html, i + 1 + name.Length))
+            {
+                var close = html.IndexOf('>', i);
+
+                if (close < 0)
+                {
+                    return html.Length;
+                }
+
+                if (html[close - 1] != '/')
+                {
+                    depth++;
+                }
+
+                i = close + 1;
+            }
+            else
+            {
+                i++;
+            }
+        }
+
+        return i < 0 ? html.Length : i;
     }
 
     private static string? SkippedElement(string html, int i)

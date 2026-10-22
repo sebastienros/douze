@@ -23,17 +23,19 @@ internal sealed class HeadingsStep : Step, IMapStep
     private readonly string _anchorLabel;
     private readonly string _anchorHtml;
     private readonly string? _wrapperClass;
+    private readonly IReadOnlyList<string> _skipClasses;   // elements with these classes are not the page's content (components)
     private readonly ImmutableArray<int> _levels;
 
     public HeadingsStep(StepDefinition definition) : base(definition)
     {
-        var options = new WithOptions(definition, "anchors", "anchor-class", "anchor-label", "anchor-html", "wrapper-class", "levels");
+        var options = new WithOptions(definition, "anchors", "anchor-class", "anchor-label", "anchor-html", "wrapper-class", "levels", "skip-classes");
 
         _anchors = options.GetBool("anchors");
         _anchorClass = options.GetString("anchor-class", "heading-anchor")!;
         _anchorLabel = options.GetString("anchor-label", "Link to this heading")!;
         _anchorHtml = options.GetString("anchor-html", "#")!;
         _wrapperClass = options.GetString("wrapper-class");
+        _skipClasses = options.GetStrings("skip-classes");
         _levels = ReadLevels(definition);
     }
 
@@ -44,7 +46,7 @@ internal sealed class HeadingsStep : Step, IMapStep
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
         var html = await file.Content.ReadTextAsync(ct);
-        var headings = HeadingScanner.Scan(html);
+        var headings = HeadingScanner.Scan(html, _skipClasses);
 
         if (headings.Count == 0)
         {
