@@ -112,14 +112,18 @@ internal abstract class FileContent
     public abstract ValueTask<Stream> OpenReadAsync(CancellationToken ct);
 
     /// <summary>
-    /// The bytes of the content, to store them: unlike <see cref="ReadBytesAsync"/>, the encoding of a text is not kept.
+    /// The bytes of the content, to store or write them once: unlike <see cref="ReadBytesAsync"/>, a text is encoded into a
+    /// pooled buffer that the caller returns by disposing the result, and its encoding is not kept.
     /// </summary>
-    public virtual ValueTask<ReadOnlyMemory<byte>> ReadBytesForStorageAsync(CancellationToken ct) => ReadBytesAsync(ct);
+    public virtual async ValueTask<PooledBytes> RentBytesAsync(CancellationToken ct) => new(await ReadBytesAsync(ct), null);
 
+    /// <summary>
+    /// Writes the content to <paramref name="destination"/>, without keeping the encoding of a text.
+    /// </summary>
     public async ValueTask CopyToAsync(Stream destination, CancellationToken ct)
     {
-        await using var stream = await OpenReadAsync(ct);
-        await stream.CopyToAsync(destination, ct);
+        using var bytes = await RentBytesAsync(ct);
+        await destination.WriteAsync(bytes.Memory, ct);
     }
 
     protected abstract Hash128 ComputeHash();
@@ -171,7 +175,17 @@ internal abstract class FileContent
             return new ReadOnlyMemoryStream(bytes);
         }
 
-        public override ValueTask<ReadOnlyMemory<byte>> ReadBytesForStorageAsync(CancellationToken ct) => new(_bytes ?? Encoding.UTF8.GetBytes(_text));
+        public override ValueTask<PooledBytes> RentBytesAsync(CancellationToken ct)
+        {
+            if (_bytes is { } bytes)
+            {
+                return new(new PooledBytes(bytes, null));
+            }
+
+            var array = System.Buffers.ArrayPool<byte>.Shared.Rent(Encoding.UTF8.GetByteCount(_text));
+            var length = Encoding.UTF8.GetBytes(_text, array);
+            return new(new PooledBytes(array.AsMemory(0, length), array));
+        }
 
         protected override Hash128 ComputeHash() => Hash128.OfText(_text);
     }
@@ -390,5 +404,21 @@ internal abstract class FileContent
         public override void Flush() { }
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+}
+
+/// <summary>
+/// Bytes that may come from <see cref="System.Buffers.ArrayPool{T}.Shared"/>, returned to it when disposed.
+/// </summary>
+internal readonly struct PooledBytes(ReadOnlyMemory<byte> memory, byte[]? rented) : IDisposable
+{
+    public ReadOnlyMemory<byte> Memory { get; } = memory;
+
+    public void Dispose()
+    {
+        if (rented != null)
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+        }
     }
 }

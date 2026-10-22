@@ -233,8 +233,8 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
 
             if (!Exists(id) && _writing.TryAdd(id, 0))
             {
-                var bytes = await file.Content.ReadBytesForStorageAsync(ct);
-                Append(id, bytes.Span, []);
+                using var bytes = await file.Content.RentBytesAsync(ct);
+                Append(id, bytes.Memory.Span, []);
             }
         }
 
