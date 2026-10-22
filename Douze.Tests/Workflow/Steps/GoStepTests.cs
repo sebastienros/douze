@@ -322,9 +322,11 @@ public sealed partial class GoStepTests : CacheTestBase
         // Any existing file stands for gopls, which does not start.
         await Source.WriteTextFileAsync("/docs/a.md", Fence("var a = 1"));
 
-        var result = await BuildAsync(Workflow(typeof(GoStepTests).Assembly.Location, ("go", NodeValue.Create("/missing/go"))), Options());
+        // A full path, which the message prints as is (a rooted path gets a drive on Windows).
+        var go = Path.Combine(Path.GetTempPath(), "douze-missing-" + Guid.NewGuid().ToString("N"), "go");
+        var result = await BuildAsync(Workflow(typeof(GoStepTests).Assembly.Location, ("go", NodeValue.Create(go))), Options());
 
         // A requirement: the build fails before any unit runs.
-        Assert.Contains("go does not exist at '/missing/go': install Go from https://go.dev/dl, or set the option 'go' of step 'go'", Assert.Single(result.Errors).Message);
+        Assert.Contains($"go does not exist at '{go}': install Go from https://go.dev/dl, or set the option 'go' of step 'go'", Assert.Single(result.Errors).Message);
     }
 }
