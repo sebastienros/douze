@@ -314,7 +314,7 @@ noise, encoded at quality 85), through `images: { inputs: "img/**/*.jpg", uses: 
 
 | Variants | Wall of `images` | Variants per second | Peak RSS |
 |---|---:|---:|---:|
-| `widths: [640, 1280], formats: [webp]`: 400 variants and 200 originals | 2.7 s (3.0 s) | about 150 | 0.85 GB (0.80 GB) |
+| `widths: [640, 1280], formats: [webp]`: 400 variants and 200 originals | 2.7 to 3.0 s | about 140 | 0.8 GB |
 | `widths: [400], formats: [webp]`: 200 variants and 200 originals | 0.5 s | about 400 | 0.47 GB |
 
 The 400 px case matches the NetVips check (about 400 thumbnails per second, 1600x1200 JPEG to 400 px WebP, libvips

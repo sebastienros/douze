@@ -198,7 +198,8 @@ internal static class ImageBuilder
 
             foreach (var width in widths)
             {
-                var processed = processor.Variant(bytes, new ImageVariant(width, target.Name, target.HasQuality ? request.Quality : 0));
+                // The images step processes each source once; the tag and the filters may meet a source in many pages.
+                var processed = processor.Variant(bytes, new ImageVariant(width, target.Name, target.HasQuality ? request.Quality : 0), memoize: !original);
                 var path = FPath.Combine(request.Output, ImageVariant.FileName(name, processed.Width, Hash128.Of(processed.Bytes.Span), target));
 
                 files.Add(new ImageOutput(path, processed.Bytes, target.ContentType));

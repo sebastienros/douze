@@ -118,12 +118,19 @@ internal sealed class ImageProcessor
 
     /// <summary>
     /// Encodes a variant: shrink on load, auto rotation and premultiplied alpha (<c>thumbnail</c>), never wider than the
-    /// source, metadata stripped. Memoized by source content and variant for the build.
+    /// source, metadata stripped. Memoized by source content and variant for the build, unless
+    /// <paramref name="memoize"/> is false (a source processed once, by the <c>images</c> step, would only stay in memory).
     /// </summary>
     /// <exception cref="DouzeException">libvips cannot read the source or encode the variant.</exception>
-    public ProcessedImage Variant(ReadOnlyMemory<byte> source, ImageVariant variant)
+    public ProcessedImage Variant(ReadOnlyMemory<byte> source, ImageVariant variant, bool memoize = true)
     {
         var format = ImageFormats.Encodable(variant.Format) ?? throw new DouzeException($"cannot encode images as '{variant.Format}'; expected {ImageFormats.EncodableNames}");
+
+        if (!memoize)
+        {
+            return Encode(source, variant, format);
+        }
+
         var key = (Hash128.Of(source.Span), variant);
 
         return _variants.GetOrAdd(
