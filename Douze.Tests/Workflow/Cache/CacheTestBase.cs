@@ -22,7 +22,7 @@ public abstract class CacheTestBase : SiteTestBase, IDisposable
     internal async Task<BuildResult> BuildCachedAsync(WorkflowDefinition? workflow = null, bool cache = true)
     {
         var result = await BuildAsync(workflow, Options(cache));
-        Assert.True(result.Succeeded, string.Join(Environment.NewLine, result.Errors));
+        Assert.True(result.Succeeded, string.Join(Environment.NewLine, result.Errors.Select(x => $"{x}\n{x.Exception}")));
         return result;
     }
 

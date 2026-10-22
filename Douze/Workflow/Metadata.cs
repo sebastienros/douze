@@ -14,7 +14,8 @@ internal sealed class Metadata
     private readonly Lock _lock = new();
     private NodeObject? _own;
     private FPath _directory;
-    private Func<(NodeObject Own, FPath Directory)>? _load;
+    // Volatile: cleared once Own and Directory are set, and read without the lock; a reader that sees it null sees them.
+    private volatile Func<(NodeObject Own, FPath Directory)>? _load;
     private Hash128 _hash;
     private volatile bool _hashed;
 

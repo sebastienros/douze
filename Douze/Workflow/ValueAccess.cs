@@ -19,7 +19,7 @@ internal sealed class ValueAccess
 
     public static readonly ValueAccess Untouched = new(whole: false, count: false, [], []);
 
-    private Hash128? _shape;
+    private HashSlot _shape;
 
     public ValueAccess(bool whole, bool count, ImmutableArray<(string Key, ValueAccess Access)> members, ImmutableArray<(int Index, ValueAccess Access)> items)
     {
@@ -49,7 +49,7 @@ internal sealed class ValueAccess
     /// <summary>
     /// A hash of what was read, whatever the values: two lookups that read different parts are different dependencies.
     /// </summary>
-    public Hash128 Shape => _shape ??= ComputeShape();
+    public Hash128 Shape => _shape.Get(this, static x => x.ComputeShape());
 
     /// <summary>
     /// The hash of what was read of <paramref name="node"/>.

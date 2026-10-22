@@ -58,6 +58,11 @@ public class IncrementalEqualsCleanTests : CacheTestBase
 
         var message = $"seed {seed}, edits: {string.Join(" | ", history)}";
 
+        foreach (var file in clean.Outputs.Where(x => incremental.Outputs.Contains(x) is false))
+        {
+            Assert.Fail($"{message}\n{file.Path}:\nclean:       {await cleanOutput.ReadAllTextAsync(file.Path)}\nincremental: {await output.ReadAllTextAsync(file.Path)}");
+        }
+
         Assert.True(clean.Outputs.SequenceEqual(incremental.Outputs), $"{message}\nclean:       {string.Join(", ", clean.Outputs)}\nincremental: {string.Join(", ", incremental.Outputs)}");
 
         foreach (var file in clean.Outputs)

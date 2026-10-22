@@ -39,7 +39,8 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     private readonly Lock _writerLock = new();
     private readonly DateTime _started = DateTime.UtcNow;
 
-    private PackFile? _writer;
+    // Created on first use and read without the lock: volatile, so a reader that sees it sees it constructed.
+    private volatile PackFile? _writer;
 
     private readonly ConcurrentDictionary<BlobId, BlobEntry> _written = new();
     private readonly ConcurrentDictionary<BlobId, byte> _writing = new();
@@ -444,14 +445,21 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
 
     private PackFile GetPack(int index)
     {
-        if (_packs[index] is { } pack)
+        if (Volatile.Read(ref _packs[index]) is { } pack)
         {
             return pack;
         }
 
         lock (_packs)
         {
-            return _packs[index] ??= PackFile.OpenRead(Path.Combine(_directory, PacksFolder, _previous.Packs[index]));
+            if (_packs[index] is { } opened)
+            {
+                return opened;
+            }
+
+            var created = PackFile.OpenRead(Path.Combine(_directory, PacksFolder, _previous.Packs[index]));
+            Volatile.Write(ref _packs[index], created);
+            return created;
         }
     }
 

@@ -16,7 +16,7 @@ internal sealed class SiteScope
     private readonly Lazy<NodeObject>? _load;
     private readonly IReadOnlyDictionary<string, Hash128>? _keys;
     private readonly ConcurrentDictionary<string, Hash128>? _keyHashes;
-    private Hash128? _hash;
+    private HashSlot _hash;
 
     public SiteScope(string source, NodeObject values)
     {
@@ -37,14 +37,14 @@ internal sealed class SiteScope
         Source = source;
         _keys = keyHashes;
         _load = new Lazy<NodeObject>(load, LazyThreadSafetyMode.ExecutionAndPublication);
-        _hash = Hash128.Combine(Hash128.OfText(source), valuesHash);
+        _hash.Set(Hash128.Combine(Hash128.OfText(source), valuesHash));
     }
 
     public string Source { get; }
 
     public NodeObject Values => _values ?? _load!.Value;
 
-    public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Source), NodeHash.Of(Values));
+    public Hash128 Hash => _hash.Get(this, static x => Hash128.Combine(Hash128.OfText(x.Source), NodeHash.Of(x.Values)));
 
     public bool TryGetValue(string key, out Node? value)
     {
@@ -78,7 +78,7 @@ internal sealed class SiteScope
 /// </summary>
 internal sealed record FolderScope(FPath Directory, NodeObject Values)
 {
-    private Hash128? _hash;
+    private HashSlot _hash;
 
     // 'with' expressions must not copy the cached hash.
     private FolderScope(FolderScope original)
@@ -87,7 +87,7 @@ internal sealed record FolderScope(FPath Directory, NodeObject Values)
         Values = original.Values;
     }
 
-    public Hash128 Hash => _hash ??= Hash128.Combine(Hash128.OfText(Directory.FullName), NodeHash.Of(Values));
+    public Hash128 Hash => _hash.Get(this, static x => Hash128.Combine(Hash128.OfText(x.Directory.FullName), NodeHash.Of(x.Values)));
 }
 
 internal enum ScopeKind { Own, Folder, Site, Fallback, None }
@@ -227,21 +227,21 @@ internal sealed class ScopeSet
     /// </summary>
     public bool TryResolve(Metadata meta, string key, NodeObject? fallback, DependencyTracker? deps, out Node? value, out ScopeHit hit)
     {
-        return TryResolve(meta, key, fallback, deps, track: false, out value, out hit, out _);
+        return TryResolveCore(meta, key, fallback, deps, track: false, out value, out hit, out _);
     }
 
     /// <summary>
-    /// Resolves a key like <see cref="TryResolve(Metadata, string, NodeObject?, DependencyTracker?, out Node?, out ScopeHit)"/>,
+    /// Resolves a key like <see cref="TryResolve"/>,
     /// for a template: instead of depending on the whole value, the unit depends on what the template reads of it,
     /// recorded by <paramref name="recorder"/> (null for a value that is not from the scopes, or when nothing is
     /// recorded).
     /// </summary>
     public bool TryResolveTracked(Metadata meta, string key, NodeObject? fallback, DependencyTracker? deps, out Node? value, out AccessRecorder? recorder)
     {
-        return TryResolve(meta, key, fallback, deps, track: true, out value, out _, out recorder);
+        return TryResolveCore(meta, key, fallback, deps, track: true, out value, out _, out recorder);
     }
 
-    private bool TryResolve(Metadata meta, string key, NodeObject? fallback, DependencyTracker? deps, bool track, out Node? value, out ScopeHit hit, out AccessRecorder? recorder)
+    private bool TryResolveCore(Metadata meta, string key, NodeObject? fallback, DependencyTracker? deps, bool track, out Node? value, out ScopeHit hit, out AccessRecorder? recorder)
     {
         recorder = null;
 

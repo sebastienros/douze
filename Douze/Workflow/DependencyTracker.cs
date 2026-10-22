@@ -235,7 +235,7 @@ internal sealed record DependencySet(
 
     public static readonly DependencySet Empty = new([], [], []);
 
-    private Hash128? _hash;
+    private HashSlot _hash;
 
     // 'with' expressions must not copy the cached hash.
     private DependencySet(DependencySet original)
@@ -250,7 +250,7 @@ internal sealed record DependencySet(
     /// <summary>
     /// A hash of every dependency, to share equal sets between units and to check a set once per step.
     /// </summary>
-    public Hash128 Hash => _hash ??= ComputeHash();
+    public Hash128 Hash => _hash.Get(this, static x => x.ComputeHash());
 
     public bool Equals(DependencySet? other)
     {
