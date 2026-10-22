@@ -195,8 +195,7 @@ public sealed partial class TwoslashStepTests : CacheTestBase
         var result = await BuildAsync(await WorkflowAsync(), Options());
 
         var error = Assert.Single(result.Errors);
-        Assert.Contains("/docs/a.html(", error.Message);
-        Assert.Contains("twoslash: errors were thrown in the sample, but not included in an error tag: 2322", error.Message);
+        Assert.Contains("/docs/a.md: twoslash fence 1 ('let count: number = \"one\";'): errors were thrown in the sample, but not included in an error tag: 2322", error.Message);
         Assert.Contains("Expected: // @errors: 2322", error.Message);
     }
 
@@ -208,6 +207,33 @@ public sealed partial class TwoslashStepTests : CacheTestBase
         await BuildCachedAsync(await WorkflowAsync(("handbook", new NodeObject { ["noErrorValidation"] = NodeValue.Create(true) })));
 
         Assert.Single(Nodes(Assert.Single(await ResultsAsync("/docs/a.html")), "error"));
+    }
+
+    [Fact]
+    public async Task HandbookOptions()
+    {
+        await Source.WriteTextFileAsync("/docs/a.md", Fence("""
+            // @noStaticSemanticInfo
+            const a = 1;
+            """) + Fence("""
+            // @keepNotations
+            const b = 1;
+            //    ^?
+            """) + Fence("""
+            // @noErrorsCutted
+            let hidden: number = "x";
+            // ---cut---
+            const c = 1;
+            """));
+
+        await BuildCachedAsync(await WorkflowAsync());
+
+        var results = await ResultsAsync("/docs/a.html");
+        Assert.Empty(Nodes(results[0], "hover"));
+        Assert.Equal("// @keepNotations\nconst b = 1;\n//    ^?", results[1].GetProperty("code").GetString());
+        Assert.Equal((1, 6), Position(Assert.Single(Nodes(results[1], "query"))));
+        Assert.Equal("const c = 1;", results[2].GetProperty("code").GetString());
+        Assert.Empty(Nodes(results[2], "error"));
     }
 
     [Fact]

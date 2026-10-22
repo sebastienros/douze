@@ -209,7 +209,7 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
         return Path.IsPathRooted(_path!) || context.Site.SourceDirectory is not { } source ? Path.GetFullPath(_path!) : Path.GetFullPath(Path.Combine(source, _path!));
     }
 
-    private sealed record Fence(int File, int TagEnd, int Line, string Language, string Code, Hash128 Key);
+    private sealed record Fence(int File, int Index, int TagEnd, string Language, string Code, Hash128 Key);
 
     public async ValueTask<StepOutput> ProcessAllAsync(IReadOnlyList<VirtualFile> files, StepContext context, CancellationToken ct)
     {
@@ -234,10 +234,11 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
 
             texts[i] = text;
 
+            var index = 0;
+
             foreach (var (tagEnd, language, code) in FindFences(text))
             {
-                var line = text.AsSpan(0, tagEnd).Count('\n') + 1;
-                fences.Add(new Fence(i, tagEnd, line, language, code, Hash128.Combine(settingsKey, Hash128.OfStrings([language, code]))));
+                fences.Add(new Fence(i, ++index, tagEnd, language, code, Hash128.Combine(settingsKey, Hash128.OfStrings([language, code]))));
             }
         }
 
@@ -250,10 +251,11 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
         var results = new Dictionary<Hash128, string>();
         var cache = context.Build.Cache;
         var missing = new List<Fence>();
+        var missingKeys = new HashSet<Hash128>();
 
         foreach (var fence in fences)
         {
-            if (results.ContainsKey(fence.Key))
+            if (results.ContainsKey(fence.Key) || missingKeys.Contains(fence.Key))
             {
                 continue;
             }
@@ -262,9 +264,10 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
             {
                 results[fence.Key] = Encoding.UTF8.GetString(memo);
             }
-            else if (!missing.Any(x => x.Key == fence.Key))
+            else
             {
                 missing.Add(fence);
+                missingKeys.Add(fence.Key);
             }
         }
 
@@ -272,6 +275,7 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
         {
             var errors = new List<string>();
             var outcomes = await CheckAsync(missing, shared, context, ct);
+            var byKey = fences.ToLookup(x => x.Key);
 
             for (var i = 0; i < missing.Count; i++)
             {
@@ -283,8 +287,8 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
                 }
                 else
                 {
-                    // Every fence with that code is reported.
-                    errors.AddRange(fences.Where(x => x.Key == missing[i].Key).Select(x => $"{files[x.File].Path}({x.Line}): twoslash: {outcomes[i].Error}"));
+                    // Every fence with that code is reported, by its page's source and its number on the page.
+                    errors.AddRange(byKey[missing[i].Key].Select(x => $"{files[x.File].SourcePath ?? files[x.File].Path}: twoslash fence {x.Index} ('{FirstLine(x.Code)}'): {outcomes[i].Error}"));
                 }
             }
 
@@ -296,10 +300,11 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
         }
 
         var outputs = new VirtualFile[files.Count];
+        var byFile = fences.ToLookup(x => x.File);
 
         for (var i = 0; i < files.Count; i++)
         {
-            var fileFences = fences.Where(x => x.File == i).ToList();
+            var fileFences = byFile[i].ToList();
 
             if (fileFences.Count == 0)
             {
@@ -365,6 +370,12 @@ internal sealed partial class TwoslashStep : Step, IReduceStep
         var root = Path.Combine(build.CacheRoot ?? Path.Combine(Path.GetTempPath(), BuildContext.DefaultCacheFolder), "tools");
         var installer = new ToolInstaller(root, _registry, context.Log);
         return await installer.InstallAsync(NpmTool.Tsrs, _version, ct);
+    }
+
+    private static string FirstLine(string code)
+    {
+        var line = code.Split('\n').FirstOrDefault(x => x.Trim().Length > 0)?.Trim() ?? "";
+        return line.Length > 60 ? line[..57] + "..." : line;
     }
 
     /// <summary>

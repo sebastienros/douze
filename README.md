@@ -584,7 +584,7 @@ TypeScript 7 compiler and language server in Rust, which Douze downloads.
 
 ````yaml
   twoslash: { needs: markdown, uses: twoslash,
-              with: { files: { ".aspire/modules/sdk.mts": data/types/sdk.d.ts },
+              with: { files: { "modules/sdk.mts": data/types/sdk.d.ts },
                       compiler: { moduleResolution: bundler, lib: [es2022, dom] }, handbook: { noErrorValidation: true } } }
 ````
 
@@ -605,7 +605,7 @@ unchanged.
 - `trim` (true): the code is checked as highlighters render it, without trailing spaces and blank lines around it.
   `tab-width` replaces tabs first.
 - A snippet that twoslash would reject (an error its `// @errors` does not list, a query that finds nothing) fails the
-  build with its page and line.
+  build, naming its page, the fence's number on the page and its first line.
 
 All the snippets of a build are checked at once: the snippets that share their compiler options are the files of one
 project (each in its own folder, the `files` shared), checked by one language server whose requests are sent in
