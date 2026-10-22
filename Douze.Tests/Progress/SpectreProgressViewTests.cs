@@ -25,8 +25,9 @@ public class SpectreProgressViewTests
 
     private static string[] Lines(TestConsole console)
     {
-        // Without the escape sequences of the live display; a carriage return starts the line over.
-        var text = Regex.Replace(console.Output, @"\x1b\[[0-9;?]*[A-Za-z]", "");
+        // Without the escape sequences of the live display; a carriage return starts the line over, except in the line
+        // ends of the console on Windows.
+        var text = Regex.Replace(console.Output, @"\x1b\[[0-9;?]*[A-Za-z]", "").Replace("\r\n", "\n", StringComparison.Ordinal);
         return text.Split('\n').Select(x => x[(x.LastIndexOf('\r') + 1)..].TrimEnd()).Where(x => x.Length > 0).ToArray();
     }
 

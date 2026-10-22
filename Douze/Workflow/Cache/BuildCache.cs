@@ -37,9 +37,13 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     private readonly Lock _writerLock = new();
 
     // The results of the previous builds, read from the index or committed by the previous build of a watch session,
-    // the packs that hold their blobs, and whether the index on disk is that one.
+    // the packs that hold their blobs, and whether the index on disk is that one. Packs are opened on first read, under
+    // _packsLock; once the cache is disposed, a read (the content of a replayed file of a finished build) opens its pack
+    // for that read only, so that no handle outlives the cache: an open pack cannot be deleted on Windows.
     private CacheIndex _previous;
     private PackFile?[] _packs;
+    private readonly Lock _packsLock = new();
+    private bool _disposed;
     private bool _persisted = true;
 
     // The start of the build in progress: source files changed less than RacyWindow before it are read again.
@@ -512,7 +516,7 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
         {
             if (_previous.Blobs.TryGetValue(id, out var entry))
             {
-                return GetPack(entry.Location.Pack).Read(entry.Location.Offset, entry.Location.Length);
+                return ReadPack(entry.Location);
             }
 
             if (_written.TryGetValue(id, out entry))
@@ -528,24 +532,27 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
         throw new DouzeException($"the cache '{_directory}' has no {id.Kind.ToString().ToLowerInvariant()} {id.Hash}: build with --no-cache, or delete it");
     }
 
-    private PackFile GetPack(int index)
+    private byte[] ReadPack(BlobLocation location)
     {
-        if (Volatile.Read(ref _packs[index]) is { } pack)
+        if (Volatile.Read(ref _packs[location.Pack]) is not { } pack)
         {
-            return pack;
-        }
-
-        lock (_packs)
-        {
-            if (_packs[index] is { } opened)
+            lock (_packsLock)
             {
-                return opened;
-            }
+                if (_disposed)
+                {
+                    using var closed = PackFile.OpenRead(Path.Combine(_directory, PacksFolder, _previous.Packs[location.Pack]));
+                    return closed.Read(location.Offset, location.Length);
+                }
 
-            var created = PackFile.OpenRead(Path.Combine(_directory, PacksFolder, _previous.Packs[index]));
-            Volatile.Write(ref _packs[index], created);
-            return created;
+                if ((pack = _packs[location.Pack]) == null)
+                {
+                    pack = PackFile.OpenRead(Path.Combine(_directory, PacksFolder, _previous.Packs[location.Pack]));
+                    Volatile.Write(ref _packs[location.Pack], pack);
+                }
+            }
         }
+
+        return pack.Read(location.Offset, location.Length);
     }
 
     /// <summary>
@@ -702,7 +709,10 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
                     index.Blobs[id] = entry with { Location = entry.Location with { Pack = pack } };
                 }
 
-                Array.Resize(ref _packs, index.Packs.Count);
+                lock (_packsLock)
+                {
+                    Array.Resize(ref _packs, index.Packs.Count);
+                }
                 changed = true;
             }
         }
@@ -837,7 +847,7 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
 
             foreach (var (id, entry) in entries.OrderBy(x => x.Value.Location.Pack).ThenBy(x => x.Value.Location.Offset))
             {
-                var bytes = GetPack(entry.Location.Pack).Read(entry.Location.Offset, entry.Location.Length);
+                var bytes = ReadPack(entry.Location);
                 index.Blobs[id] = entry with { Location = new BlobLocation(0, compacted.Append(bytes), bytes.Length) };
             }
 
@@ -879,10 +889,12 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     /// </summary>
     private void Roll(CacheIndex index)
     {
-        ClosePacks();
-
-        _previous = index;
-        _packs = new PackFile?[index.Packs.Count];
+        lock (_packsLock)
+        {
+            ClosePacks();
+            _previous = index;
+            _packs = new PackFile?[index.Packs.Count];
+        }
 
         foreach (var hash in _metadata.Keys)
         {
@@ -924,7 +936,12 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
 
     public void Dispose()
     {
-        ClosePacks();
+        lock (_packsLock)
+        {
+            _disposed = true;
+            ClosePacks();
+        }
+
         _writer?.Dispose();
         _lock.Dispose();
     }

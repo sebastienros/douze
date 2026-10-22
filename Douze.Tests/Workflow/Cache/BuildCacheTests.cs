@@ -107,6 +107,35 @@ public sealed class BuildCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadsAfterDisposeLeaveNoPackOpen()
+    {
+        var input = Input("/a.md");
+        Hash128 key;
+
+        using (var cache = Open())
+        {
+            key = await PutAsync(cache, "/a.md", input, input.With("step", path: "/a.html", content: FileContent.FromText("output")));
+            cache.Save(succeeded: true);
+        }
+
+        VirtualFile restored;
+
+        using (var cache = Open())
+        {
+            Assert.True(cache.TryGetUnit(key, out var unit));
+            restored = cache.Restore(unit.Outputs[0], [input], new Provenance("step", [input.Ref]));
+            Assert.Equal("output", await cache.Restore(unit.Outputs[0], [input], new Provenance("step", [input.Ref])).Content.ReadTextAsync(Ct));
+        }
+
+        // The content of a replayed file stays readable once the build that restored it closed the cache, without
+        // reopening a pack for good: an open file cannot be deleted on Windows. FileShare.None fails on every OS while
+        // a handle is open.
+        Assert.Equal("output", await restored.Content.ReadTextAsync(Ct));
+        Assert.All(Packs, x => File.Open(x, FileMode.Open, FileAccess.ReadWrite, FileShare.None).Dispose());
+        Directory.Delete(_directory, recursive: true);
+    }
+
+    [Fact]
     public async Task BlobsAreVisibleOnlyOnceTheIndexIsSaved()
     {
         Hash128 key;
