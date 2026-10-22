@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.RegularExpressions;
+using Douze.Markdown;
 using Douze.Workflow.Steps;
 using SharpYaml.Model;
 
@@ -9,7 +11,7 @@ namespace Douze.Workflow.Yaml;
 /// Reads a workflow file (<c>douze.yml</c>) and checks its shape (section 4.5 of the workflow engine plan). The
 /// semantic rules, such as unknown needs or cycles, are checked by <see cref="WorkflowGraph.Build"/>.
 /// </summary>
-internal static class WorkflowLoader
+internal static partial class WorkflowLoader
 {
     /// <param name="path">The path of the file on disk.</param>
     /// <param name="fileName">The name used in error locations, such as <c>douze.yml</c> or <c>site/douze.yml</c>.</param>
@@ -30,16 +32,17 @@ internal static class WorkflowLoader
         var yaml = YamlSource.Parse(text, fileName);
         var errors = new List<WorkflowValidationError>();
         var site = SiteSettings.None;
+        MarkdownOptions? markdown = null;
         WorkflowDefinition? workflow = null;
 
         if (YamlSource.IsNull(yaml.Root))
         {
-            return new WorkflowFile(site, null);
+            return new WorkflowFile(site, null, null);
         }
 
         if (yaml.Root is not YamlMapping root)
         {
-            throw new WorkflowValidationException("a workflow file must be a mapping with 'site' and 'steps'", yaml.Location(yaml.Root!));
+            throw new WorkflowValidationException("a workflow file must be a mapping with 'site', 'markdown' and 'steps'", yaml.Location(yaml.Root!));
         }
 
         foreach (var (key, keyNode, value) in yaml.Entries(root, errors))
@@ -50,12 +53,16 @@ internal static class WorkflowLoader
                     site = ReadSite(yaml, value, errors);
                     break;
 
+                case "markdown":
+                    markdown = ReadMarkdown(yaml, value, errors);
+                    break;
+
                 case "steps":
                     workflow = ReadSteps(yaml, value, errors) is { } steps ? new WorkflowDefinition(steps, sourceFile ?? fileName) : null;
                     break;
 
                 default:
-                    errors.Add(new($"unknown key '{key}'; expected 'site' or 'steps'", yaml.Location(keyNode)));
+                    errors.Add(new($"unknown key '{key}'; expected {WorkflowSchema.Expected(WorkflowSchema.TopLevelKeys)}", yaml.Location(keyNode)));
                     break;
             }
         }
@@ -66,7 +73,7 @@ internal static class WorkflowLoader
             throw new WorkflowValidationException([.. errors.OrderBy(x => x.Location?.Line).ThenBy(x => x.Location?.Column)]);
         }
 
-        return new WorkflowFile(site, workflow);
+        return new WorkflowFile(site, markdown, workflow);
     }
 
     private static SiteSettings ReadSite(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)
@@ -88,8 +95,7 @@ internal static class WorkflowLoader
         {
             if (!WorkflowSchema.SiteKeys.Contains(key))
             {
-                var expected = string.Join(", ", WorkflowSchema.SiteKeys[..^1].Select(x => $"'{x}'")) + $" or '{WorkflowSchema.SiteKeys[^1]}'";
-                errors.Add(new($"unknown key '{key}' in 'site'; expected {expected}", yaml.Location(keyNode)));
+                errors.Add(new($"unknown key '{key}' in 'site'; expected {WorkflowSchema.Expected(WorkflowSchema.SiteKeys)}", yaml.Location(keyNode)));
                 continue;
             }
 
@@ -144,6 +150,335 @@ internal static class WorkflowLoader
 
         return site;
     }
+
+    /// <summary>
+    /// Reads the <c>markdown</c> section. <c>markdown:</c> without a value is the same as no section; a section without
+    /// <c>extensions</c> has <see cref="MarkdownOptions.DefaultExtensions"/>.
+    /// </summary>
+    private static MarkdownOptions? ReadMarkdown(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)
+    {
+        if (YamlSource.IsNull(node))
+        {
+            return null;
+        }
+
+        var options = new MarkdownOptions();
+
+        foreach (var (key, _, value) in Section(yaml, node!, "markdown", WorkflowSchema.MarkdownKeys, errors))
+        {
+            switch (key)
+            {
+                case "extensions":
+                    if (ReadNames(yaml, value, "extensions", errors) is not { } extensions)
+                    {
+                        break;
+                    }
+
+                    var valid = true;
+
+                    foreach (var (name, nameNode) in extensions)
+                    {
+                        if (MarkdownPipelineFactory.Validate(name) is { } error)
+                        {
+                            errors.Add(new(error, yaml.Location(nameNode)));
+                            valid = false;
+                        }
+                    }
+
+                    if (valid)
+                    {
+                        options = options with { Extensions = [.. extensions.Select(x => x.Name)] };
+                    }
+
+                    break;
+
+                case "aside":
+                    options = options with { Aside = ReadAside(yaml, value, errors) };
+                    break;
+
+                case "links":
+                    if (ReadBool(yaml, value, "links", errors) is { } links)
+                    {
+                        options = options with { RewriteLinks = links };
+                    }
+
+                    break;
+
+                case "code":
+                    foreach (var (codeKey, _, codeValue) in Section(yaml, value, "markdown.code", WorkflowSchema.CodeKeys, errors))
+                    {
+                        if (codeKey == "class-prefix")
+                        {
+                            if (ReadString(yaml, codeValue, "class-prefix", errors) is { } prefix)
+                            {
+                                options = options with { CodeClassPrefix = prefix };
+                            }
+                        }
+                        else if (ReadNames(yaml, codeValue, "passthrough", errors) is { } passthrough)
+                        {
+                            options = options with { PassthroughLanguages = [.. passthrough.Select(x => x.Name)] };
+                        }
+                    }
+
+                    break;
+
+                case "images":
+                    options = options with { Images = ReadImages(yaml, value, errors) };
+                    break;
+            }
+        }
+
+        return options;
+    }
+
+    private static AsideOptions ReadAside(YamlSource yaml, YamlElement node, List<WorkflowValidationError> errors)
+    {
+        var aside = AsideOptions.Default;
+        var named = new List<(string Kind, YamlElement KeyNode)>();
+
+        foreach (var (key, _, value) in Section(yaml, node, "markdown.aside", WorkflowSchema.AsideKeys, errors))
+        {
+            switch (key)
+            {
+                case "tag" or "class":
+                    if (ReadString(yaml, value, key, errors) is not { } text)
+                    {
+                        break;
+                    }
+
+                    if (!ElementName().IsMatch(text))
+                    {
+                        errors.Add(new($"'{key}' must be {(key == "tag" ? "an HTML element name" : "a class name")}", yaml.Location(value)));
+                        break;
+                    }
+
+                    aside = key == "tag" ? aside with { Tag = text } : aside with { Class = text };
+                    break;
+
+                case "kinds":
+                    if (ReadNames(yaml, value, "kinds", errors) is { } kinds)
+                    {
+                        aside = aside with { Kinds = [.. kinds.Select(x => x.Name.ToLowerInvariant()).Distinct()] };
+                    }
+
+                    break;
+
+                case "titles" or "icons":
+                    if (ReadStringMap(yaml, value, key, errors) is not { } map)
+                    {
+                        break;
+                    }
+
+                    var dictionary = map.ToImmutableDictionary(x => x.Key.ToLowerInvariant(), x => x.Value, StringComparer.Ordinal);
+                    named.AddRange(map.Select(x => (x.Key.ToLowerInvariant(), x.KeyNode)));
+                    aside = key == "titles" ? aside with { Titles = aside.Titles.SetItems(dictionary) } : aside with { Icons = dictionary };
+                    break;
+
+                case "titles-from":
+                    aside = aside with { TitlesFrom = ReadString(yaml, value, key, errors) };
+                    break;
+            }
+        }
+
+        if (aside.Kinds.IsEmpty)
+        {
+            errors.Add(new("'kinds' must list at least one kind", yaml.Location(node)));
+            return aside;
+        }
+
+        foreach (var (kind, keyNode) in named)
+        {
+            if (!aside.Kinds.Contains(kind))
+            {
+                errors.Add(new($"unknown aside kind '{kind}'; expected {WorkflowSchema.Expected(aside.Kinds)}", yaml.Location(keyNode)));
+            }
+        }
+
+        return aside;
+    }
+
+    private static ImageOptions ReadImages(YamlSource yaml, YamlElement node, List<WorkflowValidationError> errors)
+    {
+        var images = ImageOptions.Default;
+
+        foreach (var (key, _, value) in Section(yaml, node, "markdown.images", WorkflowSchema.ImageKeys, errors))
+        {
+            switch (key)
+            {
+                case "widths":
+                    if (ReadNames(yaml, value, "widths", errors) is not { } widths)
+                    {
+                        break;
+                    }
+
+                    var parsed = new List<int>();
+
+                    foreach (var (text, item) in widths)
+                    {
+                        if (!int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var width) || width < 1)
+                        {
+                            errors.Add(new("'widths' must be a list of positive integers", yaml.Location(item)));
+                            break;
+                        }
+
+                        parsed.Add(width);
+                    }
+
+                    images = images with { Widths = [.. parsed.Distinct().Order()] };
+                    break;
+
+                case "formats":
+                    if (ReadNames(yaml, value, "formats", errors) is { } formats)
+                    {
+                        images = images with { Formats = [.. formats.Select(x => x.Name.ToLowerInvariant())] };
+                    }
+
+                    break;
+
+                case "quality":
+                    if (ReadString(yaml, value, key, errors) is { } quality)
+                    {
+                        if (!int.TryParse(quality, NumberStyles.None, CultureInfo.InvariantCulture, out var q) || q is < 1 or > 100)
+                        {
+                            errors.Add(new("'quality' must be an integer from 1 to 100", yaml.Location(value)));
+                            break;
+                        }
+
+                        images = images with { Quality = q };
+                    }
+
+                    break;
+
+                case "output":
+                    images = images with { Output = ReadString(yaml, value, key, errors) };
+                    break;
+
+                case "loading":
+                    if (ReadString(yaml, value, key, errors) is { } loading)
+                    {
+                        if (loading is not ("lazy" or "eager"))
+                        {
+                            errors.Add(new("'loading' must be 'lazy' or 'eager'", yaml.Location(value)));
+                            break;
+                        }
+
+                        images = images with { Loading = loading };
+                    }
+
+                    break;
+            }
+        }
+
+        return images;
+    }
+
+    /// <summary>
+    /// The entries of a mapping section whose keys are in <paramref name="keys"/>, with an error for the others and for
+    /// a section that is not a mapping. Entries without a value are skipped.
+    /// </summary>
+    private static IEnumerable<(string Key, YamlElement KeyNode, YamlElement Value)> Section(YamlSource yaml, YamlElement node, string name, ImmutableArray<string> keys, List<WorkflowValidationError> errors)
+    {
+        if (node is not YamlMapping mapping)
+        {
+            errors.Add(new($"'{name}' must be a mapping", yaml.Location(node)));
+            yield break;
+        }
+
+        foreach (var (key, keyNode, value) in yaml.Entries(mapping, errors))
+        {
+            if (!keys.Contains(key))
+            {
+                errors.Add(new($"unknown key '{key}' in '{name}'; expected {WorkflowSchema.Expected(keys)}", yaml.Location(keyNode)));
+                continue;
+            }
+
+            if (!YamlSource.IsNull(value))
+            {
+                yield return (key, keyNode, value!);
+            }
+        }
+    }
+
+    private static string? ReadString(YamlSource yaml, YamlElement node, string name, List<WorkflowValidationError> errors)
+    {
+        if (YamlSource.Scalar(node) is { } text)
+        {
+            return text;
+        }
+
+        errors.Add(new($"'{name}' must be a string", yaml.Location(node)));
+        return null;
+    }
+
+    private static bool? ReadBool(YamlSource yaml, YamlElement node, string name, List<WorkflowValidationError> errors)
+    {
+        if (YamlSource.Scalar(node) is { } text && bool.TryParse(text, out var value))
+        {
+            return value;
+        }
+
+        errors.Add(new($"'{name}' must be true or false", yaml.Location(node)));
+        return null;
+    }
+
+    /// <summary>
+    /// A string or a list of strings, each with its node.
+    /// </summary>
+    private static List<(string Name, YamlElement Node)>? ReadNames(YamlSource yaml, YamlElement node, string name, List<WorkflowValidationError> errors)
+    {
+        if (YamlSource.Scalar(node) is { } single)
+        {
+            return [(single, node)];
+        }
+
+        if (node is YamlSequence sequence)
+        {
+            var names = new List<(string, YamlElement)>(sequence.Count);
+
+            foreach (var item in sequence)
+            {
+                if (item is null || YamlSource.Scalar(item) is not { } text)
+                {
+                    errors.Add(new($"'{name}' must be a string or a list of strings", yaml.Location(item ?? node)));
+                    return null;
+                }
+
+                names.Add((text, item));
+            }
+
+            return names;
+        }
+
+        errors.Add(new($"'{name}' must be a string or a list of strings", yaml.Location(node)));
+        return null;
+    }
+
+    private static List<(string Key, YamlElement KeyNode, string Value)>? ReadStringMap(YamlSource yaml, YamlElement node, string name, List<WorkflowValidationError> errors)
+    {
+        if (node is not YamlMapping mapping)
+        {
+            errors.Add(new($"'{name}' must be a mapping of kinds to strings", yaml.Location(node)));
+            return null;
+        }
+
+        var entries = new List<(string, YamlElement, string)>();
+
+        foreach (var (key, keyNode, value) in yaml.Entries(mapping, errors))
+        {
+            if (value is null || YamlSource.Scalar(value) is not { } text)
+            {
+                errors.Add(new($"'{name}' must be a mapping of kinds to strings", yaml.Location(value ?? keyNode)));
+                return null;
+            }
+
+            entries.Add((key, keyNode, text));
+        }
+
+        return entries;
+    }
+
+    [GeneratedRegex("^[a-z][a-z0-9_-]*$", RegexOptions.IgnoreCase)]
+    private static partial Regex ElementName();
 
     private static ImmutableArray<StepDefinition>? ReadSteps(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)
     {

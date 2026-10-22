@@ -1,4 +1,5 @@
 using Douze.FileSystems;
+using Douze.Markdown;
 using Douze.Nodes;
 using Douze.Workflow;
 using Douze.Workflow.Yaml;
@@ -49,13 +50,13 @@ public class WorkflowLoaderTests
             steps:
               write: { inputs: "**", uses: write }
             jobs: {}
-            """, "unknown key 'jobs'; expected 'site' or 'steps'", 3, 1);
+            """, "unknown key 'jobs'; expected 'site', 'markdown' or 'steps'", 3, 1);
     }
 
     [Fact]
     public void RootMustBeAMapping()
     {
-        AssertError("- a\n- b\n", "a workflow file must be a mapping with 'site' and 'steps'", 1, 1);
+        AssertError("- a\n- b\n", "a workflow file must be a mapping with 'site', 'markdown' and 'steps'", 1, 1);
     }
 
     [Fact]
@@ -283,6 +284,71 @@ public class WorkflowLoaderTests
         AssertError($"site:\n  {setting}\n", message, 2, column);
     }
 
+    // The markdown section.
+
+    [Fact]
+    public void MarkdownAbsentOrEmpty()
+    {
+        Assert.Null(Load("site:\n  url: https://example.com\n").Markdown);
+        Assert.Null(Load("markdown:\n").Markdown);
+        Assert.Equal(MarkdownOptions.DefaultExtensions, Load("markdown: {}\n").Markdown!.Extensions);
+    }
+
+    [Fact]
+    public void MarkdownValues()
+    {
+        var markdown = Load("""
+            markdown:
+              extensions: [pipetables, alerts]
+              aside: { tag: div, class: callout, kinds: [note, warning], titles: { warning: Attention }, icons: { note: "<svg/>" }, titles-from: i18n }
+              links: false
+              code: { class-prefix: lang-, passthrough: [mermaid, dot] }
+              images: { widths: [1280, 640], formats: webp, quality: 80, output: assets/images, loading: lazy }
+            """).Markdown!;
+
+        Assert.Equal(["pipetables", "alerts"], markdown.Extensions);
+        Assert.Equal("div", markdown.Aside.Tag);
+        Assert.Equal("callout", markdown.Aside.Class);
+        Assert.Equal(["note", "warning"], markdown.Aside.Kinds);
+        Assert.Equal("Attention", markdown.Aside.Title("warning"));
+        Assert.Equal("Note", markdown.Aside.Title("note"));
+        Assert.Equal("<svg/>", markdown.Aside.Icons["note"]);
+        Assert.Equal("i18n", markdown.Aside.TitlesFrom);
+        Assert.False(markdown.RewriteLinks);
+        Assert.Equal("lang-", markdown.CodeClassPrefix);
+        Assert.Equal(["mermaid", "dot"], markdown.PassthroughLanguages);
+        Assert.Equal([640, 1280], markdown.Images.Widths);
+        Assert.Equal(["webp"], markdown.Images.Formats);
+        Assert.Equal(80, markdown.Images.Quality);
+        Assert.Equal("assets/images", markdown.Images.Output);
+        Assert.Equal("lazy", markdown.Images.Loading);
+    }
+
+    [Fact]
+    public void MarkdownUnknownKey()
+    {
+        AssertError("markdown:\n  extension: [pipetables]\n", "unknown key 'extension' in 'markdown'; expected 'extensions', 'aside', 'links', 'code' or 'images'", 2, 3);
+    }
+
+    [Theory]
+    [InlineData("markdown: [a]", "'markdown' must be a mapping", 1, 11)]
+    [InlineData("markdown:\n  extensions: [pipetables, tabels]", "unknown Markdown extension 'tabels'; did you mean 'pipetables'?", 2, 28)]
+    [InlineData("markdown:\n  extensions: [autoidentifiers]", "use the headings step for heading ids", 2, 16)]
+    [InlineData("markdown:\n  extensions: { a: b }", "'extensions' must be a string or a list of strings", 2, 15)]
+    [InlineData("markdown:\n  links: maybe", "'links' must be true or false", 2, 10)]
+    [InlineData("markdown:\n  aside: { color: red }", "unknown key 'color' in 'markdown.aside'; expected 'tag', 'class', 'kinds', 'titles', 'icons' or 'titles-from'", 2, 12)]
+    [InlineData("markdown:\n  aside: { tag: \"<b>\" }", "'tag' must be an HTML element name", 2, 17)]
+    [InlineData("markdown:\n  aside: { titles: { hint: Hint } }", "unknown aside kind 'hint'; expected 'note', 'tip', 'caution' or 'danger'", 2, 22)]
+    [InlineData("markdown:\n  aside: { titles: [a] }", "'titles' must be a mapping of kinds to strings", 2, 20)]
+    [InlineData("markdown:\n  code: { prefix: x }", "unknown key 'prefix' in 'markdown.code'; expected 'class-prefix' or 'passthrough'", 2, 11)]
+    [InlineData("markdown:\n  images: { quality: 101 }", "'quality' must be an integer from 1 to 100", 2, 22)]
+    [InlineData("markdown:\n  images: { widths: [640, big] }", "'widths' must be a list of positive integers", 2, 27)]
+    [InlineData("markdown:\n  images: { loading: soon }", "'loading' must be 'lazy' or 'eager'", 2, 22)]
+    public void InvalidMarkdownValue(string yaml, string message, int line, int column)
+    {
+        AssertError(yaml + "\n", message, line, column);
+    }
+
     [Fact]
     public void EveryErrorIsReportedInFileOrder()
     {
@@ -295,7 +361,7 @@ public class WorkflowLoaderTests
 
         Assert.Equal(
             [
-                "douze.yml(1,1): error: unknown key 'jobs'; expected 'site' or 'steps'",
+                "douze.yml(1,1): error: unknown key 'jobs'; expected 'site', 'markdown' or 'steps'",
                 "douze.yml(3,22): error: 'mode' is only valid with 'run'",
                 "douze.yml(4,3): error: invalid step name 'B': use lowercase letters, digits and dashes",
             ],

@@ -1284,7 +1284,7 @@ item for a bad glob) and are sorted by position. Graph errors, and the option er
 the step's name (`StepDefinition.Location`), since the definition keeps one location per step.
 
 Loader rules:
-- Unknown top-level key: `unknown key 'jobs'; expected 'site' or 'steps'`.
+- Unknown top-level key: `unknown key 'jobs'; expected 'site', 'markdown' or 'steps'`.
 - `steps` not a mapping: `'steps' must be a mapping of step names to steps`.
 - Invalid step name: `invalid step name 'My Step': use lowercase letters, digits and dashes`.
 - Unknown step field: `unknown field 'if' on step 'render'` (the scope guard: no conditions).
@@ -1297,7 +1297,7 @@ Loader rules:
 - Invalid glob: `invalid pattern 'content/[': unterminated character class`.
 - Invalid duration: `invalid timeout '5 minutes'; use 30s, 5m or 1h`.
 - Reserved name: `'source' is a reserved step name`.
-- Also: `a workflow file must be a mapping with 'site' and 'steps'`, `duplicate key 'x'`, `keys must be strings`,
+- Also: `a workflow file must be a mapping with 'site', 'markdown' and 'steps'`, `duplicate key 'x'`, `keys must be strings`,
   `step 'x' must be a mapping of fields`, `step name '...' is longer than 64 characters`, `'mode' must be 'filter',
   'batch' or 'worker'` (and the same for `stderr`), `'uses' must be a string`, `'with' must be a mapping`,
   `'incremental' must be true or false`, `'env' must be a mapping of names to strings`, `unknown key 'x' in 'site';

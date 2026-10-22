@@ -118,7 +118,7 @@ Douze/
     RawRegionExtension.cs        sentinel delimited HTML regions that Markdig emits as they are (3.1)
     AsideExtension.cs            ::: containers and > [!NOTE] alerts rendered as one markup (3.2)
     CodeFenceRenderer.cs         <pre> markup with the fence language and meta (3.2, 3.7)
-    LinkRewriteExtension.cs      .md links to urls, relative links resolved (3.2)
+    LinkRewriter.cs              .md links to urls, relative links resolved (3.2)
     HeadingScanner.cs            headings in rendered HTML: ids, text, depth (3.3)
     Slugger.cs                   GitHub style heading ids, shared by the slug filter (3.3)
   Liquid/
@@ -247,7 +247,7 @@ and the options. Every template of the build is parsed with that one parser.
 ### 2.4 Markdown rendering from tags
 
 Tags and filters render Markdown during a Liquid render (shortcode bodies, `markdownify`, `{% markdown %}`). They
-call `BuildContext.Markdown.Render(markdown, directory, deps, asideTitles)` with the page's directory, tracker and
+call `BuildContext.Markdown.RenderAsync(markdown, directory, deps, asideTitles)` with the page's directory, tracker and
 localized aside titles taken from the ambient values (an aside or a `.md` link inside a shortcode body renders like
 one in the page), which parses with the pipeline and renders with a pooled
 `HtmlRenderer` (Markdig's renderer is not thread safe; `MarkdownRenderer` keeps a `ConcurrentBag` of renderers over
@@ -470,8 +470,8 @@ internal sealed record MarkdownOptions
 
 internal sealed record AsideOptions(string Tag, string Class, ImmutableArray<string> Kinds, IReadOnlyDictionary<string, string> Titles, string? TitlesFrom, IReadOnlyDictionary<string, string> Icons)
 {
-    // BEM markup from Class (default "aside"): <aside aria-label="Note" class="aside aside--note"><p class="aside__title" aria-hidden="true">{icon}Note</p><div class="aside__content">...</div></aside>
-    // Kinds: note, tip, caution, danger. Icons: kind -> inline SVG written before the title (empty by default).
+    // Default: <aside aria-label="Note" class="aside aside--note"><p class="aside__title" aria-hidden="true">{icon}Note</p><div class="aside__content">...</div></aside>;
+    // kinds note, tip, caution, danger. BEM classes derived from `class` (a site sets it to match its styles), Icons: kind -> inline SVG, none by default.
     // TitlesFrom: a data key ("i18n") under which <locale>.aside.<kind> gives the default title of each kind in the page's
     // locale (3.6); the markdown step resolves them per page through the scopes (recorded) and passes them to the render.
 }
@@ -483,8 +483,17 @@ extensions wanted), then adds Douze's extensions in this order:
 `RawRegionExtension` (always), `AsideExtension` (when `alerts` or `customcontainers` is in the list: it replaces the
 HTML renderers of Markdig's `CustomContainer` and alert blocks by one that writes the aside markup with the kind and
 the optional title, `:::note[Title]` syntax parsed from the container's info string), `CodeFenceRenderer` (always),
-`LinkRewriteExtension` (when `RewriteLinks`), and `HeadingAttributes` (ids from `{#id}` only; automatic ids are the
-job of 3.3, so `autoidentifiers` is rejected in the list with the message `use the headings step for heading ids`).
+and the link pass (`LinkRewriter`, when `RewriteLinks`). Ids from `{#id}` come from `attributes` (always applied last,
+so it reaches the parsers of the extensions listed after it); automatic ids are the job of 3.3, so `autoidentifiers`
+is rejected in the list with the message `use the headings step for heading ids`, and `advanced` expands to Markdig's
+set without it.
+
+*As implemented:* without a `markdown:` section the pipeline has no Markdig extension (`MarkdownOptions.None`, the
+rendering of a site without `douze.yml`, so the Sample is unchanged); `markdown: {}` gives `DefaultExtensions`. The
+markdown step folds the options' hash into its `CacheVersion` (the existing per-step key part, read after
+`InitializeAsync`), which is what the state hash of 2.2 would do. Alerts `IMPORTANT` and `WARNING` map to `note` and
+`caution`; another unknown kind is a warning, reported through a callback of the render (`MarkdownWarning`, with the
+line) that the step logs with the file.
 A name Markdig does not know is `douze.yml(12,5): error: unknown Markdown extension 'tabels'; did you mean 'pipetables'?`.
 
 **Fenced code.** `CodeFenceRenderer` replaces Markdig's `CodeBlockRenderer`: a fence renders as
@@ -498,13 +507,13 @@ an indented code block renders as `<pre><code>`. A language in `PassthroughLangu
 `<pre class="mermaid">...escaped...</pre>` with no `<code>` element (the client script reads `.mermaid`). The
 highlighter contract of 3.7 is this markup.
 
-**Links.** `LinkRewriteExtension` runs on `LinkInline` and `LinkReferenceDefinition` urls: a relative url ending in
-`.md` (with optional `#fragment`) becomes the url of that page (`other.md` -> `other/`, `index.md` -> `./`,
-`../a/b.md` -> `../a/b/`; urls are the normalized form of 3.5, without `index.html`), resolved against the page's
-directory when the url is relative, and left as is when the target does not exist in the source tree (checked through
-the source file system; the lookup records a dependency on the path, `DependencyTracker.RecordAbsent` (2.2), so
-creating the file later re-renders the page). Absolute urls, mailto and
-anchors are untouched. The extension reads the page's directory from `MarkdownRenderer.Render(markdown, FPath? directory)`.
+**Links.** `LinkRewriter` is a pass over the parsed document's `LinkInline`s (reference links included), between
+parsing and rendering, since the source file system is asynchronous: a relative url ending in `.md` (with optional
+`?query` and `#fragment`) is resolved against the page's source directory and becomes the root relative url of that
+page with the default permalink rules, without `index.html` (`other.md` -> `/docs/other/`, `index.md` -> `/docs/`,
+`../a/b.md` -> `/a/b/`), and is left as is when the target is not a file of the content folder (the lookup records
+`RecordTemplate(path, DependencySet.Absent)`, so creating the file later re-renders the page). A target's own
+`permalink` is not followed. Absolute and root relative urls, mailto, anchors and images are untouched.
 
 `Douze/Markdown/MarkdownRenderer.cs`
 
@@ -513,7 +522,11 @@ internal sealed class MarkdownRenderer
 {
     public MarkdownRenderer(MarkdownOptions options, IFileSystem source, FPath contentFolder);
     public MarkdownPipeline Pipeline { get; }
-    public string Render(string markdown, FPath? directory, DependencyTracker? deps, IReadOnlyDictionary<string, string>? asideTitles = null);   // pooled HtmlRenderer; raw regions resolved; U+001E stripped
+    public MarkdownOptions Options { get; }
+    public MarkdownRenderer WithExtensions(ImmutableArray<string> extensions);   // the override of a markdown step
+    // Pooled HtmlRenderer; raw regions written as they are; U+001E left after parsing (not delimiting a region) removed
+    // from the output. Async because the link pass reads the source file system.
+    public ValueTask<string> RenderAsync(string markdown, FPath? directory, DependencyTracker? deps, IReadOnlyDictionary<string, string>? asideTitles = null, Action<MarkdownWarning>? warn = null);
 }
 ```
 
@@ -563,17 +576,17 @@ renders `toc` as nested `<ul>` with `with.levels` applied again: `{{ toc | toc: 
 `Douze/Markdown/HeadingScanner.cs`
 
 ```csharp
-internal readonly record struct Heading(int Depth, string Text, string? Id, int Start, int End, int OpenTagEnd);   // offsets in the HTML
+internal readonly record struct Heading(int Depth, string Text, string? Id, int Start, int OpenTagEnd, int CloseStart, int End);   // offsets in the HTML
 internal static class HeadingScanner
 {
     public static List<Heading> Scan(string html);
-    public static string Rewrite(string html, IReadOnlyList<Heading> headings, Func<Heading, string> id, Func<Heading, string?> append);   // one pass, ZString builder
+    public static string Rewrite(string html, IReadOnlyList<Heading> headings, Func<Heading, string?> id, Func<Heading, string?> append);   // one pass, ZString builder
 }
 
 internal static class Slugger
 {
     public static string Slug(string text);                      // GitHub rules above
-    public sealed class Scope { public string Unique(string slug); }   // dedupe with -1, -2
+    public sealed class Scope { public void Reserve(string id); public string Unique(string slug); }   // dedupe with -1, -2; ids the page sets are reserved first; an empty slug is "heading"
 }
 ```
 

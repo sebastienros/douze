@@ -1,70 +1,88 @@
-using Cysharp.Text;
+using System.Collections.Immutable;
 using Douze.FileSystems;
+using Douze.Markdown;
 using Douze.Nodes;
-using Markdig;
-using Markdig.Renderers;
+using Douze.Progress;
 
 namespace Douze.Workflow.Steps;
 
 /// <summary>
-/// <c>uses: markdown</c>. Renders Markdown to HTML and changes the extension to <c>.html</c>, so that later steps match
-/// the result on <c>**/*.html</c> and its content type is <c>text/html</c>. <c>with.extensions</c>: <c>none</c> (default), <c>advanced</c>, or a list of Markdig
-/// extension names (<c>pipetables</c>, <c>footnotes</c>, ...).
+/// <c>uses: markdown</c>. Renders Markdown to HTML with the site's pipeline (the <c>markdown</c> section of
+/// <c>douze.yml</c>, <see cref="BuildContext.Markdown"/>) and changes the extension to <c>.html</c>, so that later
+/// steps match the result on <c>**/*.html</c> and its content type is <c>text/html</c>. A file whose <c>markdown</c>
+/// resolves to <c>false</c> (front matter, or folder or site data) passes through as it is. <c>with.extensions</c>
+/// (<c>none</c>, <c>advanced</c>, or a list of Markdig extension names) replaces the extensions of the site's pipeline
+/// for this step, keeping its other options.
 /// </summary>
 internal sealed class MarkdownStep : Step, IMapStep
 {
+    /// <summary>
+    /// The key that turns Markdown off for a file: <c>markdown: false</c>.
+    /// </summary>
+    public const string OptOutKey = "markdown";
+
     private static readonly GlobSet MarkdownFiles = GlobSet.Parse(["**/*.md"]);
 
-    private readonly MarkdownPipeline _pipeline;
+    private readonly ImmutableArray<string>? _extensions;
+    private MarkdownRenderer? _renderer;
 
     public MarkdownStep(StepDefinition definition) : base(definition)
     {
         _ = new WithOptions(definition, "extensions");
 
-        var builder = new MarkdownPipelineBuilder();
-
-        if (definition.With["extensions"] is { } extensions)
+        if (definition.With["extensions"] is not { } extensions)
         {
-            var names = extensions switch
-            {
-                NodeValue<string> s => s.Value,
-                NodeArray array when array.All(x => x is NodeValue<string>) => string.Join('+', array.Select(x => ((NodeValue<string>)x!).Value)),
-                _ => throw new WorkflowValidationException($"option 'extensions' of step '{Name}' must be a string or a list of strings", definition.Location),
-            };
-
-            if (names != "none")
-            {
-                try
-                {
-                    builder.Configure(names);
-                }
-                catch (ArgumentException e)
-                {
-                    throw new WorkflowValidationException($"option 'extensions' of step '{Name}': {e.Message}", definition.Location);
-                }
-            }
+            return;
         }
 
-        _pipeline = builder.Build();
+        ImmutableArray<string> names = extensions switch
+        {
+            NodeValue<string> s => [.. s.Value.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
+            NodeArray array when array.All(x => x is NodeValue<string>) => [.. array.Select(x => ((NodeValue<string>)x!).Value)],
+            _ => throw new WorkflowValidationException($"option 'extensions' of step '{Name}' must be a string or a list of strings", definition.Location),
+        };
+
+        var errors = names.Select(MarkdownPipelineFactory.Validate).OfType<string>().ToList();
+
+        if (errors.Count > 0)
+        {
+            throw new WorkflowValidationException([.. errors.Select(x => new WorkflowValidationError($"option 'extensions' of step '{Name}': {x}", definition.Location))]);
+        }
+
+        _extensions = names;
     }
 
     public override StepShape NativeShape => StepShape.Map;
 
     public override GlobSet DefaultMatch => MarkdownFiles;
 
+    /// <summary>
+    /// The Markdown options: a result rendered with other options is not reused.
+    /// </summary>
+    public override Hash128 CacheVersion => _renderer?.Options.Hash ?? Hash128.Empty;
+
+    public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
+    {
+        _renderer = _extensions is { } extensions ? context.Markdown.WithExtensions(extensions) : context.Markdown;
+        return default;
+    }
+
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
-        var markdown = await file.Content.ReadTextAsync(ct);
-        var document = Markdown.Parse(markdown, _pipeline);
+        if (context.Scopes.TryResolve(file.Metadata, OptOutKey, null, context.Dependencies, out var optOut, out _) && optOut is NodeValue<bool> { Value: false })
+        {
+            return FileList.Of(file);
+        }
 
-        using var writer = new ZStringWriter();
-        var renderer = new HtmlRenderer(writer);
-        _pipeline.Setup(renderer);
-        renderer.Render(document);
-        writer.Flush();
+        var renderer = _renderer ?? context.Build.Markdown;
+        var markdown = await file.Content.ReadTextAsync(ct);
+        var source = file.SourcePath ?? file.Path;
+
+        var html = await renderer.RenderAsync(markdown, file.Metadata.Directory, context.Dependencies,
+            warn: warning => context.Log(LogLevel.Warning, $"{source}({warning.Line},{warning.Column}): {warning.Message}"));
 
         var path = new FPath(Path.ChangeExtension(file.Path.FullName, ".html"));
 
-        return FileList.Of(file.With(Name, path: path, content: FileContent.FromText(writer.ToString())));
+        return FileList.Of(file.With(Name, path: path, content: FileContent.FromText(html)));
     }
 }

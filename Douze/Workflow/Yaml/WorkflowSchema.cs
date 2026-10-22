@@ -16,9 +16,25 @@ internal static partial class WorkflowSchema
 {
     public const int MaxStepNameLength = 64;
 
-    public static readonly ImmutableArray<string> TopLevelKeys = ["site", "steps"];
+    public static readonly ImmutableArray<string> TopLevelKeys = ["site", "markdown", "steps"];
 
     public static readonly ImmutableArray<string> SiteKeys = ["content", "data", "includes", "output", "url", "parallelism"];
+
+    public static readonly ImmutableArray<string> MarkdownKeys = ["extensions", "aside", "links", "code", "images"];
+
+    public static readonly ImmutableArray<string> AsideKeys = ["tag", "class", "kinds", "titles", "icons", "titles-from"];
+
+    public static readonly ImmutableArray<string> CodeKeys = ["class-prefix", "passthrough"];
+
+    public static readonly ImmutableArray<string> ImageKeys = ["widths", "formats", "quality", "output", "loading"];
+
+    /// <summary>
+    /// The keys as a message lists them: <c>'a', 'b' or 'c'</c>.
+    /// </summary>
+    public static string Expected(ImmutableArray<string> keys)
+    {
+        return keys.Length == 1 ? $"'{keys[0]}'" : string.Join(", ", keys[..^1].Select(x => $"'{x}'")) + $" or '{keys[^1]}'";
+    }
 
     /// <summary>
     /// The step fields, in the order <see cref="ToYaml"/> writes them.
