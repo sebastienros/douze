@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Douze.CodeHover;
 using Douze.Progress;
 
 namespace Douze.Twoslash;
@@ -11,18 +12,6 @@ namespace Douze.Twoslash;
 /// A snippet to check: its code (with <c>\n</c> line ends) and its fence language.
 /// </summary>
 internal sealed record TwoslashSnippet(string Code, string Language);
-
-/// <summary>
-/// What checking a snippet gave: a result, why twoslash would reject it, or both (errors that its <c>// @errors</c>
-/// does not list).
-/// </summary>
-internal sealed record TwoslashOutcome(TwoslashResult? Result, string? Error);
-
-/// <summary>
-/// A file every snippet sees next to its own files, at <see cref="Path"/> relative to the snippet's folder (such as
-/// a declaration file that the snippets import).
-/// </summary>
-internal sealed record SharedFile(string Path, byte[] Content);
 
 /// <summary>
 /// What every snippet of a check shares: the compiler options (tsconfig names to JSON values) under the snippets' own,
@@ -65,9 +54,6 @@ internal sealed partial class TwoslashChecker
     // constructor of `new X`), unless they follow a dot.
     private static readonly HashSet<string> SkippedWords = new(StringComparer.Ordinal) { "this", "super", "new", "true", "false", "null", "constructor", "import" };
 
-    // The requests a language server is sent at once, at most.
-    private const int MaxInFlight = 512;
-
     [GeneratedRegex(@"\bdeclare\s+(global|module)\b")]
     private static partial Regex GlobalDeclaration();
 
@@ -108,9 +94,9 @@ internal sealed partial class TwoslashChecker
     /// Checks <paramref name="snippets"/> and returns their outcomes in the same order.
     /// </summary>
     /// <exception cref="DouzeException">A language server failed: no outcome is known.</exception>
-    public async Task<IReadOnlyList<TwoslashOutcome>> CheckAsync(IReadOnlyList<TwoslashSnippet> snippets, CancellationToken ct)
+    public async Task<IReadOnlyList<CodeOutcome>> CheckAsync(IReadOnlyList<TwoslashSnippet> snippets, CancellationToken ct)
     {
-        var outcomes = new TwoslashOutcome?[snippets.Count];
+        var outcomes = new CodeOutcome?[snippets.Count];
         var groups = new SortedDictionary<string, List<Prepared>>(StringComparer.Ordinal);
 
         for (var i = 0; i < snippets.Count; i++)
@@ -129,7 +115,7 @@ internal sealed partial class TwoslashChecker
             }
             catch (TwoslashException e)
             {
-                outcomes[i] = new TwoslashOutcome(null, e.Message);
+                outcomes[i] = new CodeOutcome(null, e.Message);
             }
         }
 
@@ -204,7 +190,7 @@ internal sealed partial class TwoslashChecker
         return new Prepared(index, snippet, markup, options);
     }
 
-    private async Task CheckGroupAsync(List<Prepared> group, string folder, TwoslashOutcome?[] outcomes, CancellationToken ct)
+    private async Task CheckGroupAsync(List<Prepared> group, string folder, CodeOutcome?[] outcomes, CancellationToken ct)
     {
         var resolveJson = group[0].Options.TryGetValue("resolveJsonModule", out var resolve) && resolve == "true";
         var checkedFiles = new List<string>();
@@ -240,14 +226,12 @@ internal sealed partial class TwoslashChecker
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(_timeout);
 
-        var server = LspConnection.Start(new ProcessStartInfo(_executable) { ArgumentList = { "--lsp", "--stdio" }, WorkingDirectory = folder }, Path.GetFileNameWithoutExtension(_executable));
+        var server = LspClient.Start(new ProcessStartInfo(_executable) { ArgumentList = { "--lsp", "--stdio" }, WorkingDirectory = folder }, Path.GetFileNameWithoutExtension(_executable));
 
         try
         {
-            await InitializeAsync(server, folder, timeout.Token);
-
-            using var inFlight = new SemaphoreSlim(MaxInFlight, MaxInFlight);
-            var results = await Task.WhenAll(group.Select((prepared, n) => CheckSnippetAsync(server, inFlight, folder, n, prepared, timeout.Token)));
+            await server.InitializeAsync(folder, "twoslash", null, timeout.Token);
+            var results = await Task.WhenAll(group.Select((prepared, n) => CheckSnippetAsync(server, folder, n, prepared, timeout.Token)));
 
             for (var n = 0; n < group.Count; n++)
             {
@@ -263,7 +247,7 @@ internal sealed partial class TwoslashChecker
         }
         finally
         {
-            await server.CloseAsync(TimeSpan.FromSeconds(10));
+            await server.ShutdownAsync(TimeSpan.FromSeconds(10));
         }
     }
 
@@ -287,55 +271,12 @@ internal sealed partial class TwoslashChecker
         return json.ToString();
     }
 
-    private static async Task InitializeAsync(LspConnection server, string folder, CancellationToken ct)
-    {
-        var uri = new Uri(Path.TrimEndingDirectorySeparator(folder) + Path.DirectorySeparatorChar).AbsoluteUri.TrimEnd('/');
-
-        await server.RequestAsync("initialize", writer =>
-        {
-            writer.WriteStartObject();
-            writer.WriteNumber("processId", Environment.ProcessId);
-            writer.WriteString("rootUri", uri);
-            writer.WriteStartArray("workspaceFolders");
-            writer.WriteStartObject();
-            writer.WriteString("uri", uri);
-            writer.WriteString("name", "twoslash");
-            writer.WriteEndObject();
-            writer.WriteEndArray();
-            writer.WriteStartObject("capabilities");
-            writer.WriteStartObject("general");
-            writer.WriteStartArray("positionEncodings");
-            writer.WriteStringValue("utf-16");
-            writer.WriteEndArray();
-            writer.WriteEndObject();
-            writer.WriteStartObject("textDocument");
-            writer.WriteStartObject("hover");
-            writer.WriteStartArray("contentFormat");
-            writer.WriteStringValue("markdown");
-            writer.WriteEndArray();
-            writer.WriteEndObject();
-            writer.WriteStartObject("diagnostic");
-            writer.WriteEndObject();
-            writer.WriteStartObject("completion");
-            writer.WriteEndObject();
-            writer.WriteEndObject();
-            writer.WriteEndObject();
-            writer.WriteEndObject();
-        }, ct);
-
-        await server.NotifyAsync("initialized", static w =>
-        {
-            w.WriteStartObject();
-            w.WriteEndObject();
-        });
-    }
-
     /// <summary>
     /// Fails the project when the server reported errors in its tsconfig (an invalid compiler option value).
     /// </summary>
-    private static void ThrowOnConfigurationErrors(LspConnection server, string folder)
+    private static void ThrowOnConfigurationErrors(LspClient server, string folder)
     {
-        foreach (var (uri, published) in server.PushedDiagnostics)
+        foreach (var (uri, published) in server.Connection.PushedDiagnostics)
         {
             if (!uri.EndsWith("/tsconfig.json", StringComparison.Ordinal) || !published.TryGetProperty("diagnostics", out var items))
             {
@@ -354,7 +295,7 @@ internal sealed partial class TwoslashChecker
         }
     }
 
-    private async Task<TwoslashOutcome> CheckSnippetAsync(LspConnection server, SemaphoreSlim inFlight, string folder, int n, Prepared prepared, CancellationToken ct)
+    private async Task<CodeOutcome> CheckSnippetAsync(LspClient server, string folder, int n, Prepared prepared, CancellationToken ct)
     {
         var markup = prepared.Markup;
         var handbook = markup.Handbook;
@@ -381,7 +322,7 @@ internal sealed partial class TwoslashChecker
                         continue;
                     }
 
-                    hovers.Add((file, word, HoverAsync(server, inFlight, file, word, ct)));
+                    hovers.Add((file, word, HoverAsync(server, file, word, ct)));
                 }
             }
         }
@@ -397,7 +338,7 @@ internal sealed partial class TwoslashChecker
 
             var file = FileAt(files, query);
             var word = file?.Words.Cast<IdentifierScanner.Word?>().FirstOrDefault(x => file.File.Offset + x!.Value.Start <= query && query <= file.File.Offset + x.Value.Start + x.Value.Length);
-            queries.Add((query, file, word, file != null && word != null ? HoverAsync(server, inFlight, file, word.Value, ct) : null));
+            queries.Add((query, file, word, file != null && word != null ? HoverAsync(server, file, word.Value, ct) : null));
         }
 
         var completions = new List<(int Position, Task<(List<CompletionEntry> Entries, string Prefix)> Entries)>();
@@ -411,10 +352,10 @@ internal sealed partial class TwoslashChecker
                 return Failure($"the completion query (^|) on line {LineOf(markup.Code, target) + 2} is in a removed range");
             }
 
-            completions.Add((target, CompletionsAsync(server, inFlight, file, markup.Code, target, ct)));
+            completions.Add((target, CompletionsAsync(server, file, markup.Code, target, ct)));
         }
 
-        var diagnostics = handbook.NoErrors ? [] : files.Select(file => (file, DiagnosticsAsync(server, inFlight, file, ct))).ToList();
+        var diagnostics = handbook.NoErrors ? [] : files.Select(file => (file, DiagnosticsAsync(server, file, ct))).ToList();
 
         // The nodes, in the order twoslash creates them: tags, hovers, queries, highlights, completions, errors.
         var nodes = new List<TwoslashNode>(markup.Tags);
@@ -477,13 +418,13 @@ internal sealed partial class TwoslashChecker
             var expected = $"// @errors: {string.Join(' ', errors.Select(x => x.Code).Distinct())}";
             var details = string.Join("; ", unexpected.Select(x => $"[{x.Code}] {x.Filename}:{x.Start} - {x.Text}"));
             // The result is kept: a step that only warns renders the errors.
-            return new TwoslashOutcome(Finish(markup, nodes), $"errors were thrown in the sample, but not included in an error tag: {string.Join(' ', unexpected.Select(x => x.Code).Distinct())}. "
+            return new CodeOutcome(Finish(markup, nodes), $"errors were thrown in the sample, but not included in an error tag: {string.Join(' ', unexpected.Select(x => x.Code).Distinct())}. "
                 + (handbook.Errors.Count > 0 ? $"The existing annotation specified {string.Join(' ', handbook.Errors)}" : $"Expected: {expected}") + $". Compiler errors: {details}");
         }
 
-        return new TwoslashOutcome(Finish(markup, nodes), null);
+        return new CodeOutcome(Finish(markup, nodes), null);
 
-        static TwoslashOutcome Failure(string message) => new(null, message);
+        static CodeOutcome Failure(string message) => new(null, message);
     }
 
     private sealed record CheckedFile(SnippetFile File, string Uri, PositionConverter Positions, List<IdentifierScanner.Word> Words);
@@ -504,79 +445,40 @@ internal sealed partial class TwoslashChecker
         };
     }
 
-    private static async Task<QuickInfo?> HoverAsync(LspConnection server, SemaphoreSlim inFlight, CheckedFile file, IdentifierScanner.Word word, CancellationToken ct)
+    private static async Task<QuickInfo?> HoverAsync(LspClient server, CheckedFile file, IdentifierScanner.Word word, CancellationToken ct)
     {
         var (line, character) = file.Positions.ToPosition(word.Start);
-        var result = await RequestAsync(server, inFlight, "textDocument/hover", writer => WritePosition(writer, file.Uri, line, character, null), ct);
-
-        if (result.ValueKind != JsonValueKind.Object
-            || !result.TryGetProperty("contents", out var contents)
-            || !contents.TryGetProperty("value", out var value))
-        {
-            return null;
-        }
-
-        // The quick info must be about this word: not about what contains it (the constructor of `new X`).
-        if (result.TryGetProperty("range", out var range))
-        {
-            var start = ReadPosition(range.GetProperty("start"));
-            var end = ReadPosition(range.GetProperty("end"));
-
-            if ((line, character).CompareTo(start) < 0 || (line, character).CompareTo(end) > 0)
-            {
-                return null;
-            }
-        }
-
-        return QuickInfo.Parse(value.GetString() ?? "");
+        return await server.HoverAsync(file.Uri, line, character, ct) is { } markdown ? QuickInfo.Parse(markdown) : null;
     }
 
-    private static async Task<List<TwoslashNode>> DiagnosticsAsync(LspConnection server, SemaphoreSlim inFlight, CheckedFile file, CancellationToken ct)
+    private static async Task<List<TwoslashNode>> DiagnosticsAsync(LspClient server, CheckedFile file, CancellationToken ct)
     {
-        var result = await RequestAsync(server, inFlight, "textDocument/diagnostic", writer =>
-        {
-            writer.WriteStartObject();
-            writer.WriteStartObject("textDocument");
-            writer.WriteString("uri", file.Uri);
-            writer.WriteEndObject();
-            writer.WriteEndObject();
-        }, ct);
-
         var errors = new List<TwoslashNode>();
 
-        if (result.ValueKind != JsonValueKind.Object || !result.TryGetProperty("items", out var items))
-        {
-            return errors;
-        }
-
-        foreach (var item in items.EnumerateArray())
+        foreach (var diagnostic in await server.DiagnosticsAsync(file.Uri, ct))
         {
             // Suggestions (hints) are not part of the semantic and syntactic diagnostics twoslash reports.
-            var severity = item.TryGetProperty("severity", out var s) ? s.GetInt32() : 1;
-
-            if (severity is < 1 or > 3)
+            if (diagnostic.Severity is < 1 or > 3)
             {
                 continue;
             }
 
-            var range = item.GetProperty("range");
-            var start = ToIndex(file.Positions, ReadPosition(range.GetProperty("start")));
-            var end = ToIndex(file.Positions, ReadPosition(range.GetProperty("end")));
-            var code = item.TryGetProperty("code", out var c) ? c.ValueKind == JsonValueKind.Number ? c.GetInt32() : int.TryParse(c.GetString(), CultureInfo.InvariantCulture, out var parsed) ? parsed : 0 : 0;
+            var start = ToIndex(file.Positions, diagnostic.Start);
+            var end = ToIndex(file.Positions, diagnostic.End);
 
             errors.Add(new TwoslashNode(TwoslashNodeType.Error, file.File.Offset + start, end - start)
             {
-                Code = code,
+                Code = int.TryParse(diagnostic.Code, CultureInfo.InvariantCulture, out var code) ? code : 0,
                 Filename = file.File.Name,
-                Text = item.GetProperty("message").GetString(),
-                Level = severity switch { 1 => "error", 2 => "warning", _ => "message" },
+                Text = diagnostic.Message,
+                Level = diagnostic.Severity switch { 1 => "error", 2 => "warning", _ => "message" },
             });
         }
 
         return errors;
     }
 
-    private static async Task<(List<CompletionEntry>, string)> CompletionsAsync(LspConnection server, SemaphoreSlim inFlight, CheckedFile file, string code, int target, CancellationToken ct)
+    private static async Task<(List<CompletionEntry>, string)> CompletionsAsync(LspClient server, CheckedFile file, string code, int target, CancellationToken ct)
     {
         var prefix = CompletionPrefix().Match(code[..target]) is { Success: true } match ? match.Value : "";
         var offset = target - file.File.Offset;
@@ -624,7 +526,7 @@ internal sealed partial class TwoslashChecker
 
         async Task<(List<CompletionEntry>, int?)> CompletionRequestAsync(int line, int character, string? trigger)
         {
-            var result = await RequestAsync(server, inFlight, "textDocument/completion", writer => WritePosition(writer, file.Uri, line, character, trigger), ct);
+            var result = await server.RequestAsync("textDocument/completion", writer => LspClient.WritePosition(writer, file.Uri, line, character, trigger), ct);
             var items = result.ValueKind == JsonValueKind.Array ? result
                 : result.ValueKind == JsonValueKind.Object && result.TryGetProperty("items", out var list) ? list : default;
             var found = new List<CompletionEntry>();
@@ -649,7 +551,7 @@ internal sealed partial class TwoslashChecker
 
                     if (range.ValueKind == JsonValueKind.Object)
                     {
-                        start = file.File.Offset + ToIndex(file.Positions, ReadPosition(range.GetProperty("start")));
+                        start = file.File.Offset + ToIndex(file.Positions, LspClient.ReadPosition(range.GetProperty("start")));
                     }
                 }
             }
@@ -679,45 +581,6 @@ internal sealed partial class TwoslashChecker
         25 => "type parameter",
         _ => "",
     };
-
-    private static async Task<JsonElement> RequestAsync(LspConnection server, SemaphoreSlim inFlight, string method, Action<Utf8JsonWriter> writeParams, CancellationToken ct)
-    {
-        await inFlight.WaitAsync(ct);
-
-        try
-        {
-            return await server.RequestAsync(method, writeParams, ct);
-        }
-        finally
-        {
-            inFlight.Release();
-        }
-    }
-
-    private static void WritePosition(Utf8JsonWriter writer, string uri, int line, int character, string? trigger)
-    {
-        writer.WriteStartObject();
-        writer.WriteStartObject("textDocument");
-        writer.WriteString("uri", uri);
-        writer.WriteEndObject();
-        writer.WriteStartObject("position");
-        writer.WriteNumber("line", line);
-        writer.WriteNumber("character", character);
-        writer.WriteEndObject();
-
-        if (trigger != null)
-        {
-            writer.WriteStartObject("context");
-            writer.WriteNumber("triggerKind", 2);
-            writer.WriteString("triggerCharacter", trigger);
-            writer.WriteEndObject();
-        }
-
-        writer.WriteEndObject();
-    }
-
-    private static (int Line, int Character) ReadPosition(JsonElement position) =>
-        (position.GetProperty("line").GetInt32(), position.GetProperty("character").GetInt32());
 
     private static int ToIndex(PositionConverter positions, (int Line, int Character) position) => positions.ToIndex(position.Line, position.Character);
 
@@ -773,14 +636,6 @@ internal sealed partial class TwoslashChecker
             }
         }
 
-        var positions = new PositionConverter(code);
-        var resolved = nodes.Where(x => x.Start >= 0).OrderBy(x => x.Start).ThenBy(x => x.TypeName, StringComparer.Ordinal).ToList();
-
-        foreach (var node in resolved)
-        {
-            (node.Line, node.Character) = positions.ToPosition(node.Start);
-        }
-
-        return new TwoslashResult(code, resolved);
+        return TwoslashResult.Resolve(code, nodes);
     }
 }

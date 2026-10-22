@@ -1,9 +1,10 @@
 using System.Buffers;
+using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 
-namespace Douze.Twoslash;
+namespace Douze.CodeHover;
 
 internal enum TwoslashNodeType { Completion, Error, Highlight, Hover, Query, Tag }
 
@@ -17,7 +18,8 @@ internal sealed record CompletionEntry(string Name, string Kind, string? KindMod
 /// info query (<see cref="Text"/>, <see cref="Docs"/>, <see cref="Tags"/>, <see cref="Target"/>), an error
 /// (<see cref="Code"/>, <see cref="Text"/>, <see cref="Level"/>, <see cref="Filename"/>), a custom tag
 /// (<see cref="Name"/>, <see cref="Text"/>), a highlight or a completion. Offsets are UTF-16 code units in the code,
-/// like JavaScript strings.
+/// like JavaScript strings. An error of a language whose diagnostic codes are not numbers (<c>CS1061</c>) has its code
+/// in <see cref="CodeName"/>, written as a string.
 /// </summary>
 internal sealed class TwoslashNode(TwoslashNodeType type, int start, int length)
 {
@@ -31,6 +33,7 @@ internal sealed class TwoslashNode(TwoslashNodeType type, int start, int length)
     public IReadOnlyList<(string Name, string? Text)>? Tags { get; init; }
     public string? Target { get; init; }
     public int Code { get; init; }
+    public string? CodeName { get; init; }
     public string? Filename { get; init; }
     public string? Level { get; init; }
     public string? Name { get; init; }
@@ -51,11 +54,30 @@ internal sealed class TwoslashNode(TwoslashNodeType type, int start, int length)
 /// <summary>
 /// What twoslash returns for a snippet: the code without its notations, and the nodes, sorted by offset then type,
 /// with their line and character in that code. <see cref="ToJson"/> writes the shape of twoslash's
-/// <c>{ code, nodes }</c>, which a highlighter can use in place of running twoslash.
+/// <c>{ code, nodes }</c>, which a highlighter can use in place of running twoslash. Every code step writes it, whatever
+/// the language, so that one renderer shows the hovers and errors of all of them.
 /// </summary>
 internal sealed class TwoslashResult(string code, IReadOnlyList<TwoslashNode> nodes)
 {
     private static readonly JsonWriterOptions WriterOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    /// <summary>
+    /// The result of <paramref name="nodes"/> in <paramref name="code"/>: those with a position (a negative
+    /// <see cref="TwoslashNode.Start"/> drops a node) sorted by offset then type, with their line and character
+    /// (twoslash's <c>resolveNodePositions</c>).
+    /// </summary>
+    public static TwoslashResult Resolve(string code, IEnumerable<TwoslashNode> nodes)
+    {
+        var positions = new PositionConverter(code);
+        var resolved = nodes.Where(x => x.Start >= 0).OrderBy(x => x.Start).ThenBy(x => x.TypeName, StringComparer.Ordinal).ToList();
+
+        foreach (var node in resolved)
+        {
+            (node.Line, node.Character) = positions.ToPosition(node.Start);
+        }
+
+        return new TwoslashResult(code, resolved);
+    }
 
     public string Code { get; } = code;
 
@@ -132,9 +154,17 @@ internal sealed class TwoslashResult(string code, IReadOnlyList<TwoslashNode> no
                 break;
 
             case TwoslashNodeType.Error:
-                writer.WriteNumber("code", node.Code);
+                if (node.CodeName != null)
+                {
+                    writer.WriteString("code", node.CodeName);
+                }
+                else
+                {
+                    writer.WriteNumber("code", node.Code);
+                }
+
                 writer.WriteString("filename", node.Filename);
-                writer.WriteString("id", $"err-{node.Code}-{node.Start}-{node.Length}");
+                writer.WriteString("id", $"err-{node.CodeName ?? node.Code.ToString(CultureInfo.InvariantCulture)}-{node.Start}-{node.Length}");
                 writer.WriteString("text", node.Text);
                 writer.WriteString("level", node.Level);
                 break;

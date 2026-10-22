@@ -5,14 +5,14 @@ using System.Text;
 using System.Text.Json;
 using Douze.Workflow.Commands;
 
-namespace Douze.Twoslash;
+namespace Douze.CodeHover;
 
 /// <summary>
 /// A language server process spoken to with JSON-RPC over its standard input and output (the Language Server
 /// Protocol's base protocol: <c>Content-Length</c> headers). Requests are pipelined: any number can be in flight, and
 /// are answered in any order. Requests from the server (configuration, registrations) are answered with
 /// <c>null</c>; its notifications are ignored, but for the diagnostics it pushes, kept in
-/// <see cref="PushedDiagnostics"/>.
+/// <see cref="PushedDiagnostics"/>, and those that <see cref="WaitForNotificationAsync"/> waits for.
 /// </summary>
 /// <remarks>
 /// When the process exits or writes something that is not the protocol, every pending request and every later one
@@ -28,6 +28,7 @@ internal sealed class LspConnection
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly Lock _lock = new();
     private readonly Dictionary<long, TaskCompletionSource<JsonElement>> _pending = [];
+    private readonly Dictionary<string, TaskCompletionSource<JsonElement>> _notifications = new(StringComparer.Ordinal);
     private readonly Queue<string> _stderrTail = new();
     private readonly Task _readLoop;
     private readonly Task _stderrLoop;
@@ -86,6 +87,39 @@ internal sealed class LspConnection
 
         using var registration = ct.Register(() => response.TrySetCanceled(ct));
         return await response.Task;
+    }
+
+    /// <summary>
+    /// Returns the parameters of the first notification <paramref name="method"/> of the server, which may have arrived
+    /// already.
+    /// </summary>
+    /// <exception cref="DouzeException">The server failed first.</exception>
+    public async Task<JsonElement> WaitForNotificationAsync(string method, CancellationToken ct)
+    {
+        TaskCompletionSource<JsonElement> notification;
+
+        lock (_lock)
+        {
+            notification = Notification(method);
+
+            if (!notification.Task.IsCompleted)
+            {
+                ThrowIfFailed();
+            }
+        }
+
+        return await notification.Task.WaitAsync(ct);
+    }
+
+    // Under _lock.
+    private TaskCompletionSource<JsonElement> Notification(string method)
+    {
+        if (!_notifications.TryGetValue(method, out var notification))
+        {
+            _notifications[method] = notification = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        return notification;
     }
 
     public Task NotifyAsync(string method, Action<Utf8JsonWriter>? writeParams) => WriteAsync(writer =>
@@ -340,6 +374,13 @@ internal sealed class LspConnection
 
         if (hasMethod)
         {
+            var parameters = root.TryGetProperty("params", out var p) ? p.Clone() : default;
+
+            lock (_lock)
+            {
+                Notification(method.GetString() ?? "").TrySetResult(parameters);
+            }
+
             if (method.GetString() == "textDocument/publishDiagnostics"
                 && root.TryGetProperty("params", out var published)
                 && published.TryGetProperty("uri", out var uri))
@@ -422,7 +463,7 @@ internal sealed class LspConnection
         lock (_lock)
         {
             _failure ??= message;
-            pending = [.. _pending.Values];
+            pending = [.. _pending.Values, .. _notifications.Values];
             _pending.Clear();
         }
 

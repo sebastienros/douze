@@ -1,3 +1,4 @@
+using Douze.CodeHover;
 using Douze.Twoslash;
 using Xunit;
 
