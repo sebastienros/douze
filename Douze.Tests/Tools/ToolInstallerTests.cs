@@ -211,7 +211,7 @@ public sealed class ToolInstallerTests : IDisposable
 
         var path = await Installer().InstallAsync(NuGet(Sri(package)), "1.0.0-Beta.1", Ct, Platform);
 
-        Assert.Equal(Path.Combine(_root, "fake-nuget", "1.0.0-Beta.1", Platform, "tools/net10.0/test-x64/Tool.dll"), path);
+        Assert.Equal(Path.Combine(_root, "fake-nuget", "1.0.0-Beta.1", Platform, "tools", "net10.0", "test-x64", "Tool.dll"), path);
         Assert.Equal("not really a dll", await File.ReadAllTextAsync(path, Ct));
 
         // Installed once.
