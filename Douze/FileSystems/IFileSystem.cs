@@ -11,6 +11,11 @@ public interface IFileSystem
 
     ValueTask<DirectoryEntry> GetDirectoryEntryAsync(FPath path);
 
+    /// <summary>
+    /// Lists the folder <paramref name="basePath"/>, its files and, when <paramref name="recursive"/>, its subfolders.
+    /// <paramref name="filter"/> receives the path of each folder (from the root of the file system, starting with
+    /// <c>/</c>): a folder it rejects is not listed, nor anything under it.
+    /// </summary>
     ValueTask<IEnumerable<FileSystemEntry>> EnumerateFileSystemEntriesAsync(FPath basePath, bool recursive, Predicate<string>? filter);
 
     /// <summary>

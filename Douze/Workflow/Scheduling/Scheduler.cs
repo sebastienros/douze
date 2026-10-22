@@ -66,8 +66,9 @@ internal sealed class Scheduler
 
     /// <summary>
     /// The source files of the roots, sorted by path, from the snapshot of the source folder that the build was given
-    /// (watch mode) or from a scan. Files under the output folder or the cache folder are excluded when they are inside
-    /// the source folder. A file whose length and modification time did not change since a build that cached its hash
+    /// (watch mode) or from a scan of the folders the <c>inputs</c> of the roots can match files in
+    /// (<see cref="SourceScope"/>). Files under the output, cache and <c>.douze</c> folders are excluded when they are
+    /// inside the source folder. A file whose length and modification time did not change since a build that cached its hash
     /// is not read to be hashed.
     /// </summary>
     private async Task<SourceFiles> EnumerateSourcesAsync()
@@ -80,7 +81,14 @@ internal sealed class Scheduler
         }
 
         var source = _context.Source;
-        var snapshot = _context.Options.Sources ?? await SourceSnapshot.ScanAsync(source, _context.ExcludedSourceFolders, _context.MaxDegreeOfParallelism, _context.Cancellation);
+        var scope = SourceScope.Of(roots.Select(x => x.Inputs!));
+        var excluded = _context.ExcludedSourceFolders;
+
+        // A watch session's snapshot, while it lists every folder the roots read.
+        var snapshot = _context.Options.Sources is { } kept && kept.Covers(scope, excluded)
+            ? kept
+            : await SourceSnapshot.ScanAsync(source, scope, excluded, _context.MaxDegreeOfParallelism, _context.Cancellation);
+
         Sources = snapshot;
 
         var entries = snapshot.Matching(_graph, roots, _context.ExcludedSourceFolders);

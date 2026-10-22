@@ -1,7 +1,111 @@
+using System.Collections.Immutable;
 using Douze.FileSystems;
 using Douze.Workflow.Watch;
 
 namespace Douze.Workflow;
+
+/// <summary>
+/// The part of the source folder a build reads: the folders in which the <c>inputs</c> of its roots can match files
+/// (the literal folder each pattern starts with, <c>/</c> for a set that can match anywhere) and the files of patterns
+/// without wildcard. A snapshot lists them only: the other folders (<c>node_modules</c>, an old output folder) are
+/// never walked.
+/// </summary>
+internal sealed class SourceScope
+{
+    public static readonly SourceScope Everything = new([FPath.Root], []);
+
+    private SourceScope(ImmutableArray<FPath> folders, ImmutableArray<FPath> files)
+    {
+        Folders = folders;
+        Files = files;
+    }
+
+    /// <summary>
+    /// The folders listed with everything under them, sorted, none inside another.
+    /// </summary>
+    public ImmutableArray<FPath> Folders { get; }
+
+    /// <summary>
+    /// The files outside <see cref="Folders"/> that a pattern names, sorted.
+    /// </summary>
+    public ImmutableArray<FPath> Files { get; }
+
+    /// <summary>
+    /// The scope of the files that <paramref name="sets"/> can match.
+    /// </summary>
+    public static SourceScope Of(IEnumerable<GlobSet> sets)
+    {
+        var folders = new List<string>();
+        var files = new List<string>();
+
+        foreach (var set in sets)
+        {
+            if (set.CanMatchAnything)
+            {
+                return Everything;
+            }
+
+            foreach (var glob in set.Globs.Where(x => !x.Negated))
+            {
+                if (glob.LiteralPath is { } literal)
+                {
+                    files.Add(literal);
+                }
+                else
+                {
+                    folders.Add(glob.FixedPrefix);
+                }
+            }
+        }
+
+        if (folders.Contains("/"))
+        {
+            return Everything;
+        }
+
+        var kept = new List<string>();
+
+        foreach (var folder in folders.Distinct().Order(StringComparer.Ordinal))
+        {
+            if (!kept.Any(x => folder.StartsWith(x, StringComparison.Ordinal)))
+            {
+                kept.Add(folder);
+            }
+        }
+
+        var keptFiles = files.Distinct().Where(x => !kept.Any(f => x.StartsWith(f, StringComparison.Ordinal))).Order(StringComparer.Ordinal);
+
+        return new([.. kept.Select(x => new FPath(x))], [.. keptFiles.Select(x => new FPath(x))]);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="path"/>, a file or a folder, is in the scope.
+    /// </summary>
+    public bool Contains(FPath path)
+    {
+        return Folders.Any(x => path.FullName.StartsWith(x.FullName, StringComparison.Ordinal)) || Files.Contains(path);
+    }
+
+    /// <summary>
+    /// Whether a change of <paramref name="path"/> (a file, or a folder created, renamed or deleted) can change the
+    /// files of the scope: the path is in it, or holds a part of it.
+    /// </summary>
+    public bool Touches(FPath path)
+    {
+        var folder = path.FullName.TrimEnd('/') + "/";
+
+        return Contains(path)
+            || Folders.Any(x => x.FullName.StartsWith(folder, StringComparison.Ordinal))
+            || Files.Any(x => x.FullName.StartsWith(folder, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Whether every file of <paramref name="other"/> is in this scope.
+    /// </summary>
+    public bool Covers(SourceScope other) => other.Folders.All(Contains) && other.Files.All(Contains);
+
+    public override string ToString() => string.Join(", ", Folders.Concat(Files));
+}
 
 /// <summary>
 /// The files of the source folder with their length and modification time, and which root nodes of a graph read each
@@ -12,14 +116,31 @@ namespace Douze.Workflow;
 internal sealed class SourceSnapshot
 {
     private readonly Dictionary<FPath, (long Length, DateTime LastWriteTimeUtc)> _files;
+    private readonly ImmutableArray<FPath> _excluded;
 
     // The files some root reads, sorted, with the roots that read each (by index in the graph's roots with inputs), for
     // the graph and the excluded folders they were computed for.
     private (WorkflowGraph Graph, string Excluded, Entry[] Entries)? _matching;
 
-    private SourceSnapshot(Dictionary<FPath, (long, DateTime)> files)
+    private SourceSnapshot(Dictionary<FPath, (long, DateTime)> files, SourceScope scope, ImmutableArray<FPath> excluded)
     {
         _files = files;
+        Scope = scope;
+        _excluded = excluded;
+    }
+
+    /// <summary>
+    /// The part of the source folder the snapshot lists.
+    /// </summary>
+    public SourceScope Scope { get; }
+
+    /// <summary>
+    /// Whether the snapshot lists every file of <paramref name="scope"/>, outside the same excluded folders: a watch
+    /// session keeps it while the workflow reads no other folder.
+    /// </summary>
+    public bool Covers(SourceScope scope, IReadOnlyList<FPath> excluded)
+    {
+        return Scope.Covers(scope) && _excluded.SequenceEqual(excluded);
     }
 
     /// <summary>
@@ -30,13 +151,12 @@ internal sealed class SourceSnapshot
     public int Count => _files.Count;
 
     /// <summary>
-    /// Lists every file of <paramref name="source"/> outside the <paramref name="excluded"/> folders (the output and
-    /// cache folders, when they are inside the source folder) with its length and modification time.
+    /// Lists every file of <paramref name="scope"/> outside the <paramref name="excluded"/> folders (the output, cache
+    /// and <c>.douze</c> folders, when they are inside the source folder) with its length and modification time.
     /// </summary>
-    public static async Task<SourceSnapshot> ScanAsync(IFileSystem source, IReadOnlyList<FPath> excluded, int parallelism, CancellationToken ct)
+    public static async Task<SourceSnapshot> ScanAsync(IFileSystem source, SourceScope scope, IReadOnlyList<FPath> excluded, int parallelism, CancellationToken ct)
     {
-        var entries = await source.EnumerateFileSystemEntriesAsync(FPath.Root, recursive: true, filter: null);
-        var paths = entries.Where(x => !x.IsDirectory).Select(x => x.Path.ToAbsolute()).Where(x => !excluded.Any(x.IsInDirectory)).Distinct().ToArray();
+        var paths = (await ListAsync(source, scope, excluded)).ToArray();
         var stats = new (long, DateTime)?[paths.Length];
 
         await Parallel.ForAsync(0, paths.Length, new ParallelOptions { MaxDegreeOfParallelism = parallelism, CancellationToken = ct }, async (i, _) =>
@@ -54,8 +174,48 @@ internal sealed class SourceSnapshot
             }
         }
 
-        return new SourceSnapshot(files);
+        return new SourceSnapshot(files, scope, [.. excluded]);
     }
+
+    /// <summary>
+    /// The files of <paramref name="scope"/> outside the <paramref name="excluded"/> folders, which are not walked; a
+    /// file a pattern names is listed whether it exists or not.
+    /// </summary>
+    public static async Task<IReadOnlyList<FPath>> ListAsync(IFileSystem source, SourceScope scope, IReadOnlyList<FPath> excluded)
+    {
+        var paths = new HashSet<FPath>();
+
+        foreach (var folder in scope.Folders)
+        {
+            if (IsExcluded(folder, excluded))
+            {
+                continue;
+            }
+
+            foreach (var entry in await source.EnumerateFileSystemEntriesAsync(folder, recursive: true, filter: x => !IsExcluded(new FPath(x.TrimEnd('/') + "/"), excluded)))
+            {
+                var path = entry.Path.ToAbsolute();
+
+                // A file system may list more than the folder (the memory one lists everything).
+                if (!entry.IsDirectory && path.FullName.StartsWith(folder.FullName, StringComparison.Ordinal) && !IsExcluded(path, excluded))
+                {
+                    paths.Add(path);
+                }
+            }
+        }
+
+        foreach (var file in scope.Files)
+        {
+            if (!IsExcluded(file, excluded))
+            {
+                paths.Add(file);
+            }
+        }
+
+        return [.. paths];
+    }
+
+    private static bool IsExcluded(FPath path, IReadOnlyList<FPath> excluded) => excluded.Any(x => path.FullName.StartsWith(x.FullName, StringComparison.Ordinal));
 
     /// <summary>
     /// Updates the snapshot with the paths that changed: a path that is a file now is stat'ed again, a folder is listed
@@ -74,7 +234,13 @@ internal sealed class SourceSnapshot
             var directory = new FPath(path.FullName.TrimEnd('/') + "/");
             var file = new FPath(path.FullName.TrimEnd('/'));
 
-            if (file.IsFile && await StatAsync(source, file) is { } stat)
+            // Outside the folders the snapshot lists (a template, the output folder): nothing to update.
+            if (!Scope.Touches(path) || IsExcluded(directory, _excluded))
+            {
+                continue;
+            }
+
+            if (file.IsFile && Scope.Contains(file) && await StatAsync(source, file) is { } stat)
             {
                 var added = !_files.ContainsKey(file);
                 listChanged |= added;
@@ -106,11 +272,11 @@ internal sealed class SourceSnapshot
 
             if (isDirectory)
             {
-                foreach (var entry in await source.EnumerateFileSystemEntriesAsync(directory, recursive: true, filter: null))
+                foreach (var entry in await source.EnumerateFileSystemEntriesAsync(directory, recursive: true, filter: x => !IsExcluded(new FPath(x.TrimEnd('/') + "/"), _excluded)))
                 {
                     var under = entry.Path.ToAbsolute();
 
-                    if (entry.IsDirectory || !under.IsInDirectory(directory))
+                    if (entry.IsDirectory || !under.IsInDirectory(directory) || !Scope.Contains(under) || IsExcluded(under, _excluded))
                     {
                         continue;
                     }

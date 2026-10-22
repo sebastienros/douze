@@ -54,7 +54,9 @@ internal sealed class BuildContext : IAsyncDisposable
         CacheRoot = cacheDirectory == null ? null : Path.GetFullPath(cacheDirectory);
         TempRoot = Path.Combine(CacheRoot ?? Path.Combine(Path.GetTempPath(), DefaultCacheFolder), "tmp", Guid.NewGuid().ToString("N")) + Path.DirectorySeparatorChar;
 
-        ExcludedSourceFolders = [.. new[] { InsideSource(site, site.OutputDirectory), InsideSource(site, CacheRoot) }.OfType<FPath>()];
+        // The output and cache folders, and .douze/, Douze's folder (the default cache, the caches of commands).
+        var douzeFolder = site.SourceDirectory is { } sourceDirectory ? Path.Combine(sourceDirectory, DefaultCacheFolder) : null;
+        ExcludedSourceFolders = [.. new[] { InsideSource(site, site.OutputDirectory), InsideSource(site, CacheRoot), InsideSource(site, douzeFolder) }.OfType<FPath>().Distinct().Order()];
 
         if (options.Cache is { } shared)
         {
@@ -147,7 +149,7 @@ internal sealed class BuildContext : IAsyncDisposable
     public string TempRoot { get; }                 // <cache dir>/tmp/<build id>/ for batch commands, created on demand, deleted by DisposeAsync
     public ScopeSet BaseScopes { get; }             // the site settings templates see (site.url, site.locales), below every contribution
     public LocaleSet Locales => Site.Locales;       // site.locales; LocaleSet.None when absent
-    public ImmutableArray<FPath> ExcludedSourceFolders { get; }  // the output and cache folders, when they are inside the source folder: never sources
+    public ImmutableArray<FPath> ExcludedSourceFolders { get; }  // the output, cache and .douze folders, when they are inside the source folder: never sources
     public string? CacheRoot { get; }               // --cache-dir, or <source>/.douze/; null for a site not on disk
     public BuildCache? Cache { get; }               // the disk cache in <cache root>/cache/; null with --no-cache or when another build holds it
     public bool OwnsCache { get; }                  // opened by this build, which saves it; false for BuildOptions.Cache, which the build commits

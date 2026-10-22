@@ -33,6 +33,7 @@ internal sealed class Glob
         _literalPrefix = fixedPrefix[1..].TrimEnd('/');
         _literalSuffix = GetLiteralSuffix(body);
         _endings = GetEndings(body);
+        LiteralPath = body.AsSpan().IndexOfAny("*?[{\\") < 0 ? "/" + body : null;
     }
 
     public bool Negated { get; }
@@ -46,6 +47,16 @@ internal sealed class Glob
     /// The literal directory prefix of the pattern, starting and ending with <c>/</c>.
     /// </summary>
     internal string FixedPrefix { get; }
+
+    /// <summary>
+    /// Whether the pattern has no wildcard: it matches one path, <see cref="LiteralPath"/>.
+    /// </summary>
+    internal bool IsLiteral => LiteralPath != null;
+
+    /// <summary>
+    /// The path a pattern without wildcard matches, with its leading <c>/</c>; null for the other patterns.
+    /// </summary>
+    internal string? LiteralPath { get; }
 
     /// <exception cref="GlobFormatException">The pattern is invalid.</exception>
     public static Glob Parse(string pattern)

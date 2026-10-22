@@ -77,13 +77,17 @@ internal abstract class CommandStep : Step
         }
 
         var sources = GlobSet.Parse(Definition.Sources);
-        var entries = await context.Source.EnumerateFileSystemEntriesAsync(FPath.Root, recursive: true, filter: null);
+        var files = await SourceSnapshot.ListAsync(context.Source, SourceScope.Of([sources]), context.ExcludedSourceFolders);
 
-        var excluded = context.ExcludedSourceFolders;
-
-        foreach (var path in entries.Where(x => !x.IsDirectory).Select(x => x.Path.ToAbsolute()).Where(x => sources.IsMatch(x) && !excluded.Any(x.IsInDirectory)).Distinct().Order())
+        foreach (var path in files.Where(sources.IsMatch).Order())
         {
             ct.ThrowIfCancellationRequested();
+
+            if (!(await context.Source.GetFileEntryAsync(path)).Exists)
+            {
+                // A file a pattern names, which is not there.
+                continue;
+            }
 
             await using var stream = await context.Source.OpenFileAsync(path);
             using var memory = new MemoryStream();
