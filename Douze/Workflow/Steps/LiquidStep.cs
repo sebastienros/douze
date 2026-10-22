@@ -64,6 +64,20 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
 
     public override GlobSet DefaultMatch => Templates;
 
+    /// <summary>
+    /// The options of the <c>markdown</c> section, which tags read (the image defaults): a page rendered with other
+    /// options is rendered again.
+    /// </summary>
+    public override Hash128 CacheVersion => _renderOptions;
+
+    private Hash128 _renderOptions;
+
+    public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
+    {
+        _renderOptions = context.Site.Markdown.Hash;
+        return default;
+    }
+
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
         if (_template != null)

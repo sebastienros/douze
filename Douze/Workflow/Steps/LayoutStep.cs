@@ -32,8 +32,18 @@ internal sealed class LayoutStep : Step, IMapStep
 
     public override GlobSet DefaultMatch => HtmlFiles;
 
+    /// <summary>
+    /// The options of the <c>markdown</c> section, which tags read (the image defaults): a page laid out with other
+    /// options is laid out again.
+    /// </summary>
+    public override Hash128 CacheVersion => _renderOptions;
+
+    private Hash128 _renderOptions;
+
     public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
     {
+        _renderOptions = context.Site.Markdown.Hash;
+
         // The shared loader reads the site's includes folder; another folder gets its own loader.
         _loader = _includes is not { } includes || includes == context.Site.IncludesFolder
             ? context.Templates
