@@ -4,9 +4,20 @@
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
+# Every source of NuGet.config must be declared, or Dependabot's proxy blocks it.
+registries:
+  nuget-org:
+    type: nuget-feed
+    url: https://api.nuget.org/v3/index.json
+  fluid-feedz:
+    type: nuget-feed
+    url: https://f.feedz.io/sebastienros/fluid/nuget/index.json
 updates:
   - package-ecosystem: "nuget" # See documentation for possible values
     directory: "/" # Location of package manifests
+    registries:
+      - nuget-org
+      - fluid-feedz
     schedule:
       interval: "weekly"
     groups:

@@ -16,6 +16,7 @@ internal enum ShortcodeDisplay { Block, Inline }
 /// <param name="Block">Whether the tag is paired (<c>{% tabs %}...{% endtabs %}</c>).</param>
 /// <param name="Display">Whether the output is block HTML, written as a raw region in a Markdown page.</param>
 /// <param name="ArgNames">The names of the positional arguments, from the front matter's <c>args</c>.</param>
+/// <param name="Params">The names of the named arguments, from the front matter's <c>params</c>: nil when a call omits them.</param>
 /// <param name="Template">The parsed template, without the front matter.</param>
 /// <param name="ContentHash">The hash of the file, recorded as a template dependency by every render.</param>
 /// <param name="LineOffset">The lines of the front matter: added to the positions in the template.</param>

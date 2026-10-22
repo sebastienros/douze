@@ -44,6 +44,10 @@ internal sealed class WorkerProcess
     private bool _stderrPending;
     private volatile bool _shuttingDown;
 
+    // Set before the shutdown kills the worker: what it writes to stderr from then on comes from the kill (a shell
+    // reports "Killed" when its child is killed before it), not from the worker.
+    private volatile bool _killing;
+
     private WorkerProcess(Process process, StderrPolicy stderrPolicy, Action<LogLevel, string> log)
     {
         _process = process;
@@ -204,6 +208,7 @@ internal sealed class WorkerProcess
             }
             catch (OperationCanceledException)
             {
+                _killing = true;
                 ProcessRunner.KillTree(_process);
                 killed = true;
                 _log(LogLevel.Warning, $"worker did not exit within {ProcessRunner.FormatDuration(ShutdownGrace)} after 'shutdown' and was killed");
@@ -351,7 +356,7 @@ internal sealed class WorkerProcess
         {
             while (await _process.StandardError.ReadLineAsync() is { } line)
             {
-                if (line.Trim().Length == 0)
+                if (line.Trim().Length == 0 || _killing)
                 {
                     continue;
                 }

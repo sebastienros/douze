@@ -1,10 +1,16 @@
 # douze
+
+[![Build](https://github.com/sebastienros/douze/actions/workflows/build.yml/badge.svg)](https://github.com/sebastienros/douze/actions/workflows/build.yml)
+[![feedz.io](https://img.shields.io/endpoint?url=https%3A%2F%2Ff.feedz.io%2Fsebastienros%2Fdouze%2Fshield%2FDouze%2Flatest)](https://feedz.io/org/sebastienros/repository/douze/packages/Douze)
+
 Stupidly simple, blazing fast static site generator
 
 # installation
 
+Every push to `main` publishes a preview to feedz.io:
+
 ```
-dotnet tool install -g douze --prerelease
+dotnet tool install -g douze --prerelease --add-source https://f.feedz.io/sebastienros/douze/nuget/index.json
 ```
 
 The package is native AOT on Windows, Linux and macOS (x64 and arm64) and needs no .NET runtime. On other platforms, and for the preview packages of the Feedz feed, which are framework dependent, it runs on the .NET 11 runtime. The native AOT packages include libvips, which the image features use (see "images"); the framework dependent packages do not, and their image features report how to get it.
