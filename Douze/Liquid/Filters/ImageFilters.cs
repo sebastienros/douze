@@ -66,7 +66,7 @@ internal static class ImageFilters
     {
         var images = ImageContext.From(context);
         var src = input.ToStringValue(context);
-        var path = images.Resolve(src);
+        var path = await images.ResolveAsync(src);
         var bytes = await ImageSources.ReadAsync(images.Build.Source, path, src, images.Step.Dependencies);
 
         var format = ImageFormats.Sniff(bytes.Span) ?? throw new DouzeException($"'{src}' is not an image format douze reads (png, jpeg, webp, avif, gif, svg)");

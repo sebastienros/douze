@@ -284,12 +284,29 @@ internal sealed class ImageContext
     }
 
     /// <summary>
+    /// The source path of <paramref name="src"/>: a root relative path (<c>/assets/a.png</c>) that is not in the content
+    /// folder is looked for in the source folder, so that a site keeps its images outside its pages.
+    /// </summary>
+    public async ValueTask<FPath> ResolveAsync(string src)
+    {
+        var path = Resolve(src);
+
+        if (src.StartsWith('/') && Build.Site.ContentFolder != FPath.Root && !(await Build.Source.GetFileEntryAsync(path)).Exists
+            && ImageSources.Resolve(src, Directory, FPath.Root) is { } root && (await Build.Source.GetFileEntryAsync(root)).Exists)
+        {
+            return root;
+        }
+
+        return path;
+    }
+
+    /// <summary>
     /// Reads a source image (recorded as a dependency of the unit), produces its variants, adds them to the outputs of
     /// the unit and returns their set.
     /// </summary>
     public async ValueTask<ImageSet> CreateAsync(string src, ImageRequest request)
     {
-        var path = Resolve(src);
+        var path = await ResolveAsync(src);
         var bytes = await ImageSources.ReadAsync(Build.Source, path, src, Step.Dependencies);
         var (set, files) = ImageBuilder.Build(() => Build.Images, ImageSources.Url(path, Build.Site.ContentFolder), bytes, request, original: false);
 
