@@ -27,7 +27,7 @@ internal sealed class ImageProcessor
     // libvips' largest image dimension (VIPS_MAX_COORD).
     private const int MaxCoordinate = 10_000_000;
 
-    private readonly ConcurrentDictionary<(Hash128 Source, ImageVariant Variant), Lazy<ProcessedImage>> _variants = new();
+    private readonly ConcurrentDictionary<(Hash128 Source, ImageVariant Variant), Lazy<Task<ProcessedImage>>> _variants = new();
 
     private ImageProcessor()
     {
@@ -117,26 +117,32 @@ internal sealed class ImageProcessor
     }
 
     /// <summary>
-    /// Encodes a variant: shrink on load, auto rotation and premultiplied alpha (<c>thumbnail</c>), never wider than the
-    /// source, metadata stripped. Memoized by source content and variant for the build, unless
-    /// <paramref name="memoize"/> is false (a source processed once, by the <c>images</c> step, would only stay in memory).
+    /// A variant of a source, memoized by source content and variant for the build and encoded on the thread pool: the
+    /// pages that use one image (and the fallback copies of a page) encode it once, and a page that uses several
+    /// encodes them in parallel when it starts them before awaiting them (<see cref="ImageBuilder.Prefetch"/>).
     /// </summary>
-    /// <exception cref="DouzeException">libvips cannot read the source or encode the variant.</exception>
-    public ProcessedImage Variant(ReadOnlyMemory<byte> source, ImageVariant variant, bool memoize = true)
+    /// <exception cref="DouzeException">The format cannot be encoded, libvips cannot read the source or encode the variant.</exception>
+    public Task<ProcessedImage> VariantAsync(ReadOnlyMemory<byte> source, ImageVariant variant)
     {
         var format = ImageFormats.Encodable(variant.Format) ?? throw new DouzeException($"cannot encode images as '{variant.Format}'; expected {ImageFormats.EncodableNames}");
-
-        if (!memoize)
-        {
-            return Encode(source, variant, format);
-        }
-
         var key = (Hash128.Of(source.Span), variant);
 
         return _variants.GetOrAdd(
             key,
-            static (key, state) => new Lazy<ProcessedImage>(() => Encode(state.Source, key.Variant, state.Format), LazyThreadSafetyMode.ExecutionAndPublication),
+            static (key, state) => new Lazy<Task<ProcessedImage>>(() => Task.Run(() => Encode(state.Source, key.Variant, state.Format)), LazyThreadSafetyMode.ExecutionAndPublication),
             (Source: source, Format: format)).Value;
+    }
+
+    /// <summary>
+    /// Encodes a variant: shrink on load, auto rotation and premultiplied alpha (<c>thumbnail</c>), never wider than the
+    /// source, metadata stripped. Not memoized: for a source processed once (the <c>images</c> step), whose variants
+    /// would only stay in memory.
+    /// </summary>
+    /// <exception cref="DouzeException">The format cannot be encoded, libvips cannot read the source or encode the variant.</exception>
+    public ProcessedImage Encode(ReadOnlyMemory<byte> source, ImageVariant variant)
+    {
+        var format = ImageFormats.Encodable(variant.Format) ?? throw new DouzeException($"cannot encode images as '{variant.Format}'; expected {ImageFormats.EncodableNames}");
+        return Encode(source, variant, format);
     }
 
     private static ProcessedImage Encode(ReadOnlyMemory<byte> source, ImageVariant variant, ImageFormat format)

@@ -162,9 +162,10 @@ internal static class ImageBuilder
     /// <param name="source">The url of the source image (<see cref="ImageSources.Url"/>).</param>
     /// <param name="bytes">The content of the source image.</param>
     /// <param name="request">The variants to produce.</param>
-    /// <param name="original">Whether to emit the original with a fingerprinted name too (the <c>images</c> step).</param>
+    /// <param name="original">Whether to emit the original with a fingerprinted name too (the <c>images</c> step, which
+    /// processes each source once: its variants are not memoized).</param>
     /// <exception cref="DouzeException">The image cannot be read or encoded, or libvips is missing.</exception>
-    public static (ImageSet Set, IReadOnlyList<ImageOutput> Files) Build(Func<ImageProcessor> images, string source, ReadOnlyMemory<byte> bytes, ImageRequest request, bool original)
+    public static async ValueTask<(ImageSet Set, IReadOnlyList<ImageOutput> Files)> BuildAsync(Func<ImageProcessor> images, string source, ReadOnlyMemory<byte> bytes, ImageRequest request, bool original)
     {
         var name = Path.GetFileNameWithoutExtension(source);
         var extension = Path.GetExtension(source);
@@ -187,10 +188,64 @@ internal static class ImageBuilder
         }
 
         var processor = images();
+        var (info, variants) = Plan(processor, bytes, format, request);
+
+        // The tag and the filters may meet a source in many pages: their variants are memoized, and all of them are
+        // started before the first is awaited.
+        var processed = original
+            ? variants.Select(x => Task.FromResult(processor.Encode(bytes, x.Variant))).ToArray()
+            : variants.Select(x => processor.VariantAsync(bytes, x.Variant)).ToArray();
+
+        var set = ImmutableArray.CreateBuilder<ImageFile>(variants.Length);
+
+        for (var i = 0; i < variants.Length; i++)
+        {
+            var target = variants[i].Format;
+            var image = await processed[i];
+            var path = FPath.Combine(request.Output, ImageVariant.FileName(name, image.Width, Hash128.Of(image.Bytes.Span), target));
+
+            files.Add(new ImageOutput(path, image.Bytes, target.ContentType));
+            set.Add(new ImageFile(path.FullName, image.Width, image.Height, target.Name));
+        }
+
+        return (new ImageSet(source, info.Width, info.Height, info.Format, originalUrl, set.ToImmutable()), files);
+    }
+
+    /// <summary>
+    /// Starts encoding the memoized variants of a source that a page is about to ask for (<see cref="BuildAsync"/> with
+    /// <c>original: false</c>), without waiting for them, so that the variants of the images of a page are encoded in
+    /// parallel. Errors are left to <see cref="BuildAsync"/>, which meets them again.
+    /// </summary>
+    public static void Prefetch(Func<ImageProcessor> images, ReadOnlyMemory<byte> bytes, ImageRequest request)
+    {
+        try
+        {
+            if (ImageFormats.Sniff(bytes.Span) is not { CopiedAsIs: false } format)
+            {
+                return;
+            }
+
+            var processor = images();
+
+            foreach (var (variant, _) in Plan(processor, bytes, format, request).Variants)
+            {
+                _ = processor.VariantAsync(bytes, variant);
+            }
+        }
+        catch (DouzeException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// The variants of a source: by format in the order requested, then by width ascending.
+    /// </summary>
+    private static (ImageInfo Info, (ImageVariant Variant, ImageFormat Format)[] Variants) Plan(ImageProcessor processor, ReadOnlyMemory<byte> bytes, ImageFormat format, ImageRequest request)
+    {
         var info = processor.Probe(bytes);
         var widths = request.Widths.IsEmpty ? [info.Width] : request.Widths.Select(x => Math.Min(x, info.Width)).Distinct().Order().ToArray();
         var formats = request.Formats.IsEmpty ? [format.Name] : request.Formats.Select(x => ImageFormats.Encodable(x)!.Name).Distinct().ToArray();
-        var variants = ImmutableArray.CreateBuilder<ImageFile>(widths.Length * formats.Length);
+        var variants = new List<(ImageVariant, ImageFormat)>(widths.Length * formats.Length);
 
         foreach (var formatName in formats)
         {
@@ -198,16 +253,11 @@ internal static class ImageBuilder
 
             foreach (var width in widths)
             {
-                // The images step processes each source once; the tag and the filters may meet a source in many pages.
-                var processed = processor.Variant(bytes, new ImageVariant(width, target.Name, target.HasQuality ? request.Quality : 0), memoize: !original);
-                var path = FPath.Combine(request.Output, ImageVariant.FileName(name, processed.Width, Hash128.Of(processed.Bytes.Span), target));
-
-                files.Add(new ImageOutput(path, processed.Bytes, target.ContentType));
-                variants.Add(new ImageFile(path.FullName, processed.Width, processed.Height, target.Name));
+                variants.Add((new ImageVariant(width, target.Name, target.HasQuality ? request.Quality : 0), target));
             }
         }
 
-        return (new ImageSet(source, info.Width, info.Height, info.Format, originalUrl, variants.ToImmutable()), files);
+        return (info, [.. variants]);
     }
 }
 

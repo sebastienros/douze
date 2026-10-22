@@ -155,6 +155,7 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
             return ValueTask.FromResult(value);
         };
 
+        await ImageTag.PrefetchAsync(template.Template, templateContext);
         var html = await template.Template.RenderAsync(templateContext, _encoder);
 
         if (fences != null)
@@ -215,6 +216,7 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
             templateContext.AmbientValues[AmbientKeys.Strict] = true;
         }
 
+        await ImageTag.PrefetchAsync(loaded.Template.Template, templateContext);
         var content = await loaded.Template.Template.RenderAsync(templateContext, _encoder);
 
         var own = new NodeObject { ["url"] = NodeValue.Create(path.FullName) };
