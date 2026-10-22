@@ -45,12 +45,17 @@ internal sealed class LocalizeStep : Step, IMapStep
         return default;
     }
 
+    /// <summary>The key that keeps a file out of the locales: <c>localize: false</c>.</summary>
+    public const string OptOutKey = "localize";
+
     public ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
         var locales = _locales;
         var metadata = file.Metadata;
 
-        if (!locales.Contains(metadata.Directory))
+        // `localize: false`: a file outside the locales (a paginated template whose pages are not per locale).
+        if (!locales.Contains(metadata.Directory)
+            || (context.Scopes.TryResolve(metadata, OptOutKey, null, context.Dependencies, out var optOut, out _) && optOut is NodeValue<bool> { Value: false }))
         {
             return new(FileList.Of(file));
         }
