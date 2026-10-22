@@ -245,6 +245,9 @@ internal sealed class ScopeSet
     {
         recorder = null;
 
+        // Defined or not: a variant of the file (a copy in another locale) may define it, or define it otherwise.
+        deps?.RecordOwn(meta, key);
+
         if (meta.Own.TryGetItem(key, out value))
         {
             hit = new ScopeHit(ScopeKind.Own, "");

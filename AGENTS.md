@@ -71,6 +71,12 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 - Collection items (`collections.all`, `collections.<tag>`) are sorted by date ascending, using front matter `date` if defined, or `page.date` (the file date) otherwise, then by path (ordinal). This matches Eleventy.
 - `collections.urls` keys pages by normalized url (`LocaleSet.NormalizeUrl`: no trailing `index.html`); the navigation and locale filters compare urls the same way.
 - Filters read page and site data through the model (`FilterHelpers.ResolveAsync`, member by member), never from the scopes directly, so that a render depends on what it read; a filter that uses a whole value reads it whole (`NodeArrayValue.ReadAll`), and one that uses the locales reads `site.locales` (`FilterHelpers.GetLocalesAsync`). A step that looks values up from C# records its member reads on the `AccessRecorder` that `ScopeSet.TryResolveTracked` returns (`LocalizeStep`).
+- A page and its locale fallback copies are variants (`VirtualFile.Variant`, set by `localize`): a map step that
+  declares `RecordsOwnReads` has its units record every own metadata key they read (`ScopeSet.TryResolve` does it;
+  C# reads of `Metadata.Own` call `DependencyTracker.RecordOwn`, and a result that depends on the path beyond output
+  paths keeping its folders calls `RecordPath`), and the scheduler gives a copy the result of its page when the unit
+  read none of the keys they differ by (`Scheduling/VariantSharing`). A step that cannot record what it reads (a
+  command) keeps the default, and runs every copy.
 - `permalink` removes the locale root (`site.locales.root`) from the paths under it, so that locale folders are url prefixes (`/ja/x/`).
 - Pagination pages (`pagination.pages`, `page.next`, ...) only link pages generated from the same template.
 - Tags reach the build through the ambient values of the render (`AmbientKeys`: the step context, the page's model,

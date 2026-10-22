@@ -20,6 +20,7 @@ internal sealed class StepRun
     private int _units;
     private int _unitsDone;
     private int _unitsReplayed;
+    private int _unitsShared;
 
     public StepRun(GraphNode node)
     {
@@ -54,8 +55,14 @@ internal sealed class StepRun
     /// <summary>Units whose result came from the cache instead of running.</summary>
     public int UnitsReplayed => Volatile.Read(ref _unitsReplayed);
 
+    /// <summary>
+    /// Units that took the result of another variant of their file instead of running
+    /// (<see cref="VariantSharing"/>).
+    /// </summary>
+    public int UnitsShared => Volatile.Read(ref _unitsShared);
+
     /// <summary>Units that ran (or failed).</summary>
-    public int UnitsExecuted => UnitsDone - UnitsReplayed;
+    public int UnitsExecuted => UnitsDone - UnitsReplayed - UnitsShared;
 
     /// <summary>
     /// Whether <see cref="Units"/> is final. A streaming map step knows its total only when its input is complete.
@@ -89,6 +96,7 @@ internal sealed class StepRun
     internal void AddUnits(int count) => Interlocked.Add(ref _units, count);
     internal void AddUnitDone() => Interlocked.Increment(ref _unitsDone);
     internal void AddUnitReplayed() => Interlocked.Increment(ref _unitsReplayed);
+    internal void AddUnitShared() => Interlocked.Increment(ref _unitsShared);
     internal void AddResult(UnitResult result) => _results.Enqueue(result);
     internal void AddError(BuildError error) => _errors.Enqueue(error);
 
@@ -116,4 +124,9 @@ internal sealed record UnitResult(UnitKey Key, ImmutableArray<FileRef> Inputs, I
     /// Whether the result came from the cache instead of running.
     /// </summary>
     public bool Replayed { get; init; }
+
+    /// <summary>
+    /// Whether the result is another variant's, the unit's file taking it (<see cref="VariantSharing"/>).
+    /// </summary>
+    public bool Shared { get; init; }
 }

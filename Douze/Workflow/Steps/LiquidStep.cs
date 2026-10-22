@@ -82,6 +82,9 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
 
     public override GlobSet DefaultMatch => Templates;
 
+    // A page reads its metadata through the model; a template rendered per file sees its path and all of its data.
+    public override bool RecordsOwnReads => _template == null;
+
     /// <summary>
     /// The options of the <c>markdown</c> section, which tags read (the image defaults): a page rendered with other
     /// options is rendered again.

@@ -56,8 +56,16 @@ internal sealed class ReplaceStep : Step, IMapStep
 
     public override GlobSet DefaultMatch => Pages;
 
+    // The values are rendered with the file's model; the skip glob reads the path (recorded).
+    public override bool RecordsOwnReads => true;
+
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
+        if (_skip != null)
+        {
+            context.Dependencies.RecordPath();
+        }
+
         if (!file.Content.IsText || _skip?.IsMatch(file.Path) == true)
         {
             return FileList.Of(file);

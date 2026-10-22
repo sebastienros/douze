@@ -7,6 +7,12 @@ using Douze.Workflow.Cache;
 
 namespace Douze.Workflow.Scheduling;
 
+/// <summary>
+/// What a unit that ran or replayed gives: its outputs, what it read of its file's own metadata (null when it was
+/// replayed or not recorded) and its dependencies.
+/// </summary>
+internal sealed record UnitOutcome(FileList Outputs, OwnReads? Reads, DependencySet Dependencies);
+
 internal sealed record SchedulerResult(IReadOnlyList<StepRun> Runs, IReadOnlyList<BuildError> Errors, ScopeSet FinalScopes, bool Cancelled, SourceSnapshot? Sources);
 
 /// <summary>
@@ -60,8 +66,9 @@ internal sealed class Scheduler
 
     /// <summary>
     /// The source files of the roots, sorted by path, from the snapshot of the source folder that the build was given
-    /// (watch mode) or from a scan. Files under the output folder or the cache folder are excluded when they are inside
-    /// the source folder. A file whose length and modification time did not change since a build that cached its hash
+    /// (watch mode) or from a scan of the folders the <c>inputs</c> of the roots can match files in
+    /// (<see cref="SourceScope"/>). Files under the output, cache and <c>.douze</c> folders are excluded when they are
+    /// inside the source folder. A file whose length and modification time did not change since a build that cached its hash
     /// is not read to be hashed.
     /// </summary>
     private async Task<SourceFiles> EnumerateSourcesAsync()
@@ -74,7 +81,14 @@ internal sealed class Scheduler
         }
 
         var source = _context.Source;
-        var snapshot = _context.Options.Sources ?? await SourceSnapshot.ScanAsync(source, _context.ExcludedSourceFolders, _context.MaxDegreeOfParallelism, _context.Cancellation);
+        var scope = SourceScope.Of(roots.Select(x => x.Inputs!));
+        var excluded = _context.ExcludedSourceFolders;
+
+        // A watch session's snapshot, while it lists every folder the roots read.
+        var snapshot = _context.Options.Sources is { } kept && kept.Covers(scope, excluded)
+            ? kept
+            : await SourceSnapshot.ScanAsync(source, scope, excluded, _context.MaxDegreeOfParallelism, _context.Cancellation);
+
         Sources = snapshot;
 
         var entries = snapshot.Matching(_graph, roots, _context.ExcludedSourceFolders);
@@ -650,6 +664,7 @@ internal sealed class Scheduler
             }, token);
 
             var options = new ParallelOptions { MaxDegreeOfParallelism = Context.MaxDegreeOfParallelism, CancellationToken = token };
+            var variants = Node.Step.RecordsOwnReads ? new VariantSharing() : null;
 
             var processing = Parallel.ForEachAsync(work.Reader.ReadAllAsync(token), options, async (file, ct) =>
             {
@@ -658,12 +673,21 @@ internal sealed class Scheduler
                 // cache) is read only if the unit runs.
                 await file.Content.EnsureHashAsync(ct);
 
-                await RunUnitAsync(new UnitKey(Name, file.Path.FullName), [file], [file.Ref], async (context, ct) =>
+                if (variants != null && file.Variant != null && VariantSharing.KeyOf(file) is { } variantKey)
                 {
-                    var outputs = await step.ProcessAsync(file, context, ct);
-                    return new StepOutput(outputs);
-                }, file.Path, ct);
+                    await RunVariantAsync(variants, variantKey, file, Body, ct);
+                }
+                else
+                {
+                    await RunUnitAsync(new UnitKey(Name, file.Path.FullName), [file], [file.Ref], Body(file), file.Path, ct);
+                }
             });
+
+            Func<StepContext, CancellationToken, ValueTask<StepOutput>> Body(VirtualFile file) => async (context, ct) =>
+            {
+                var outputs = await step.ProcessAsync(file, context, ct);
+                return new StepOutput(outputs);
+            };
 
             try
             {
@@ -810,36 +834,52 @@ internal sealed class Scheduler
         {
             MarkStarted();
 
+            if (await ExecuteUnitAsync(key, inputFiles, inputs, body, file, null, ct) is { } outcome)
+            {
+                await EmitAsync(outcome.Outputs, ct);
+            }
+        }
+
+        /// <summary>
+        /// The part of <see cref="RunUnitAsync"/> that replays or runs the unit. Returns null when the unit is done
+        /// without outputs to write (it failed or was cancelled). <paramref name="subject"/>: the metadata whose own
+        /// reads are recorded (<see cref="DependencyTracker.Subject"/>).
+        /// </summary>
+        private async Task<UnitOutcome?> ExecuteUnitAsync(UnitKey key, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, Metadata? subject, CancellationToken ct)
+        {
             var replay = _replay;
-            var resultKey = replay == null ? default : ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent, [.. inputFiles.Select(x => x.LastWriteTimeUtc)]);
-            FileList? outputs;
+            var resultKey = replay == null ? default : ComputeResultKey(inputFiles, inputs);
 
             // A replay takes no slot: it checks dependencies and restores outputs, which is short, and a rebuild replays
             // nearly every unit.
             if (replay != null && await TryReplayAsync(replay, resultKey, key, inputFiles, inputs, file, ct) is (true, var replayed))
             {
-                outputs = replayed;
+                return replayed is { } files ? new UnitOutcome(files, null, DependencySet.Empty) : null;
             }
-            else
+
+            var slots = Node.Definition.IsCommand ? Context.ProcessSlots : Context.Parallelism;
+            await slots.WaitAsync(ct);
+
+            try
             {
-                var slots = Node.Definition.IsCommand ? Context.ProcessSlots : Context.Parallelism;
-                await slots.WaitAsync(ct);
-
-                try
-                {
-                    outputs = await ProcessUnitAsync(key, resultKey, inputFiles, inputs, body, file, ct);
-                }
-                finally
-                {
-                    slots.Release();
-                }
+                return await ProcessUnitAsync(key, resultKey, inputFiles, inputs, body, file, subject, ct);
             }
-
-            if (outputs is not { } files)
+            finally
             {
-                return;
+                slots.Release();
             }
+        }
 
+        private Hash128 ComputeResultKey(IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs)
+        {
+            return ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent, [.. inputFiles.Select(x => x.LastWriteTimeUtc)]);
+        }
+
+        /// <summary>
+        /// Publishes the outputs of a unit: the contribution of a reduce step, then the files, to the channel.
+        /// </summary>
+        private async Task EmitAsync(FileList files, CancellationToken ct)
+        {
             // Dependents start with the contribution of a reduce step, so it is published before its outputs: a
             // dependent may have to read them to make room in its channel.
             if (Node.Step.EffectiveShape == StepShape.Reduce)
@@ -858,14 +898,14 @@ internal sealed class Scheduler
         }
 
         /// <summary>
-        /// The part of <see cref="RunUnitAsync"/> under the slot. Returns the outputs to write, or null when the unit is
-        /// done without outputs to write (it failed or was cancelled).
+        /// The part of <see cref="RunUnitAsync"/> under the slot. Returns the outputs to write, with what the unit read,
+        /// or null when the unit is done without outputs to write (it failed or was cancelled).
         /// </summary>
-        private async ValueTask<FileList?> ProcessUnitAsync(UnitKey key, Hash128 resultKey, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, CancellationToken ct)
+        private async ValueTask<UnitOutcome?> ProcessUnitAsync(UnitKey key, Hash128 resultKey, IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs, Func<StepContext, CancellationToken, ValueTask<StepOutput>> body, FPath? file, Metadata? subject, CancellationToken ct)
         {
             var replay = _replay;
 
-            var deps = new DependencyTracker();
+            var deps = new DependencyTracker { Subject = subject };
             using var span = Context.Trace.Begin(Name, UnitCategory, key.Unit);
             var context = new StepContext(Node.Definition, Run.Scopes, Context, deps, span);
 
@@ -910,7 +950,90 @@ internal sealed class Scheduler
                 Files = Context.Options.KeepFiles ? [.. files.AsEnumerable()] : [],
             });
 
-            return files;
+            return new UnitOutcome(files, subject == null ? null : deps.GetOwnReads(), dependencies);
+        }
+
+        /// <summary>
+        /// Runs the unit of a file that has variants (<see cref="FileVariant"/>). The first variant of a group to arrive
+        /// runs; the others wait for its outcome without holding a slot nor a degree of the step, and take its result
+        /// when it did not read what makes them differ (<see cref="VariantSharing.Share"/>), or run their own unit.
+        /// </summary>
+        private async Task RunVariantAsync(VariantSharing variants, Hash128 variantKey, VirtualFile file, Func<VirtualFile, Func<StepContext, CancellationToken, ValueTask<StepOutput>>> body, CancellationToken ct)
+        {
+            MarkStarted();
+
+            if (!variants.Enter(variantKey, file, out var group))
+            {
+                // Parked, or the leader is done: the leader runs the parked followers.
+                if (group.TryFollow(file, out var leaderOutcome))
+                {
+                    await FollowAsync(group.Leader, leaderOutcome, file, body, ct);
+                }
+
+                return;
+            }
+
+            UnitOutcome? outcome;
+
+            try
+            {
+                outcome = await ExecuteUnitAsync(new UnitKey(Name, file.Path.FullName), [file], [file.Ref], body(file), file.Path, file.Metadata, ct);
+            }
+            catch
+            {
+                // Cancelled: the parked followers are dropped with the step.
+                group.Complete(null);
+                throw;
+            }
+
+            var parked = group.Complete(outcome);
+            var followers = parked.Count == 0 ? Task.CompletedTask : Task.WhenAll(parked.Select(x => FollowAsync(file, outcome, x, body, ct)));
+
+            try
+            {
+                if (outcome != null)
+                {
+                    await EmitAsync(outcome.Outputs, ct);
+                }
+            }
+            finally
+            {
+                await followers;
+            }
+        }
+
+        /// <summary>
+        /// A follower of a group of variants: takes the result of the leader's unit when it can, runs its own otherwise.
+        /// </summary>
+        private async Task FollowAsync(VirtualFile leader, UnitOutcome? outcome, VirtualFile file, Func<VirtualFile, Func<StepContext, CancellationToken, ValueTask<StepOutput>>> body, CancellationToken ct)
+        {
+            var key = new UnitKey(Name, file.Path.FullName);
+
+            if (outcome is { Reads: { } reads } && VariantSharing.Share(Name, leader, outcome.Outputs, reads, file) is { } shared)
+            {
+                using (var span = Context.Trace.Begin(Name, UnitCategory, key.Unit))
+                {
+                    span.AddArg("shared", "true");
+                }
+
+                Run.AddOut(shared.Count);
+                Run.AddResult(new UnitResult(key, [file.Ref], [.. shared.AsEnumerable().Select(x => x.Ref)], outcome.Dependencies)
+                {
+                    Files = Context.Options.KeepFiles ? [.. shared.AsEnumerable()] : [],
+                    Shared = true,
+                });
+                Run.AddUnitShared();
+
+                if (_replay is { } replay)
+                {
+                    await StoreAsync(replay, ComputeResultKey([file], [file.Ref]), key, [file], shared, outcome.Dependencies, null, ct);
+                }
+
+                await EmitAsync(shared, ct);
+                return;
+            }
+
+            await RunUnitAsync(key, [file], [file.Ref], body(file), file.Path, ct);
         }
 
         /// <summary>

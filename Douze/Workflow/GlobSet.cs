@@ -25,6 +25,12 @@ internal sealed class GlobSet
 
     public IReadOnlyList<Glob> Globs => _globs;
 
+    /// <summary>
+    /// Whether the set can match any path: <see cref="All"/>, or a set starting from everything (its first pattern is
+    /// negated).
+    /// </summary>
+    public bool CanMatchAnything => _matchAll || _globs.Length > 0 && _globs[0].Negated;
+
     /// <exception cref="GlobFormatException">A pattern is invalid.</exception>
     public static GlobSet Parse(IEnumerable<string> patterns)
     {

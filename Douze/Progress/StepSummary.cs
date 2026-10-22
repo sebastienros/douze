@@ -11,12 +11,14 @@ internal static class StepSummary
 {
     /// <summary>
     /// The line of a completed step without its marker: <c>markdown        312 files    0.41 s</c>, followed by
-    /// <c>   300 cached</c> when units were replayed from the cache.
+    /// <c>   300 cached</c> when units were replayed from the cache, and <c>   140 shared</c> when units took the result of
+    /// another variant of their file.
     /// </summary>
     public static string Line(StepRun run, int nameWidth)
     {
         var name = run.Node.Definition.Name.PadRight(nameWidth);
         var cached = run.UnitsReplayed > 0 ? string.Create(CultureInfo.InvariantCulture, $"  {run.UnitsReplayed,6} cached") : "";
+        cached += run.UnitsShared > 0 ? string.Create(CultureInfo.InvariantCulture, $"  {run.UnitsShared,6} shared") : "";
 
         return run.State switch
         {
@@ -46,6 +48,7 @@ internal static class StepSummary
         }
 
         var cached = result.UnitsReplayed > 0 ? $", {result.UnitsReplayed} cached" : "";
+        cached += result.UnitsShared > 0 ? $", {result.UnitsShared} shared" : "";
 
         return $"Build succeeded: {Plural(result.Steps.Count, "step")}, {Plural(result.Outputs.Count, "file")} written in {seconds} s, {Plural(result.UnitsExecuted, "unit")} executed{cached}";
     }

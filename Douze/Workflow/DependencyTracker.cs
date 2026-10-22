@@ -99,6 +99,86 @@ internal sealed class DependencyTracker
     }
 
     /// <summary>
+    /// The metadata of the file the unit processes, whose own keys the unit reads are recorded
+    /// (<see cref="RecordOwn(Metadata, string)"/>) when it is set: the scheduler sets it for a unit of a step that
+    /// records them (<see cref="Step.RecordsOwnReads"/>) and whose file has variants.
+    /// </summary>
+    public Metadata? Subject { get; set; }
+
+    private HashSet<string>? _ownReads;
+    private bool _readsPath;
+    private bool _readsAllOwn;
+
+    /// <summary>
+    /// Records that the unit read <paramref name="key"/> of the own metadata of <paramref name="metadata"/>, defined or
+    /// not, when it is the <see cref="Subject"/>: a variant whose own metadata has another value there gets another
+    /// result. <see cref="ScopeSet.TryResolve"/> calls it for every key it resolves.
+    /// </summary>
+    public void RecordOwn(Metadata metadata, string key)
+    {
+        if (!_enabled || !ReferenceEquals(metadata, Subject))
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            (_ownReads ??= new(StringComparer.Ordinal)).Add(key);
+        }
+    }
+
+    /// <summary>
+    /// Records that the unit read <paramref name="key"/> of the own metadata of its file, from C#.
+    /// </summary>
+    public void RecordOwn(string key)
+    {
+        if (Subject is { } subject)
+        {
+            RecordOwn(subject, key);
+        }
+    }
+
+    /// <summary>
+    /// Records that the result of the unit depends on the path of its file beyond the paths of its outputs, which keep
+    /// the folders and name of the file (a glob matched on the path, a model exposing it).
+    /// </summary>
+    public void RecordPath()
+    {
+        if (_enabled)
+        {
+            lock (_lock)
+            {
+                _readsPath = true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records that the unit read the whole own metadata of its file.
+    /// </summary>
+    public void RecordAllOwn()
+    {
+        if (_enabled)
+        {
+            lock (_lock)
+            {
+                _readsAllOwn = true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// What the unit read of its file beyond its content: the own keys, whether it read the path or every own key.
+    /// </summary>
+    public OwnReads GetOwnReads()
+    {
+        lock (_lock)
+        {
+            return new OwnReads(_ownReads == null ? [] : [.. _ownReads], _readsPath, _readsAllOwn);
+        }
+    }
+
+    /// <summary>
     /// Records a file the unit wrote to the output folder, as it was once written: a result is reused only while the
     /// file is still there, unchanged.
     /// </summary>
@@ -207,6 +287,11 @@ internal sealed class DependencyTracker
         }
     }
 }
+
+/// <summary>
+/// What a unit read of its file besides its content (<see cref="DependencyTracker.GetOwnReads"/>).
+/// </summary>
+internal sealed record OwnReads(ImmutableHashSet<string> Keys, bool Path, bool All);
 
 /// <summary>
 /// A key resolved for a file of a directory beyond its own metadata, with the hash of what it resolved to

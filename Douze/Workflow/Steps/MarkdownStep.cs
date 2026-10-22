@@ -56,6 +56,9 @@ internal sealed class MarkdownStep : Step, IMapStep
 
     public override GlobSet DefaultMatch => MarkdownFiles;
 
+    // The opt-out is resolved through the scopes; the path only gets the .html extension.
+    public override bool RecordsOwnReads => true;
+
     /// <summary>
     /// The Markdown options: a result rendered with other options is not reused.
     /// </summary>

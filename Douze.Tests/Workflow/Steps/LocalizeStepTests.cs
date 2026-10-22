@@ -168,6 +168,40 @@ public class LocalizeStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task CopiesShareTheRenderOfPagesThatDoNotReadTheirLocale()
+    {
+        await WriteSiteAsync(fallback: true);
+        await Source.WriteTextFileAsync("/docs/guide.md", "---\ntitle: Guide\n---\nguide {{ title }}");
+        await Source.WriteTextFileAsync("/docs/index.md", "home {{ locale }} {{ url }}");
+        await DetectAsync();
+
+        var result = await BuildSuccessfullyAsync(Workflow(
+            Step("pages", "frontmatter", inputs: ["docs/**"]),
+            Step("permalink", "permalink", needs: ["pages"]),
+            Step("collections", "collect", needs: ["permalink"]),
+            Step("localize", "localize", needs: ["permalink", "collections"]),
+            Step("render", "liquid", needs: ["localize"]),
+            Step("markdown", "markdown", needs: ["render"]),
+            Step("write", "write", needs: ["markdown"])));
+
+        // The copy of the guide in ar takes the render and the Markdown of the guide; the copies of the home page,
+        // which reads its locale and url, are rendered.
+        Assert.Equal(1, result["render"].UnitsShared);
+        Assert.Equal(1, result["markdown"].UnitsShared);
+        Assert.Equal("<p>guide Guide</p>\n", await Output.ReadAllTextAsync("/ar/guide/index.html"));
+        Assert.Equal("<p>guide Guide</p>\n", await Output.ReadAllTextAsync("/guide/index.html"));
+        Assert.Equal("<p>home ar /ar/index.html</p>\n", await Output.ReadAllTextAsync("/ar/index.html"));
+        Assert.Equal("<p>home ja /ja/index.html</p>\n", await Output.ReadAllTextAsync("/ja/index.html"));
+        Assert.Equal("<p>home en /index.html</p>\n", await Output.ReadAllTextAsync("/index.html"));
+
+        // The shared result has the copy's locale.
+        var copy = Outputs(result["markdown"]).Single(x => x.Path == "/ar/guide/index.html");
+        Assert.Equal("ar", Own(copy, "locale"));
+        Assert.Equal("/ar/guide/index.html", Own(copy, "url"));
+        Assert.True(copy.Metadata.Own["fallback"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public async Task RenderedPerLocale()
     {
         await WriteSiteAsync(fallback: true);

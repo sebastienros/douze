@@ -752,6 +752,63 @@ public class SchedulerTests
         public void Dispose() { }
     }
 
+    [Theory]
+    [InlineData("title", 1)]
+    [InlineData("lang", 0)]
+    public async Task VariantsShareTheResultOfAUnitThatDidNotReadWhatTellsThemApart(string key, int shared)
+    {
+        var site = await new FakeSite().WithFilesAsync("/a.txt", "/b.txt");
+        var keys = System.Collections.Immutable.ImmutableArray.Create("lang");
+        var runs = 0;
+
+        var graph = new FakeWorkflow()
+            .Add("variants", d => new FakeMapStep(d)
+            {
+                // a.txt and its copy under /x differ by their lang; b.txt has no variants.
+                Process = (file, context, ct) =>
+                {
+                    var page = file.With("variants", metadata: file.Metadata.With(own => { own["lang"] = NodeValue.Create("en"); own["title"] = NodeValue.Create("T"); }));
+
+                    if (file.Path != "/a.txt")
+                    {
+                        return new(FileList.Of(page));
+                    }
+
+                    var copy = page.With("variants", path: new FPath("/x/a.txt"), metadata: page.Metadata.With(own => own["lang"] = NodeValue.Create("x")));
+                    return new(FileList.Of([page.WithVariant(new FileVariant("", keys, 2)), copy.WithVariant(new FileVariant("/x", keys, 2))]));
+                },
+            }, inputs: ["**"])
+            .Add("read", d => new FakeMapStep(d)
+            {
+                OwnReads = true,
+                Process = async (file, context, ct) =>
+                {
+                    Interlocked.Increment(ref runs);
+                    context.Scopes.TryResolve(file.Metadata, key, null, context.Dependencies, out var value, out _);
+                    var text = await file.Content.ReadTextAsync(ct) + "|" + value!.GetValue<string>();
+                    return FileList.Of(file.With("read", content: FileContent.FromText(text)));
+                },
+            }, needs: ["variants"])
+            .Build();
+
+        var result = await site.BuildAsync(graph);
+
+        Assert.True(result.Succeeded, string.Join("\n", result.Errors));
+        Assert.Equal(3 - shared, runs);
+        Assert.Equal(shared, result["read"].UnitsShared);
+        Assert.Equal(3 - shared, result["read"].UnitsExecuted);
+
+        var outputs = result["read"].Results.SelectMany(x => x.Files).OrderBy(x => x.Path).ToArray();
+        Assert.Equal(["/a.txt", "/b.txt", "/x/a.txt"], outputs.Paths());
+
+        // A shared result gets the path and the values of the variant, and keeps its variant.
+        var copy = outputs[2];
+        Assert.Equal(key == "title" ? "/a.txt|T" : "/a.txt|x", await copy.Content.ReadTextAsync(Ct));
+        Assert.Equal("x", copy.Metadata.Own["lang"]!.GetValue<string>());
+        Assert.Equal("/x", copy.Variant!.Prefix);
+        Assert.Equal(key == "title" ? "/a.txt|T" : "/a.txt|en", await outputs[0].Content.ReadTextAsync(Ct));
+    }
+
     private static async Task<string[]> ContentsAsync(StepRun run)
     {
         var contents = new List<string>();

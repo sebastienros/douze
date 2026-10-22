@@ -168,6 +168,12 @@ internal static class MarkdownTags
         {
             var including = chain.Count > 0 ? chain[^1] : TagRendering.File(context) is { } file ? file.SourcePath ?? file.Path : (FPath?)null;
 
+            if (chain.Count == 0 && TagRendering.File(context) is { SourcePath: null })
+            {
+                // Relative to the page's path, which its variants do not share.
+                TagRendering.Dependencies(context)?.RecordPath();
+            }
+
             if (including is { } includingPath)
             {
                 folder = includingPath.GetDirectory();

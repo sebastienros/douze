@@ -357,6 +357,41 @@ about 8 µs per replayed unit.
 Against section 9.2's watch target, "synthetic 32k, one page edited, watch mode: under 500 ms to the written output": 0.47
 to 0.52 s, at the edge of it on this loaded machine.
 
+### Locale copies, source scan and written contents, 2026-10-22
+
+The target site: about 660 pages in 15 locales, every untranslated page copied into the 14 other locales by
+`localize` (`fallback: true`), API reference pages, a code highlighting worker (`run:`, `mode: worker`) after `headings`,
+`layout`, `write`, and a search indexer (`run:` after `write`): 70k files written. Native AOT with the Satori GC, M4 Pro,
+clean builds with `--no-cache`. **Base** is 15643dc, **head** the three changes below. The machine was heavily loaded by
+other builds, a virus scanner reading every written file and other agents (load average 8 to 45), so walls varied by a
+factor of 3 from run to run; the table gives interleaved runs on a copy of the site (median of 3, douze process CPU
+measured apart from the worker and the indexer) and the unit time per step from `--trace-units` on the site itself.
+
+| Measure | Base | Head |
+|---|---:|---:|
+| Wall, whole build (copy of the site, loaded machine) | 130-163 s | 102-123 s |
+| CPU of the douze process | 303-326 s | 307-325 s |
+| Peak RSS | 19.5-19.9 GB | 5.5-6.1 GB |
+| First unit after launch (site folder with a stale output folder and a 168k file worker cache) | 2.0-3.6 s | 0.06 s |
+| Unit time of `render` (sum of unit spans, two runs) | 349-511 s | 42-43 s |
+| ... of which the locale copies | 323-472 s | 35-39 s |
+| Units executed | 213,004 | 185,664 (27,340 shared) |
+
+Outputs are byte identical (59k files compared by hash, the search index left out; `rss.xml` dates "now").
+
+- **Locale copies share the units of their page** (finding 10). 6,563 of the 7,546 copies take the render of their page;
+  the 983 others read their locale (translated strings, links) and render. `markdown`, `headings` and `replace` share
+  too (about 6,900 each). `layout` reads the locale on every page of this site and runs per copy, as it must.
+- **The source scan lists only the folders the `inputs` can match** (finding 11): the site folder holds 236k files, of
+  which `.douze/` (a worker cache, 168k), a stale output folder (61k) and `node_modules` (6k) are never sources.
+- **`write` no longer keeps contents alive** (finding 12): 20 GB of peak RSS was the search indexer's input.
+
+The CPU of the douze process does not drop with the render time: the spans of a unit measure wall time, and on this
+machine most of a unit's time was spent waiting (the worker's queue, the thread pool, contention with the indexer and
+the scanner); the CPU of single runs ranged from 170 to 330 s for the same binary. The code highlighting worker cannot
+share the units of the copies: it reads `lang` (the labels of its copy buttons are translated) and a worker cannot
+report what it read.
+
 ## Findings
 
 Measured on the engine of phase 1b. None of these are fixed here (phase B owns only `bench/`); they feed phase 5.
@@ -496,3 +531,30 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
 Suggested order for phase 5: finding 2 (hash caching, it also makes cache keys cheap), then 3 (results and content
 retention, which the disk cache design decides anyway), then 4 and 5. Finding 1 is a Fluid change and can land at any
 time.
+
+10. *Fixed: variants (`FileVariant`) and own reads (`Step.RecordsOwnReads`).* **Locale fallback copies redid every
+   step.** `localize` copies each untranslated page into every other locale with only `locale`, `lang`, `dir`, `url`,
+   `fallback` and `original_url` changed, and every map step after it ran one unit per copy: on the target site 213 s
+   of `render`'s 229 s and 195 s of the code worker's 210 s were copies. A page and its copies are now variants, and a
+   step whose units record every key of their file's own metadata they read (`liquid` pages, `markdown`, `headings`,
+   `replace`) runs the first variant to arrive and gives the others its outputs, with their own keys and path prefix,
+   when the unit read none of the keys they differ by. Copies wait for their leader without holding a slot. Left: a
+   `run:` step cannot say what it read, so the code worker still runs every copy (its output differs per locale on this
+   site anyway); a worker protocol field listing the metadata keys a result depends on would let a worker share too.
+   Which variant leads is a race, so the count of shared units can vary by a few between builds when a page reads a key
+   only some copies have (`fallback`); the outputs do not.
+
+11. *Fixed: `SourceScope`.* **The source scan listed and stat'ed the whole source folder.** On the target site that is
+   236k files for about 3k sources, 2 to 4 s before the first unit (the cache folder was excluded only when it was the
+   default `.douze/cache`, so `--cache-dir` elsewhere let the worker caches under `.douze/` in). The scan now walks the
+   folders the `inputs` patterns start with, never `.douze/` nor the output and cache folders, and prunes them instead of
+   listing their files; command `sources:` are listed the same way. A watch session rescans when the workflow reads a
+   folder its snapshot does not cover.
+
+12. *Fixed: `FileContent.FromWritten`.* **A step after `write` held every content of the site.** The search indexer of
+   the target site `needs: write`, so it receives all 70k written files, and holds them until `write` is done: 20 GB of
+   peak RSS (17.9 GB of GC heap; 2 to 3 GB without the indexer). `write` now passes a written file on with its content
+   read back from the output folder on each access (same hash and length, so the same ref), and a later `write` step
+   does not write such a file onto itself. Peak RSS: 6 GB. Left: a replayed `write` unit restores its outputs with the
+   input's content, so a rebuild from the cache still holds the contents of what reaches the indexer; the Satori GC
+   peaks higher than the standard GC on the same build (17 to 21 GB against 10 to 14 GB before this change).

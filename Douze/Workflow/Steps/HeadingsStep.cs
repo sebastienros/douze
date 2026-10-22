@@ -44,6 +44,9 @@ internal sealed class HeadingsStep : Step, IMapStep
 
     public override GlobSet DefaultMatch => HtmlFiles;
 
+    // Reads the content and the own 'page' (recorded).
+    public override bool RecordsOwnReads => true;
+
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
         var html = await file.Content.ReadTextAsync(ct);
@@ -98,6 +101,8 @@ internal sealed class HeadingsStep : Step, IMapStep
 
         var toc = Toc(headings, ids);
         var title = headings.FirstOrDefault(x => x.Depth == 1).Text;
+
+        context.Dependencies.RecordOwn("page");
 
         var metadata = file.Metadata.With(own =>
         {

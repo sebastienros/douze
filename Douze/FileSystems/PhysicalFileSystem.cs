@@ -86,18 +86,17 @@ internal sealed class PhysicalFileSystem : IFileSystem
 
         var localPath = path[_basePathWithoutTrailingSeparator.FullName.Length..];
 
-        if (filter == null || filter(localPath))
+        if (filter != null && !filter(localPath.Length == 0 ? "/" : localPath))
         {
-            // localPath is normalized since it can contain backslashes
-            yield return new DirectoryEntry(new FPath(localPath, true), this);
+            yield break;
         }
+
+        // localPath is normalized since it can contain backslashes
+        yield return new DirectoryEntry(new FPath(localPath, true), this);
 
         foreach (var file in Directory.GetFiles(path))
         {
-            if (filter == null || filter(file))
-            {
-                yield return new FileEntry(new FPath(file[_basePathWithoutTrailingSeparator.FullName.Length..], true), this);
-            }
+            yield return new FileEntry(new FPath(file[_basePathWithoutTrailingSeparator.FullName.Length..], true), this);
         }
 
         if (recursive)
