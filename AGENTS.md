@@ -27,10 +27,10 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 - `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write`).
 - `Douze/Workflow/LocaleSet.cs`: `site.locales` (`BuildContext.Locales`, `LocaleSet.None` without the section), also exposed to templates as `site.locales` in the settings scope.
 - `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `write`). A step or a tag that produces a file besides what its unit returns (an image variant) adds it with `StepContext.AddOutput`: it is stored and replayed with the unit, and `write` accepts identical files (same `FileRef`) for one path, written once.
-- `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`, `WatchCommand` for `watch` and `serve`), `WorkflowSource` (finds the site options and the workflow), `ViewSelector`.
-- `Douze/Workflow/`: the engine. `WorkflowGraph` validates a `WorkflowDefinition` and instantiates its steps; `SiteBuilder` runs it with the `Scheduling/Scheduler`, which streams files between steps by shape (`map`, `group`, `reduce`), from a `SourceSnapshot` of the source folder. `DefaultWorkflow` is the workflow of a site without a workflow file. Once a build succeeded, `StaleOutputs` deletes what the previous builds wrote and it did not.
+- `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`, `WatchCommand` for `watch` and `serve`, `DoctorCommand`, `ToolsCommand` for `tools install`), `WorkflowSource` (finds the site options and the workflow), `ViewSelector`.
+- `Douze/Workflow/`: the engine. `WorkflowGraph` validates a `WorkflowDefinition` and instantiates its steps; `SiteBuilder` runs it with the `Scheduling/Scheduler`, which streams files between steps by shape (`map`, `group`, `reduce`), from a `SourceSnapshot` of the source folder. `DefaultWorkflow` is the workflow of a site without a workflow file. Steps declare what they need outside Douze (`Step.Requirements`: libvips, a downloaded tool, the executable of a command; `Requirement.cs`): `SiteBuilder` checks them before any unit runs and fails the build when one is missing, `douze doctor` prints them. A check runs nothing and downloads nothing. Once a build succeeded, `StaleOutputs` deletes what the previous builds wrote and it did not.
 - `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write`, `twoslash`, `csharp`...).
-- `Douze/CodeHover/`: what the steps that check code fences with a language server share (`LspConnection`, `LspClient`, the twoslash result format); `CodeFenceStep` holds their fence scan, memo and error reporting. `Douze/Twoslash/` is the TypeScript engine, `Douze/CodeHover/CSharp/` the C# one (Roslyn language server, generated projects, snippet wrapping). `Douze/Tools/` downloads their servers from npm or NuGet. `docs/code-hover-steps.md` is the design.
+- `Douze/CodeHover/`: what the steps that check code fences with a language server share (`LspConnection`, `LspClient`, the twoslash result format); `CodeFenceStep` holds their fence scan, memo and error reporting. `Douze/Twoslash/` is the TypeScript engine, `Douze/CodeHover/CSharp/` the C# one (Roslyn language server, generated projects, snippet wrapping). `Douze/Tools/` installs their servers. `docs/code-hover-steps.md` is the design.
 - `Douze/Workflow/Cache/`: the disk cache (`<source>/.douze/cache/`, `--no-cache`, `--cache-dir`). `BuildCache` stores the
   result of every unit by `ResultKey` (step, configuration, input refs) with its dependency set, in pack files
   (`PackFile`) under a binary index (`CacheIndex`); `NodeSerializer` writes metadata and nodes keeping their types. The
@@ -49,9 +49,13 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
   server (`tsc --lsp --stdio`, or tsrs, its Rust port: `engine`; `LspConnection`): one project and one language server per set of compiler options, hovers read back from the
   Markdown of the hover (`QuickInfo`), results in twoslash's shape (`TwoslashResult`). Results are memoized in the disk
   cache (`BuildCache.TryGetMemo`/`PutMemo`, kept per step).
-- `Douze/Tools/`: native tools published on npm as per-platform packages (`NpmTool`: TypeScript 7, tsrs), installed once into
-  `<cache>/tools/<name>/<version>/<platform>/` by `ToolInstaller` (integrity verified, pinned for the default version,
-  a lock file for concurrent builds). Pin a new default version with the integrity of every platform from the registry.
+- `Douze/Tools/`: the language servers of the code hover steps: native tools published on npm as per-platform
+  packages (`NpmTool`: TypeScript 7, tsrs), NuGet packages (`NuGetTool`: the Roslyn language server) and Go modules
+  (`GoTool`: gopls, built with `go install`), installed once into `<cache>/tools/<name>/<version>/[<platform>/]` by
+  `ToolInstaller` (integrity verified, pinned for the default version, a lock file for concurrent builds). A step that
+  downloads a tool declares a `ToolRequirement` (`NpmToolRequirement`, `NuGetToolRequirement`, `GoToolRequirement`),
+  which `douze tools install` installs ahead. Pin a new default version with the integrity of every platform from the
+  registry.
 - `Douze/Markdown/`: Markdown rendering. `MarkdownOptions` is the `markdown:` section of `douze.yml`;
   `MarkdownPipelineFactory` builds the one Markdig pipeline of a build, which `MarkdownRenderer` (`BuildContext.Markdown`)
   renders with pooled renderers: anything that renders Markdown uses it, never a second configuration. Douze's own

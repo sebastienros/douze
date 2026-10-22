@@ -168,6 +168,22 @@ internal sealed partial class TwoslashStep : CodeFenceStep<List<SharedFile>>
         ToolIdentity = Hash128.Of(await File.ReadAllBytesAsync(path, ct));
     }
 
+    /// <summary>
+    /// The engine: the binary of <c>path</c>, or the version Douze downloads.
+    /// </summary>
+    public override IEnumerable<Requirement> Requirements(BuildContext context)
+    {
+        if (_path == null)
+        {
+            var alternative = _tool == NpmTool.Tsrs ? ", or use 'engine: typescript'" : "";
+            return [new NpmToolRequirement(_tool, _version, Installer(context.ToolsRoot, (level, message) => context.View.Message(level, Name, message)), $"set the option 'path' of step '{Name}' to a {_tool.Name} binary{alternative}")];
+        }
+
+        return [FileRequirement(_tool.Name, ResolvePath(context, _path), $"set the option 'path' of step '{Name}' to a {_tool.Name} binary, or remove it to download {_tool.Name} {_version}")];
+    }
+
+    private ToolInstaller Installer(string root, Action<LogLevel, string> log) => new(root, _registry, log);
+
     [GeneratedRegex(@"\btwoslash\b")]
     private static partial Regex Trigger();
 
@@ -213,8 +229,7 @@ internal sealed partial class TwoslashStep : CodeFenceStep<List<SharedFile>>
 
     private async Task<string> InstallAsync(StepContext context, CancellationToken ct)
     {
-        var installer = new ToolInstaller(ToolsRoot(context.Build), _registry, context.Log);
-        return await installer.InstallAsync(_tool, _version, ct);
+        return await Installer(context.Build.ToolsRoot, context.Log).InstallAsync(_tool, _version, ct);
     }
 
     /// <summary>

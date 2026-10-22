@@ -324,6 +324,7 @@ public sealed partial class GoStepTests : CacheTestBase
 
         var result = await BuildAsync(Workflow(typeof(GoStepTests).Assembly.Location, ("go", NodeValue.Create("/missing/go"))), Options());
 
-        Assert.Contains("step 'go' requires Go: ", Assert.Single(result.Errors).Message);
+        // A requirement: the build fails before any unit runs.
+        Assert.Contains("go does not exist at '/missing/go': install Go from https://go.dev/dl, or set the option 'go' of step 'go'", Assert.Single(result.Errors).Message);
     }
 }

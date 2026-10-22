@@ -44,7 +44,7 @@ internal sealed class ImageProcessor
     /// <summary>
     /// The version of libvips, part of what the image steps' results depend on.
     /// </summary>
-    public string Version { get; } = string.Create(CultureInfo.InvariantCulture, $"{NetVips.NetVips.Version(0)}.{NetVips.NetVips.Version(1)}.{NetVips.NetVips.Version(2)}");
+    public string Version { get; } = LibraryVersion;
 
     /// <summary>
     /// Creates the processor of a build. <paramref name="warn"/> receives the warnings of libvips.
@@ -77,18 +77,33 @@ internal sealed class ImageProcessor
     }
 
     /// <summary>
-    /// The message of a missing libvips: the tool packages of each platform include it, the platform independent one
-    /// (and builds from source on other platforms) does not.
+    /// How to get libvips: the tool packages of each platform include it, the platform independent one (and builds from
+    /// source on other platforms) does not.
+    /// </summary>
+    public const string InstallHint = "the douze tool packages of win-x64, win-arm64, linux-x64, linux-arm64, osx-x64 "
+        + "and osx-arm64 include it; the platform independent package does not: install douze on one of these platforms, "
+        + "or put libvips 8.18 (libvips.so.42, libvips.42.dylib or libvips-42.dll) next to the douze executable or on the "
+        + "library path";
+
+    /// <summary>
+    /// libvips, which the image steps need.
+    /// </summary>
+    public static Requirement Requirement { get; } = Requirement.Create("libvips", InstallHint, static _ =>
+        ValueTask.FromResult(ModuleInitializer.VipsInitialized
+            ? RequirementStatus.Found(LibraryVersion)
+            : RequirementStatus.Missing($"cannot be loaded{Reason(ModuleInitializer.Exception)}")));
+
+    /// <summary>
+    /// The message of a missing libvips.
     /// </summary>
     public static string MissingLibraryMessage(Exception? exception)
     {
-        var reason = exception?.Message is { Length: > 0 } message ? $" ({FirstSentence(message)})" : "";
-
-        return $"image processing needs libvips, which cannot be loaded{reason}. The douze tool packages of win-x64, "
-            + "win-arm64, linux-x64, linux-arm64, osx-x64 and osx-arm64 include it; the platform independent package does "
-            + "not: install douze on one of these platforms, or put libvips 8.18 (libvips.so.42, libvips.42.dylib or "
-            + "libvips-42.dll) next to the douze executable or on the library path";
+        return $"image processing needs libvips, which cannot be loaded{Reason(exception)}. {char.ToUpperInvariant(InstallHint[0])}{InstallHint[1..]}";
     }
+
+    private static string Reason(Exception? exception) => exception?.Message is { Length: > 0 } message ? $" ({FirstSentence(message)})" : "";
+
+    private static string LibraryVersion => string.Create(CultureInfo.InvariantCulture, $"{NetVips.NetVips.Version(0)}.{NetVips.NetVips.Version(1)}.{NetVips.NetVips.Version(2)}");
 
     private static string FirstSentence(string message)
     {

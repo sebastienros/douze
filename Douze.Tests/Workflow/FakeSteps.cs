@@ -33,9 +33,14 @@ internal sealed class FakeMapStep : Step, IMapStep
     /// <summary>Whether the step claims to read the contents of its inputs.</summary>
     public bool Contents { get; init; } = true;
 
+    /// <summary>The requirements the step declares.</summary>
+    public IReadOnlyList<Requirement> Required { get; init; } = [];
+
     public override GlobSet DefaultMatch => Default ?? GlobSet.All;
 
     public override StepShape NativeShape => StepShape.Map;
+
+    public override IEnumerable<Requirement> Requirements(BuildContext context) => Required;
 
     public override bool ReadsContent => Contents;
 

@@ -209,7 +209,7 @@ public class FilterCommandStepTests : CommandTestBase
         Assert.Equal(Path.Combine(TempFolder, "site", "tools"), await OutputTextAsync(result["cwd"], "/a.txt"));
 
         var missing = await RunAsync(Workflow(Command("cwd", Tool("args"), CommandMode.Filter, inputs: ["**"], cwd: "missing")));
-        Assert.Equal($"the working directory '{Path.Combine(TempFolder, "site", "missing")}' does not exist", Assert.Single(missing.Errors).Message);
+        Assert.Equal($"working directory '{Path.Combine(TempFolder, "site", "missing")}' does not exist: create the folder, or fix the option 'cwd' of step 'cwd' (relative to the source folder)", Assert.Single(missing.Errors).Message);
     }
 
     [Fact]

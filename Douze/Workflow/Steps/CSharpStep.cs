@@ -108,6 +108,19 @@ internal sealed partial class CSharpStep : CodeFenceStep<IReadOnlyDictionary<str
         ToolIdentity = Hash128.Of(await File.ReadAllBytesAsync(path, ct));
     }
 
+    /// <summary>
+    /// The .NET SDK's <c>dotnet</c>, and the language server: the file of <c>path</c>, or the version Douze downloads.
+    /// </summary>
+    public override IEnumerable<Requirement> Requirements(BuildContext context)
+    {
+        var dotnetHint = $"install the .NET SDK (10 or later) from https://dot.net, or set the option 'dotnet' of step '{Name}'";
+        yield return ExecutableRequirement(context, "dotnet", _dotnet ?? (Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } host ? host : null), dotnetHint);
+
+        yield return _path == null
+            ? new NuGetToolRequirement(_tool, _version, new ToolInstaller(context.ToolsRoot, _registry, (level, message) => context.View.Message(level, Name, message)), $"set the option 'path' of step '{Name}' to the language server's Microsoft.CodeAnalysis.LanguageServer.dll")
+            : FileRequirement(_tool.Name, ResolvePath(context, _path), $"set the option 'path' of step '{Name}' to the language server, or remove it to download {_tool.Name} {_version}");
+    }
+
     protected override bool Selects(string meta) => _trigger == null || Regex.IsMatch(meta, $@"(?<![\w-]){Regex.Escape(_trigger)}(?![\w-])");
 
     /// <summary>
@@ -177,7 +190,7 @@ internal sealed partial class CSharpStep : CodeFenceStep<IReadOnlyDictionary<str
     {
         var build = context.Build;
         var dotnet = await DotnetAsync(build, ct);
-        var server = _path != null ? ResolvePath(build, _path) : await new ToolInstaller(ToolsRoot(build), _registry, context.Log).InstallAsync(_tool, _version, ct);
+        var server = _path != null ? ResolvePath(build, _path) : await new ToolInstaller(build.ToolsRoot, _registry, context.Log).InstallAsync(_tool, _version, ct);
         context.Log(LogLevel.Info, $"checking {fences.Count} C# snippet(s) with the Roslyn language server {(_path != null ? server : _version)}");
 
         var outcomes = new CodeOutcome?[fences.Count];

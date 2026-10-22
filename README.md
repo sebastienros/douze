@@ -15,6 +15,8 @@ The package is native AOT on Windows, Linux and macOS (x64 and arm64) and needs 
 douze [build] [options]          build once (default command)
 douze watch [options]            build, then rebuild on changes
 douze serve [options]            watch + dev server with live reload
+douze doctor [options]           check what the steps need (libvips, tools, commands) without building
+douze tools install [options]    download the tools the steps need into the cache folder
 douze worker-helper              print douze-worker.mjs to stdout
 
 Options:
@@ -39,7 +41,7 @@ Options:
 ```
 
 The exit code is 0 on success, 1 when the build has errors (each one is printed as
-`error: <step>: <file>(<line>,<col>): <message>`), 2 for an invalid command line or workflow, and 130 when the
+`error: <step>: <file>(<line>,<col>): <message>`) or a requirement is missing (see "doctor"), 2 for an invalid command line or workflow, and 130 when the
 build is cancelled with Ctrl+C.
 
 # cache
@@ -84,6 +86,44 @@ douze serve -s Sample
 - Live reload: the server adds a script to every HTML page before `</body>`. After each build, a page reloads when it
   changed (or was deleted), or when a script changed; when only stylesheets changed, they are swapped in place without
   reloading. Pages reload too when they reconnect to a restarted server.
+
+# doctor
+
+Some steps need something outside Douze: the image steps need libvips, `twoslash` its engine, `csharp` the .NET SDK's
+`dotnet` and the Roslyn language server, `go` the `go` executable and gopls, a command step the executable its `run`
+line starts with. Every build checks them before any unit runs, and fails at once when one is
+missing, with what to install or configure:
+
+```
+error: minify: esbuild is not on PATH: install esbuild and add its folder to PATH, or change the 'run' line of step 'minify'
+```
+
+`douze doctor` (with `-s`, `-w`, `--cache-dir`) loads the workflow and checks every requirement without building:
+
+```
+STEP      REQUIREMENT       STATUS    DETAILS
+images    libvips           ok        8.18.7
+twoslash  typescript 7.0.2  download  is not installed: it is downloaded for linux-x64 on first use, or now by 'douze tools install'
+minify    esbuild           missing   is not on PATH: install esbuild and add its folder to PATH, or change the 'run' line of step 'minify'
+og        node              ok        /usr/bin/node
+
+1 requirement missing: builds fail until it is fixed
+```
+
+It exits with 1 when a requirement is missing. A requirement is `ok` (with its version or path when known),
+`download` (a tool Douze downloads on first use), `missing`, or `unchecked` when it is only known during the build
+(a `run` line that starts with a template or a variable). Douze runs nothing to check: the executable of a command is
+looked up on `PATH` (and `PATHEXT` on Windows), or, when it is a path (`./scripts/build.sh`), relative to the step's
+`cwd`, which must exist; commands of the shell (`echo`, `cd`) need nothing. Its version is not checked: a command that
+needs a given version can check it itself.
+
+`douze tools install` downloads every tool the workflow downloads on first use (the `twoslash` engine, the Roslyn
+language server of `csharp`, gopls of `go`, built with `go install`) into the cache
+folder (`<cache>/tools/`, `--cache-dir`), so that a CI cache of that folder, or a machine that goes offline, has them:
+
+```
+douze tools install -s site --cache-dir .cache/douze
+```
 
 # site layout
 
@@ -550,8 +590,10 @@ For Markdown images (`![alt](images/x.png)`), three steps do the same without a 
 `images`, by source url (`images["/docs/images/x.png"]`), for templates and `pictures`, which rewrites the `<img>` of
 the images it knows into the tag's markup, keeping their other attributes. A page depends on the images it shows only.
 
-Image processing uses libvips (NetVips), included in the native AOT packages. Without it, a build that uses no image
-feature works, and the units that need it fail with the steps to get it; SVG and GIF images never need it.
+Image processing uses libvips (NetVips), included in the native AOT packages. Without it, a workflow with an `images`
+or `social-image` step fails before building, with the steps to get it (`douze doctor` checks it); the `image` tag
+and the `image_url` and `image_size` filters fail only the pages that use them on an image other than an SVG or a
+GIF, which never need it.
 
 # social images
 
@@ -617,7 +659,7 @@ checks only new snippets, and starts no language server when there is none.
 
 The engine is downloaded on first use from the npm registry (`registry`), the package of the platform, verified
 against its integrity (the one Douze pins for its default version), into `<cache>/tools/<engine>/<version>/<platform>/`;
-later builds use it offline. `engine` is `typescript` (TypeScript 7, `@typescript/typescript-<platform>`, for Windows,
+later builds use it offline, and `douze tools install` downloads it ahead (see "doctor"). `engine` is `typescript` (TypeScript 7, `@typescript/typescript-<platform>`, for Windows,
 macOS and Linux; 7.0.2 by default) or `tsrs` ([tsrs](https://github.com/oxc-project/tsrs), a port of TypeScript 7 to
 Rust with the same protocol, for macOS on Apple silicon and Linux; it gives the same results with less memory).
 `version` picks another release; `path` (relative to the source folder) uses a binary instead, for offline machines.
@@ -736,6 +778,9 @@ A value written directly in `run` is quoted for the shell when it needs it (`'/m
 `"C:\my site\_site"` with `cmd.exe`); the result of a filter (`{{ file.name | remove: '.md' }}`) is written as it is.
 `env` values are never quoted. The environment also has `DOUZE_STEP`, `DOUZE_SITE` (output folder) and
 `DOUZE_SOURCE` (source folder).
+
+Before the build, the program the line starts with is looked up on the PATH, or relative to `cwd` when it is a path:
+a missing one fails the build at once (see "doctor").
 
 With `shell: false`, the line is split on whitespace, `'...'` is literal, and in `"..."` a `\"` is a quote. The
 program is looked up on the PATH; on Windows, use the shell for `npx` and other `.cmd` scripts.

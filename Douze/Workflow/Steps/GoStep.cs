@@ -103,6 +103,26 @@ internal sealed partial class GoStep : CodeFenceStep<GoStep.GoState>
         ToolIdentity = Hash128.Of(await File.ReadAllBytesAsync(path, ct));
     }
 
+    /// <summary>
+    /// The <c>go</c> executable, and gopls: the file of <c>path</c>, or the version Douze builds with <c>go install</c>.
+    /// </summary>
+    public override IEnumerable<Requirement> Requirements(BuildContext context)
+    {
+        yield return ExecutableRequirement(context, "go", _go, $"install Go from https://go.dev/dl, or set the option 'go' of step '{Name}'");
+
+        if (_path != null)
+        {
+            yield return FileRequirement(_tool.Name, ResolvePath(context, _path), $"set the option 'path' of step '{Name}' to a gopls binary, or remove it to build gopls {_version}");
+            yield break;
+        }
+
+        // The go that builds gopls, null when it is not found.
+        var go = _go == null ? FindExecutable(context, "go") : ResolvePath(context, _go);
+        go = go != null && File.Exists(go) ? go : null;
+
+        yield return new GoToolRequirement(_tool, _version, new ToolInstaller(context.ToolsRoot, null, (level, message) => context.View.Message(level, Name, message)), go, $"install Go from https://go.dev/dl to build gopls, or set the option 'path' of step '{Name}' to a gopls binary");
+    }
+
     protected override bool Selects(string meta) => _trigger == null || Regex.IsMatch(meta, $@"(?<![\w-]){Regex.Escape(_trigger)}(?![\w-])");
 
     /// <summary>
@@ -187,7 +207,7 @@ internal sealed partial class GoStep : CodeFenceStep<GoStep.GoState>
             throw new DouzeException($"step '{Name}' requires Go: '{state.Go}' cannot run; install it from https://go.dev/dl, or set the option 'go'");
         }
 
-        var gopls = _path != null ? ResolvePath(build, _path) : await new ToolInstaller(ToolsRoot(build), null, context.Log).InstallAsync(_tool, _version, state.Go, ct);
+        var gopls = _path != null ? ResolvePath(build, _path) : await new ToolInstaller(build.ToolsRoot, null, context.Log).InstallAsync(_tool, _version, state.Go, ct);
         context.Log(LogLevel.Info, $"checking {fences.Count} Go snippet(s) with gopls {(_path != null ? gopls : _version)}");
 
         var outcomes = new CodeOutcome?[fences.Count];

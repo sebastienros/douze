@@ -70,6 +70,8 @@ internal sealed partial class SocialImageStep : Step, IMapStep
 
     public override StepShape NativeShape => StepShape.Map;
 
+    public override IEnumerable<Requirement> Requirements(BuildContext context) => [ImageProcessor.Requirement];
+
     public override GlobSet DefaultMatch => Pages;
 
     public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct)

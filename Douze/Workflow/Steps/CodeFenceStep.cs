@@ -291,9 +291,26 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
     }
 
     /// <summary>
-    /// The tools folder of the build: <c>&lt;cache&gt;/tools</c>.
+    /// A file a path option names, such as the binary of a language server.
     /// </summary>
-    protected static string ToolsRoot(BuildContext context) => Path.Combine(context.CacheRoot ?? Path.Combine(Path.GetTempPath(), BuildContext.DefaultCacheFolder), "tools");
+    protected static Requirement FileRequirement(string name, string path, string hint) => Requirement.Create(name, hint, _ =>
+        ValueTask.FromResult(File.Exists(path) ? RequirementStatus.Found(path: path) : RequirementStatus.Missing($"does not exist at '{path}'")));
+
+    /// <summary>
+    /// An executable the step runs: the file of its option when set (relative to the source folder), else
+    /// <paramref name="command"/> on <c>PATH</c>. Nothing is run: its version is not known.
+    /// </summary>
+    protected static Requirement ExecutableRequirement(BuildContext context, string command, string? option, string hint) => option != null
+        ? FileRequirement(command, ResolvePath(context, option), hint)
+        : Requirement.Create(command, hint, _ => ValueTask.FromResult(FindExecutable(context, command) is { } found
+            ? RequirementStatus.Found(path: found)
+            : RequirementStatus.Missing("is not on PATH")));
+
+    /// <summary>
+    /// The full path of <paramref name="command"/> on <c>PATH</c>, or null.
+    /// </summary>
+    protected static string? FindExecutable(BuildContext context, string command) =>
+        Commands.CommandRequirements.FindOnPath(command, context.Site.SourceDirectory ?? Environment.CurrentDirectory);
 
     /// <summary>
     /// Reads the files of a <c>files</c> option (paths next to the snippets to files of the source folder), recording

@@ -75,6 +75,71 @@ internal sealed class ToolInstaller
     public string GetFolder(NpmTool tool, string version, string platform) => Path.Combine(_root, tool.Name, version, platform);
 
     /// <summary>
+    /// The folder <paramref name="tool"/> <paramref name="version"/> is installed in for <paramref name="platform"/>.
+    /// </summary>
+    public string GetFolder(NuGetTool tool, string version, string platform) => Path.Combine(_root, tool.Name, version, platform);
+
+    /// <summary>
+    /// The folder <paramref name="tool"/> <paramref name="version"/> is built into.
+    /// </summary>
+    public string GetFolder(GoTool tool, string version) => Path.Combine(_root, tool.Name, version);
+
+    /// <summary>
+    /// The path of the binary of <paramref name="tool"/> <paramref name="version"/> when it is installed for the current
+    /// platform (or <paramref name="platform"/>), null otherwise. Sends no request.
+    /// </summary>
+    public string? FindInstalled(NpmTool tool, string version, string? platform = null)
+    {
+        platform ??= NpmTool.CurrentPlatform;
+
+        return tool.Packages.ContainsKey(platform) && IsVersion(version) && File.Exists(Path.Combine(GetFolder(tool, version, platform), Marker))
+            ? GetExecutable(tool, version, platform)
+            : null;
+    }
+
+    /// <summary>
+    /// The path of the entry point of <paramref name="tool"/> <paramref name="version"/> when it is installed for the
+    /// current platform (or <paramref name="platform"/>), null otherwise. Sends no request.
+    /// </summary>
+    public string? FindInstalled(NuGetTool tool, string version, string? platform = null)
+    {
+        platform ??= NpmTool.CurrentPlatform;
+
+        return tool.Packages.ContainsKey(platform) && IsVersion(version) && File.Exists(Path.Combine(GetFolder(tool, version, platform), Marker))
+            ? Path.Combine(GetFolder(tool, version, platform), GetExecutable(tool, platform))
+            : null;
+    }
+
+    /// <summary>
+    /// The path of the binary of <paramref name="tool"/> <paramref name="version"/> when it is built, null otherwise.
+    /// Runs nothing.
+    /// </summary>
+    public string? FindInstalled(GoTool tool, string version)
+    {
+        return IsGoVersion(version) && File.Exists(Path.Combine(GetFolder(tool, version), Marker))
+            ? Path.Combine(GetFolder(tool, version), GetExecutable(tool))
+            : null;
+    }
+
+    private static bool IsVersion(string version)
+    {
+        return version.Length > 0 && !version.Contains('/', StringComparison.Ordinal) && !version.Contains('\\', StringComparison.Ordinal) && !version.Contains("..", StringComparison.Ordinal);
+    }
+
+    private static bool IsGoVersion(string version)
+    {
+        return version.Length > 0 && version.IndexOfAny(['/', '\\', '@', ' ']) < 0 && !version.Contains("..", StringComparison.Ordinal);
+    }
+
+    private string GetExecutable(NpmTool tool, string version, string platform) => Path.Combine(GetFolder(tool, version, platform), GetExecutable(tool, platform));
+
+    private static string GetExecutable(NpmTool tool, string platform) => tool.Executable + (platform.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : "");
+
+    private static string GetExecutable(NuGetTool tool, string platform) => tool.Executable.Replace("{platform}", platform, StringComparison.Ordinal);
+
+    private static string GetExecutable(GoTool tool) => tool.Executable + (OperatingSystem.IsWindows() ? ".exe" : "");
+
+    /// <summary>
     /// Returns the path of the binary of <paramref name="tool"/> <paramref name="version"/> for the current platform
     /// (or <paramref name="platform"/>), installing it first when needed.
     /// </summary>
@@ -89,17 +154,16 @@ internal sealed class ToolInstaller
             throw new DouzeException($"{tool.Name} has no package for the platform '{platform}' (it has {string.Join(", ", tool.Packages.Keys)}): set the path of a {tool.Name} binary");
         }
 
-        if (version.Length == 0 || version.Contains('/', StringComparison.Ordinal) || version.Contains('\\', StringComparison.Ordinal) || version.Contains("..", StringComparison.Ordinal))
+        if (!IsVersion(version))
         {
             throw new DouzeException($"'{version}' is not a version of {tool.Name}");
         }
 
-        var executable = tool.Executable + (platform.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : "");
-        var folder = await InstallPackageAsync(tool.Name, version, platform, package, executable, isZip: false, async () =>
+        await InstallPackageAsync(tool.Name, version, platform, package, GetExecutable(tool, platform), isZip: false, async () =>
             tool.DefaultVersion == version && tool.KnownIntegrity.TryGetValue(platform, out var known)
                 ? (TarballUrl(package, version), known)
                 : await ResolveAsync(package, version, ct), ct);
-        return Path.Combine(folder, executable);
+        return GetExecutable(tool, version, platform);
     }
 
     /// <summary>
@@ -117,7 +181,7 @@ internal sealed class ToolInstaller
             throw new DouzeException($"{tool.Name} has no package for the platform '{platform}' (it has {string.Join(", ", tool.Packages.Keys)}): set the path of {tool.Name}");
         }
 
-        if (version.Length == 0 || version.Contains('/', StringComparison.Ordinal) || version.Contains('\\', StringComparison.Ordinal) || version.Contains("..", StringComparison.Ordinal))
+        if (!IsVersion(version))
         {
             throw new DouzeException($"'{version}' is not a version of {tool.Name}");
         }
@@ -127,7 +191,7 @@ internal sealed class ToolInstaller
         var lower = version.ToLowerInvariant();
         var url = new Uri(registry, $"{id}/{lower}/{id}.{lower}.nupkg").AbsoluteUri;
 
-        var executable = tool.Executable.Replace("{platform}", platform, StringComparison.Ordinal);
+        var executable = GetExecutable(tool, platform);
         var folder = await InstallPackageAsync(tool.Name, version, platform, package, executable, isZip: true, async () =>
             tool.DefaultVersion == version && tool.KnownIntegrity.TryGetValue(platform, out var known)
                 ? (url, known)
@@ -144,13 +208,13 @@ internal sealed class ToolInstaller
     /// <exception cref="DouzeException">The version is invalid, or <c>go install</c> failed.</exception>
     public async Task<string> InstallAsync(GoTool tool, string version, string go, CancellationToken ct)
     {
-        if (version.Length == 0 || version.IndexOfAny(['/', '\\', '@', ' ']) >= 0 || version.Contains("..", StringComparison.Ordinal))
+        if (!IsGoVersion(version))
         {
             throw new DouzeException($"'{version}' is not a version of {tool.Name}");
         }
 
-        var folder = Path.Combine(_root, tool.Name, version);
-        var executable = tool.Executable + (OperatingSystem.IsWindows() ? ".exe" : "");
+        var folder = GetFolder(tool, version);
+        var executable = GetExecutable(tool);
 
         if (File.Exists(Path.Combine(folder, Marker)))
         {
