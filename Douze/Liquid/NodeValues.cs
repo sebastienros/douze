@@ -208,21 +208,82 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
 {
     private readonly AccessRecorder? _recorder;
 
+    // A slice (the slice filter): the items of Source from Offset, whose reads are recorded as reads of Source's items.
+    private readonly int _offset;
+
     public NodeArrayValue(NodeArray value, AccessRecorder? recorder = null)
     {
         Value = value;
         _recorder = recorder;
     }
 
+    private NodeArrayValue(NodeArray value, AccessRecorder? recorder, NodeArray source, int offset)
+    {
+        Value = value;
+        _recorder = recorder;
+        Source = source;
+        _offset = offset;
+    }
+
     public NodeArray Value { get; }
+
+    /// <summary>
+    /// The array this one is a slice of, or null.
+    /// </summary>
+    public NodeArray? Source { get; }
+
+    /// <summary>
+    /// The index in <see cref="Source"/> of the first item of a slice.
+    /// </summary>
+    public int Offset => _offset;
+
+    /// <summary>
+    /// <paramref name="length"/> items from <paramref name="start"/> (both within the array), with the recorder of this
+    /// array: reading an item of the slice is reading the item of this array, and reading the slice whole or its size
+    /// is reading this array whole or its size.
+    /// </summary>
+    internal NodeArrayValue Slice(int start, int length)
+    {
+        var items = new Node?[length];
+
+        for (var i = 0; i < length; i++)
+        {
+            items[i] = Value[start + i];
+        }
+
+        return new NodeArrayValue(new NodeArray(items), _recorder, Source ?? Value, _offset + start);
+    }
 
     /// <summary>
     /// The array, read whole: for a filter that uses all of it.
     /// </summary>
     internal NodeArray ReadAll()
     {
-        _recorder?.ReadWhole();
+        RecordWhole();
         return Value;
+    }
+
+    /// <summary>
+    /// Records the array as read whole; for a slice, its items (each whole) in the array it is a slice of.
+    /// </summary>
+    private void RecordWhole()
+    {
+        if (_recorder == null)
+        {
+            return;
+        }
+
+        // More items than the recorder keeps is the array read whole anyway.
+        if (Source == null || Value.Count > AccessRecorder.MaxEntries)
+        {
+            _recorder.ReadWhole();
+            return;
+        }
+
+        for (var i = 0; i < Value.Count; i++)
+        {
+            _recorder.Item(_offset + i).ReadWhole();
+        }
     }
 
     public override FluidValues Type => FluidValues.Array;
@@ -236,7 +297,7 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
         }
     }
 
-    public FluidValue this[int index] => NodeValues.ToFluidValue(Value[index], _recorder?.Item(index));
+    public FluidValue this[int index] => NodeValues.ToFluidValue(Value[index], _recorder?.Item(_offset + index));
 
     public override ValueTask<FluidValue> GetValueAsync(string name, TemplateContext context)
     {
@@ -250,7 +311,7 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
 
             case "first":
                 // A missing first item is read as such: no need for the count.
-                _recorder?.Item(0);
+                _recorder?.Item(_offset);
                 return new(count > 0 ? this[0] : NilValue.Instance);
 
             case "last":
@@ -279,13 +340,13 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
         }
 
         // An item that does not exist is read too: the result changes when it is added.
-        _recorder?.Item(i);
+        _recorder?.Item(_offset + i);
         return new(NilValue.Instance);
     }
 
     public override async ValueTask<bool> ContainsAsync(FluidValue value, TemplateContext context)
     {
-        _recorder?.ReadWhole();
+        RecordWhole();
 
         foreach (var item in Value)
         {
@@ -301,7 +362,7 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
 
     public override async IAsyncEnumerable<FluidValue> EnumerateAsync(TemplateContext context)
     {
-        _recorder?.ReadWhole();
+        RecordWhole();
 
         foreach (var item in Value)
         {
@@ -314,12 +375,12 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
     // Equal to any IFluidArray with equal items, like Fluid's ArrayValue, so that comparisons agree in both directions.
     public override bool Equals(FluidValue other)
     {
-        _recorder?.ReadWhole();
+        RecordWhole();
 
         if (other is NodeArrayValue nodeArray)
         {
             // The other array is read whole too: it may be a value from the scopes of its own.
-            nodeArray._recorder?.ReadWhole();
+            nodeArray.RecordWhole();
 
             if (ReferenceEquals(nodeArray.Value, Value) || nodeArray.Value.Equals(Value))
             {
@@ -363,20 +424,20 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
     [Obsolete("Use the TemplateContext overload.")]
     public override string ToStringValue()
     {
-        _recorder?.ReadWhole();
+        RecordWhole();
         return string.Concat(Value.Select(x => NodeValues.ToFluidValue(x).ToStringValue()));
     }
 
     [Obsolete("Use the TemplateContext overload.")]
     public override object ToObjectValue()
     {
-        _recorder?.ReadWhole();
+        RecordWhole();
         return Value;
     }
 
     public override async ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, CultureInfo cultureInfo)
     {
-        _recorder?.ReadWhole();
+        RecordWhole();
 
         foreach (var item in Value)
         {
@@ -389,7 +450,7 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
     // Hashes the items like Fluid's ArrayValue, so that equal arrays of both kinds have equal hashes.
     public override int GetHashCode()
     {
-        _recorder?.ReadWhole();
+        RecordWhole();
 
         var hash = new HashCode();
 

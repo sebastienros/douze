@@ -18,6 +18,9 @@ internal static class DataFilters
             .AddFilter("group_by_exp", GroupByExp)
             .AddFilter("sort_by", SortBy)
             .AddFilter("index_by", IndexBy)
+            .AddFilter("where", Where)
+            .AddFilter("find_index", FindIndex)
+            .AddFilter("slice", Slice)
             .AddFilter("json", Json)
             .AddFilter("jsonify", Json);
     }
@@ -112,6 +115,72 @@ internal static class DataFilters
         }
 
         return Object(result);
+    }
+
+    /// <summary>
+    /// <c>{{ list | where: "module", name }}</c>: Fluid's filter, answered from a <see cref="MemberIndex"/> when the list
+    /// is a large data array (or a slice of one) and the value a string.
+    /// </summary>
+    public static ValueTask<FluidValue> Where(FluidValue input, FilterArguments arguments, TemplateContext context)
+    {
+        return MemberIndex.TryGet(input, arguments, context, out var array, out var lookup, out var value)
+            ? new(lookup.Where(array, value))
+            : ArrayFilters.Where(input, arguments, context);
+    }
+
+    /// <summary>
+    /// <c>{{ list | find_index: "file", name }}</c>: Fluid's filter, answered from a <see cref="MemberIndex"/> when the
+    /// list is a large data array (or a slice of one) and the value a string.
+    /// </summary>
+    public static ValueTask<FluidValue> FindIndex(FluidValue input, FilterArguments arguments, TemplateContext context)
+    {
+        if (!MemberIndex.TryGet(input, arguments, context, out _, out var lookup, out var value))
+        {
+            return ArrayFilters.FindIndex(input, arguments, context);
+        }
+
+        return new(lookup.FindIndex(value) is { } found ? NumberValue.Create(found) : NilValue.Instance);
+    }
+
+    /// <summary>
+    /// <c>{{ list | slice: 10, 20 }}</c>: Fluid's filter; a slice of a data array is a data array of its own
+    /// (<see cref="NodeArrayValue.Slice"/>), whose items are read as the items of the array, so that <c>where</c> and
+    /// <c>find_index</c> over it use the index of the array.
+    /// </summary>
+    public static ValueTask<FluidValue> Slice(FluidValue input, FilterArguments arguments, TemplateContext context)
+    {
+        if (input is not NodeArrayValue array || arguments.Count is not (1 or 2) || !arguments.At(0).IsInteger()
+            || arguments.Count == 2 && !arguments.At(1).IsNil() && !arguments.At(1).IsInteger())
+        {
+            return StringFilters.Slice(input, arguments, context);
+        }
+
+        // Fluid's bounds: a negative start counts from the end, the length defaults to 1.
+        var requested = Convert.ToInt32(arguments.At(0).ToNumberValue(context));
+        var length = arguments.Count == 2 && !arguments.At(1).IsNil() ? Convert.ToInt32(arguments.At(1).ToNumberValue(context)) : 1;
+
+        if (length <= 0)
+        {
+            return new(ArrayValue.Empty);
+        }
+
+        var count = array.Count;
+
+        if (requested < -count)
+        {
+            return new(ArrayValue.Empty);
+        }
+
+        var start = requested < 0 ? Math.Max(count + requested, 0) : Math.Min(requested, count);
+        length = Math.Min(length, count - start);
+
+        if (length <= 0)
+        {
+            return new(ArrayValue.Empty);
+        }
+
+        context.EnsureCollectionSize(length);
+        return new(array.Slice(start, length));
     }
 
     private static (string Variable, string Expression) ExpressionArguments(string filter, FilterArguments arguments, TemplateContext context)
