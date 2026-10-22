@@ -618,16 +618,16 @@ with text laid out over it.
 - The step passes every page through unchanged and adds the image to the page's outputs: it sits in the page chain,
   not on a branch. A layout computes the url with the same template: `{{ page | social_image_url: "og/{{ slug }}.png" }}`.
 
-# twoslash
+# hover-typescript
 
-The `twoslash` step computes the type information of TypeScript code fences, as
+The `hover-typescript` step computes the type information of TypeScript code fences, as
 [twoslash](https://twoslash.netlify.app) does, without Node: with the language server of TypeScript 7, Microsoft's
 native compiler, which Douze downloads.
 
 ````yaml
-  twoslash: { needs: markdown, uses: twoslash,
-              with: { files: { "modules/sdk.mts": data/types/sdk.d.ts },
-                      compiler: { moduleResolution: bundler, lib: [es2022, dom] }, handbook: { noErrorValidation: true } } }
+  typescript: { needs: markdown, uses: hover-typescript,
+                with: { files: { "modules/sdk.mts": data/types/sdk.d.ts },
+                        compiler: { moduleResolution: bundler, lib: [es2022, dom] }, handbook: { noErrorValidation: true } } }
 ````
 
 Every fence of an HTML page that the `markdown` step wrote with a language of `languages` (`ts`, `tsx`, `typescript`)
@@ -670,15 +670,15 @@ order (`bench/twoslash.md` has a comparison). At a call, the step adds the count
 signature (`(+1 overload)`), as TypeScript 5 prints it and TypeScript 7 does not, from the call's signature help; it
 does not at a declaration.
 
-# csharp
+# hover-csharp
 
-The `csharp` step does the same for C# fences with the Roslyn language server: every fence of `languages` (`csharp`,
+The `hover-csharp` step does the same for C# fences with the Roslyn language server: every fence of `languages` (`csharp`,
 `cs`, `c#`; only those whose meta has the `trigger` word when it is set) gets a `data-twoslash` attribute with the hovers
-of its symbols (signature and documentation) and its errors, in the shape of the `twoslash` step's results, so that the
+of its symbols (signature and documentation) and its errors, in the shape of the `hover-typescript` step's results, so that the
 same renderer shows them.
 
 ````yaml
-  csharp: { needs: markdown, uses: csharp,
+  csharp: { needs: markdown, uses: hover-csharp,
             with: { errors: warn, projects: { web: { sdk: Microsoft.NET.Sdk.Web, titles: [Program.cs],
                                                      packages: { Some.Package: "1.2.3" }, usings: [Some.Namespace] } } } }
 ````
@@ -698,16 +698,16 @@ same renderer shows them.
   It needs the .NET SDK (10 or later), which also restores the projects: `dotnet`, or `DOTNET_HOST_PATH`, or the
   `PATH`'s.
 
-Outcomes, errors included, are kept in the cache like the `twoslash` step's. `docs/code-hover-steps.md` has the design,
+Outcomes, errors included, are kept in the cache like the `hover-typescript` step's. `docs/code-hover-steps.md` has the design,
 the costs and the plan for other languages.
 
-# go
+# hover-go
 
-The `go` step does the same for Go fences with gopls: every fence of `languages` (`go`, `golang`; only those whose meta
+The `hover-go` step does the same for Go fences with gopls: every fence of `languages` (`go`, `golang`; only those whose meta
 has the `trigger` word when it is set) gets a `data-twoslash` attribute with the hovers of its symbols and its errors.
 
 ````yaml
-  go: { needs: markdown, uses: go,
+  go: { needs: markdown, uses: hover-go,
         with: { errors: warn, ignore: [UnusedVar],
                 modules: { default: { requires: { github.com/redis/go-redis/v9: v9.7.0 } } } } }
 ````

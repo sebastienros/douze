@@ -1,8 +1,8 @@
 # Code hover steps beyond TypeScript
 
-The `twoslash` step gives TypeScript fences type hovers and build-time validation with the TypeScript 7 language
+The `hover-typescript` step gives TypeScript fences type hovers and build-time validation with the TypeScript 7 language
 server. This note evaluates the same technique for C# and Go, records the tooling and its costs, and recommends how
-to structure the steps. A `csharp` step and a `go` step are prototyped on top of a core shared with `twoslash`.
+to structure the steps. A `hover-csharp` step and a `hover-go` step are prototyped on top of a core shared with `twoslash`.
 
 ## The technique, language-neutral
 
@@ -31,7 +31,7 @@ The refactor moves this into a core:
   pinned SHA-512 for the default version, verification, then zip extraction for a `.nupkg`. It also builds tools
   published as Go source (`GoTool`) with `go install`, under the same lock.
 
-The `twoslash` step keeps its options, notations and output: its tests are unchanged and green, and the Sample output
+The `hover-typescript` step keeps its options, notations and output: its tests are unchanged and green, and the Sample output
 is identical. One behavior changed for every code step: an outcome with errors is memoized too, and reported again from
 the memo by every build that uses it. Before, a snippet with errors was checked again by every build. That was cheap
 for a few TypeScript fences, but costly for C# documentation, where most snippets are fragments with errors (see
@@ -134,7 +134,7 @@ of the 1,323 fences get some, with signatures and documentation, errors or not.
 
 ### Identifier coverage
 
-The `twoslash` step hovers every identifier that its own TypeScript scanner finds, as twoslash does, to stay identical
+The `hover-typescript` step hovers every identifier that its own TypeScript scanner finds, as twoslash does, to stay identical
 to it. For C# (and Go), the step asks the server for semantic tokens (`textDocument/semanticTokens/full`, one request
 per document) and hovers the tokens of symbol types (namespace, type, class, method, property, field, variable,
 parameter...). That costs one request per snippet. It needs no scanner per language, and it is exact: it includes
@@ -243,10 +243,10 @@ for Go. Even the protocol use differs: the C# step opens 64 snippets at a time, 
 site enables each language separately, and each step memoizes by its own settings. What is shared is everything around
 the server: the core above, and the output, which one renderer shows for every language.
 
-So: `uses: twoslash` (TypeScript), `uses: csharp`, `uses: go`, each a `CodeFenceStep` with its own engine. They
+So: `uses: twoslash` (TypeScript), `uses: hover-csharp`, `uses: go`, each a `CodeFenceStep` with its own engine. They
 all write `data-twoslash`, which the site's highlighter renders whatever the language.
 
-## The prototype: `uses: csharp`
+## The prototype: `uses: hover-csharp`
 
 ```yaml
   csharp:
@@ -300,8 +300,8 @@ points them at an installed gopls).
 
 ## Follow-ups
 
-- **Site integration:** a `csharp` step in the site's workflow with host and web projects, stubs of the generated
-  project types and contexts; a `go` step with the `requires` of the documented versions. The renderer accepts
+- **Site integration:** a `hover-csharp` step in the site's workflow with host and web projects, stubs of the generated
+  project types and contexts; a `hover-go` step with the `requires` of the documented versions. The renderer accepts
   `data-twoslash` on C# and Go fences (it already renders the shape) and shows string error codes.
 - **Go fragments:** add the missing imports (goimports) and declare an earlier snippet's variables (a shared file), as
   the C# contexts do.

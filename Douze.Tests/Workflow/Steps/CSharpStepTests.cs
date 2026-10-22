@@ -74,7 +74,7 @@ public sealed partial class CSharpStepTests : CacheTestBase
         return StepTestBase.Workflow(
             StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
             StepTestBase.Step("markdown", "markdown", needs: ["pages"]),
-            StepTestBase.Step("csharp", "csharp", needs: ["markdown"], with: StepTestBase.With([("path", NodeValue.Create(path)), .. options])),
+            StepTestBase.Step("csharp", "hover-csharp", needs: ["markdown"], with: StepTestBase.With([("path", NodeValue.Create(path)), .. options])),
             StepTestBase.Step("write", "write", needs: ["csharp"]));
     }
 
@@ -302,7 +302,7 @@ public sealed partial class CSharpStepTests : CacheTestBase
 
         var e = await Assert.ThrowsAsync<WorkflowValidationException>(() => BuildAsync(StepTestBase.Workflow(
             StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
-            StepTestBase.Step("csharp", "csharp", needs: ["pages"], with: StepTestBase.With(("projects", new NodeObject { ["app"] = new NodeObject { ["package"] = new NodeObject() } })))), Options()));
+            StepTestBase.Step("csharp", "hover-csharp", needs: ["pages"], with: StepTestBase.With(("projects", new NodeObject { ["app"] = new NodeObject { ["package"] = new NodeObject() } })))), Options()));
 
         Assert.Contains("project 'app' of step 'csharp' has an unknown field 'package'; did you mean 'packages'?", e.Message);
     }
