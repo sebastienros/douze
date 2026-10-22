@@ -23,11 +23,12 @@ dotnet build bench/Douze.Bench -c Release -o bench/out/bin
 # (size 20) and 200 assets. --nav index loops over collections.all[0..49] instead of 'limit: 50', --nav none drops it.
 bench/out/bin/Douze.Bench synthetic --pages 32000 --out bench/synthetic/data/32000
 
-# aspire.dev API reference data (pkgs/*.json and ts-modules/*.json of origin/main, read from git objects: the
-# checkout's branch and working tree are left alone), then a site rendering its API pages.
-bench/fetch-aspire-data.sh ~/github/aspire.dev
-bench/out/bin/Douze.Bench aspire-api --data bench/aspire/data --out bench/aspire/data/site
-bench/out/bin/Douze.Bench aspire-api --data bench/aspire/data --out bench/aspire/data/site-data --mode data
+# A real-world API reference data set: the JSON folders of a documentation repository (per-package .NET API files in
+# pkgs, per-module TypeScript API files in ts-modules) at origin/main, read from git objects (the checkout's branch and
+# working tree are left alone), then a site rendering its API pages.
+bench/fetch-api-data.sh <checkout> bench/api-reference/data <path>/pkgs <path>/ts-modules
+bench/out/bin/Douze.Bench api-reference --data bench/api-reference/data --out bench/api-reference/data/site
+bench/out/bin/Douze.Bench api-reference --data bench/api-reference/data --out bench/api-reference/data/site-data --mode data
 
 # Clean builds (the output folder is deleted before each run); prints a Markdown table row with the median.
 # Options after '--' go to douze.
@@ -49,10 +50,10 @@ bench/out/bin/Douze.Bench run --site bench/synthetic/data/32000 --out bench/out/
 | `synthetic N` | The site of section 9.1 through the default workflow |
 | `synthetic 32000, nav index` | The same with a nav include that indexes `collections.all[i]` instead of `for ... limit: 50` |
 | `synthetic 32000, nav none` | The same without the nav include |
-| `aspire API data only` | The 342 JSON files of aspire.dev (78 MB) as site data and a single page |
-| `aspire API pages` | aspire.dev's API routes rendered from that data: C# package (202), type (1,810) and member kind (2,829) pages, TypeScript module (140), item (4,097) and method (10,634) pages, 19,712 in all, each with a sidebar of the 342 packages |
+| `API reference data only` | The 342 JSON files of the API reference (78 MB) as site data and a single page |
+| `API reference pages` | The API routes of its documentation site rendered from that data: C# package (202), type (1,810) and member kind (2,829) pages, TypeScript module (140), item (4,097) and method (10,634) pages, 19,712 in all, each with a sidebar of the 342 packages |
 
-The aspire site builds with the default workflow, since workflow files land in phase 2: the JSON files are site data
+The API reference site builds with the default workflow, since workflow files land in phase 2: the JSON files are site data
 (`pkgs.<slug>`, `tsmodules.<slug>`), each package folder has its page index as folder data (`pages.json`), and one
 template per route paginates over it with a size of 1. Section 4.7's workflow (`parse`, `liquid` with `group-by`)
 remains to be added as a second variant once phase 2 is merged. The real site also has Markdown twins of some routes
@@ -63,7 +64,7 @@ remains to be added as a second variant once phase 2 is merged. The real site al
 ### Phase 1b engine (commit 50e0be9), 2026-10-21
 
 Apple M4 Pro, 14 cores, 48 GB, macOS 15.8.1 (APFS), native AOT `douze`, warm file cache, clean output folder, median of
-3 runs. aspire.dev data from `origin/main` c26b59ba (202 packages, 140 TypeScript modules, 78.5 MB).
+3 runs. API reference data from `origin/main` c26b59ba (202 packages, 140 TypeScript modules, 78.5 MB).
 
 | Label | HTML pages | Wall (s) | User (s) | Sys (s) | Peak RSS (MB) | Output files | Runs |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -75,8 +76,8 @@ Apple M4 Pro, 14 cores, 48 GB, macOS 15.8.1 (APFS), native AOT `douze`, warm fil
 | synthetic 32000, nav index | 32101 | 6.87 | 6.89 | 22.58 | 3416 | 32301 | 3 |
 | synthetic 32000, nav none | 32101 | 6.38 | 5.47 | 22.55 | 2911 | 32301 | 3 |
 | synthetic 32000, nav index, -p 4 | 32101 | 6.86 | 9.87 | 10.08 | 3400 | 32301 | 3 |
-| aspire API data only | 1 | 0.90 | 1.26 | 0.51 | 714 | 1 | 3 |
-| aspire API pages | 19712 | 23.07 | 35.22 | 12.36 | 5473 | 19712 | 3 |
+| API reference data only | 1 | 0.90 | 1.26 | 0.51 | 714 | 1 | 3 |
+| API reference pages | 19712 | 23.07 | 35.22 | 12.36 | 5473 | 19712 | 3 |
 
 Against the targets of section 9.2:
 
@@ -84,9 +85,9 @@ Against the targets of section 9.2:
 |---|---|---|
 | Synthetic 32k pages, clean build: wall under 30 s | 39.5 s; 6.9 s without the `limit:` loop (finding 1) | missed, met once finding 1 is fixed |
 | Synthetic 32k pages, clean build: peak RSS under 1.5 GB | 6.0 GB; 3.4 GB without the `limit:` loop | missed (findings 1 and 3) |
-| aspire data: parse 78 MB under 4 s, RSS under 1.2 GB | 0.9 s, 714 MB | met: the `JsonElement` backed `Node` of open question 14 is not needed yet |
-| aspire data: render the API pages, wall under 60 s | 23.1 s for 19,712 pages, 16 s of which hash metadata on one thread (finding 2) | met |
-| aspire data: render the API pages, peak RSS under 2.5 GB | 5.5 GB (4.5 to 5.9) | missed (findings 2 and 3) |
+| API reference data: parse 78 MB under 4 s, RSS under 1.2 GB | 0.9 s, 714 MB | met: the `JsonElement` backed `Node` of open question 14 is not needed yet |
+| API reference data: render the API pages, wall under 60 s | 23.1 s for 19,712 pages, 16 s of which hash metadata on one thread (finding 2) | met |
+| API reference data: render the API pages, peak RSS under 2.5 GB | 5.5 GB (4.5 to 5.9) | missed (findings 2 and 3) |
 | Second build, watch mode, tag edit, worker round trip | | phases 3, 5 and 6 |
 
 ### Integration of phases 2, 3, 4 and B, 2026-10-21
@@ -98,10 +99,10 @@ default workflow builds collections before pagination and runs Liquid before Mar
 |---|---:|---:|---:|---:|---:|---:|---:|
 | synthetic 32000, 11793f6 | 32101 | 39.12 | 73.21 | 31.84 | 6056 | 32301 | 3 |
 | synthetic 32000, integrated | 32101 | 38.41 | 73.40 | 37.01 | 5621 | 32301 | 3 |
-| aspire API pages, 11793f6 | 19712 | 23.23 | 38.50 | 17.49 | 5142 | 19712 | 1 |
-| aspire API pages, integrated | 19712 | 10.42 | 25.86 | 15.13 | 5218 | 19712 | 1 |
+| API reference pages, 11793f6 | 19712 | 23.23 | 38.50 | 17.49 | 5142 | 19712 | 1 |
+| API reference pages, integrated | 19712 | 10.42 | 25.86 | 15.13 | 5218 | 19712 | 1 |
 
-The aspire pages are faster because a paginated template is now in `collections.all` once instead of once per page
+The API reference pages are faster because a paginated template is now in `collections.all` once instead of once per page
 (19,712 pages were collected, sorted and hashed with the shared pagination data of finding 2). Findings 1 to 3 are
 otherwise unchanged.
 
@@ -127,20 +128,20 @@ runtime 10.0.11), **B** .NET 11 RC 2 (SDK 11.0.100-rc.2.26504.105), **C** B with
 | synthetic 32000 | A JIT | non concurrent | 45.62 | 79.27 | 25.54 | 6085 |
 | synthetic 32000 | B JIT | non concurrent | 40.81 | 86.77 | 18.07 | 6545 |
 | synthetic 32000 | C JIT | non concurrent | 40.97 | 86.17 | 18.05 | 6111 |
-| aspire API pages | A AOT | default | 8.97 | 20.82 | 10.72 | 5566 |
-| aspire API pages | B AOT | default | 7.85 | 26.96 | 11.94 | 9502 |
-| aspire API pages | C AOT | default | 6.80 | 23.77 | 11.05 | 11231 |
-| aspire API pages | A JIT | default | 8.03 | 32.58 | 9.19 | 11347 |
-| aspire API pages | B JIT | default | 9.72 | 46.99 | 11.66 | 11042 |
-| aspire API pages | C JIT | default | 8.35 | 38.97 | 10.26 | 11701 |
-| aspire API pages | A AOT | non concurrent | 7.64 | 19.18 | 9.34 | 5544 |
-| aspire API pages | B AOT | non concurrent | 7.04 | 19.88 | 9.57 | 4919 |
-| aspire API pages | C AOT | non concurrent | 6.51 | 18.94 | 9.30 | 6391 |
-| aspire API pages | A JIT | non concurrent | 8.93 | 30.14 | 8.34 | 4897 |
-| aspire API pages | B JIT | non concurrent | 8.80 | 41.51 | 7.28 | 5739 |
-| aspire API pages | C JIT | non concurrent | 8.60 | 40.46 | 7.04 | 5705 |
+| API reference pages | A AOT | default | 8.97 | 20.82 | 10.72 | 5566 |
+| API reference pages | B AOT | default | 7.85 | 26.96 | 11.94 | 9502 |
+| API reference pages | C AOT | default | 6.80 | 23.77 | 11.05 | 11231 |
+| API reference pages | A JIT | default | 8.03 | 32.58 | 9.19 | 11347 |
+| API reference pages | B JIT | default | 9.72 | 46.99 | 11.66 | 11042 |
+| API reference pages | C JIT | default | 8.35 | 38.97 | 10.26 | 11701 |
+| API reference pages | A AOT | non concurrent | 7.64 | 19.18 | 9.34 | 5544 |
+| API reference pages | B AOT | non concurrent | 7.04 | 19.88 | 9.57 | 4919 |
+| API reference pages | C AOT | non concurrent | 6.51 | 18.94 | 9.30 | 6391 |
+| API reference pages | A JIT | non concurrent | 8.93 | 30.14 | 8.34 | 4897 |
+| API reference pages | B JIT | non concurrent | 8.80 | 41.51 | 7.28 | 5739 |
+| API reference pages | C JIT | non concurrent | 8.60 | 40.46 | 7.04 | 5705 |
 
-Peak RSS of the aspire pages varies a lot between runs (4.3 to 7.1 GB for A AOT, 4.8 to 6.7 GB for C AOT non
+Peak RSS of the API reference pages varies a lot between runs (4.3 to 7.1 GB for A AOT, 4.8 to 6.7 GB for C AOT non
 concurrent); the synthetic numbers are stable within about 5%. Single runs of `synthetic 32000, nav index` (no `limit:`
 loop): A AOT 6.8 to 7.5 s and 3.4 GB; B and C AOT with the default GC 6.4 to 7.3 s and 2.9 to 3.0 GB; C AOT non
 concurrent 5.6 to 5.7 s and 3.4 GB.
@@ -148,15 +149,15 @@ concurrent 5.6 to 5.7 s and 3.4 GB.
 What changed:
 
 - With the default (concurrent) workstation GC, .NET 11 is 40% slower on the synthetic site, all of it in `layout`
-  (38 s against 58 s), the step where the nav include runs the `limit:` loop of finding 1, and the aspire pages need
+  (38 s against 58 s), the step where the nav include runs the `limit:` loop of finding 1, and the API reference pages need
   up to twice the memory. A `sample` of the .NET 11 build shows the allocating threads sleeping in
   `gc_heap::allocate_soh` (`GCToOSInterface::Sleep`) while a background GC runs: allocations are throttled during
   background GCs, which the allocation rate of finding 1 triggers back to back. Server GC (`DOTNET_gcServer=1`) does
   not help (57.6 s).
 - With concurrent GC off, .NET 11 is faster than .NET 10 in every configuration: synthetic 33.0 s against 42.9 s (A
-  with its default GC; A gets slower without concurrent GC), aspire 6.5 to 7.0 s against 9.0 s, and 5.7 s against 7.0 s
+  with its default GC; A gets slower without concurrent GC), API reference 6.5 to 7.0 s against 9.0 s, and 5.7 s against 7.0 s
   without the `limit:` loop. Peak RSS is 10% higher on the synthetic site (6.2 GB against 5.6 GB, garbage of finding 1
-  collected less eagerly) and lower or equal on the aspire pages.
+  collected less eagerly) and lower or equal on the API reference pages.
 - Runtime async changes nothing measurable: B and C are within noise of each other everywhere, and the BCL is
   compiled with it in both. Douze's own async methods lose their state machines (167 compiler generated state machine
   types in `douze.dll` against 11 left, the async iterators), and the AOT binary is 216 KB smaller.
@@ -176,11 +177,11 @@ Same machine and data, native AOT, non concurrent GC. **Base** is 00f309e (Fluid
 | synthetic 32000 | head | 6.08 | 5.60 | 19.67 | 3207 |
 | synthetic 32000, nav index | base | 6.32 | 6.33 | 19.81 | 3212 |
 | synthetic 32000, nav index | head | 6.31 | 6.38 | 19.74 | 3247 |
-| aspire API pages | base | 7.13 | 19.48 | 9.13 | 5487 |
-| aspire API pages | head | 6.95 | 18.93 | 9.12 | 5019 |
+| API reference pages | base | 7.13 | 19.48 | 9.13 | 5487 |
+| API reference pages | head | 6.95 | 18.93 | 9.12 | 5019 |
 
 Finding 1 is fixed: the `limit:` loop now costs what the indexed loop costs (6.1 s against 6.3 s), the synthetic site
-builds in 6.1 s instead of 34.3 s and its peak RSS drops from 6.2 to 3.2 GB. The aspire pages do not use `limit:` and
+builds in 6.1 s instead of 34.3 s and its peak RSS drops from 6.2 to 3.2 GB. The API reference pages do not use `limit:` and
 are unchanged (their RSS varies between 4.8 and 5.9 GB from run to run, as before).
 
 ### Phase 5: disk cache, hashing and memory, 2026-10-21
@@ -197,15 +198,15 @@ without an output folder and without a cache (`.douze/`), and either do not use 
 | synthetic 32000, no change | 1.14 | 2.97 | 0.71 | 449 |
 | synthetic 32000, one page edited | 1.73 | 3.26 | 1.31 | 752 |
 | synthetic 32000, one tag edited | 1.50 | 3.30 | 0.77 | 747 |
-| aspire API pages, clean, no cache | 3.52 | 5.55 | 11.28 | 2440 |
-| aspire API pages, clean, writing the cache | 4.08 | 6.08 | 10.82 | 2625 |
-| aspire API pages, no change | 1.07 | 1.80 | 0.47 | 704 |
+| API reference pages, clean, no cache | 3.52 | 5.55 | 11.28 | 2440 |
+| API reference pages, clean, writing the cache | 4.08 | 6.08 | 10.82 | 2625 |
+| API reference pages, no change | 1.07 | 1.80 | 0.47 | 704 |
 
-The cache takes 794 MB for the synthetic site and 964 MB for the aspire pages (contents of every step, metadata, data).
-Against the base of the phase (00f309e: synthetic 34.3 s and 6.2 GB, aspire 7.1 s and 5.5 GB): finding 1 (Fluid
+The cache takes 794 MB for the synthetic site and 964 MB for the API reference pages (contents of every step, metadata, data).
+Against the base of the phase (00f309e: synthetic 34.3 s and 6.2 GB, API reference 7.1 s and 5.5 GB): finding 1 (Fluid
 `IFluidArray`) took the synthetic site to 6.1 s and 3.2 GB; finding 2 (Merkle hashes cached on nodes, parallel refs) took
-the aspire pages from 7.0 to 3.4 s and 5.0 to 3.3 GB; finding 3 (refs instead of contents in results, sources released,
-weak page templates, no UTF-8 copy kept by `write`) took the synthetic site to 2.3 GB and the aspire pages to 2.4 GB.
+the API reference pages from 7.0 to 3.4 s and 5.0 to 3.3 GB; finding 3 (refs instead of contents in results, sources released,
+weak page templates, no UTF-8 copy kept by `write`) took the synthetic site to 2.3 GB and the API reference pages to 2.4 GB.
 Precise dependencies cost about 2 s of user CPU on the synthetic site (8 s against 5.7 s, spread over 14 cores; the wall
 time did not change): a page records what its templates read of `collections`.
 
@@ -218,8 +219,8 @@ Against the targets of section 9.2:
 | Synthetic 32k, second build, no change: under 3 s | 1.1 s, 0 units executed | met |
 | Synthetic 32k, one page edited: under 2 s from the disk cache (phase 5 acceptance) | 1.7 s, 8 units executed | met |
 | Synthetic 32k, one tag edited: under 5 s | 1.5 s | met |
-| aspire data: render the API pages, wall under 60 s | 3.5 s | met |
-| aspire data: render the API pages, peak RSS under 2.5 GB | 2.4 GB (2.6 GB writing the cache) | met without writing the cache |
+| API reference data: render the API pages, wall under 60 s | 3.5 s | met |
+| API reference data: render the API pages, peak RSS under 2.5 GB | 2.4 GB (2.6 GB writing the cache) | met without writing the cache |
 
 Where the synthetic site's memory goes: sampling RSS during a clean build shows about 0.8 GB at the collections barrier
 (every page held, by design of the barrier), then a climb to 2.3 GB while `render`, `markdown` and `layout` run ahead of
@@ -233,7 +234,7 @@ that most of the climb was the files every node kept to detect duplicate paths, 
 
 GC modes, measured after findings 1 to 3 (clean builds without the cache, 2 runs each, wall and peak RSS):
 
-| GC | synthetic 32000 | aspire API pages |
+| GC | synthetic 32000 | API reference pages |
 |---|---|---|
 | non concurrent (default) | 5.6 s, 2.6-2.8 GB | 3.6 s, 3.3 GB |
 | `GCgen0size` 32 MB / 64 MB | 5.7-5.8 s, 2.6-2.7 GB | 3.5-3.6 s, 3.3 GB |
@@ -263,17 +264,17 @@ the phase 5 table's (35 to 45 s against 18 s for the same clean build of the bas
 | synthetic 32000, clean, writing the cache | head | 7.21 | 10.95 | 31.21 | 1221 |
 | synthetic 32000, one page edited | base | 1.70 | 3.24 | 0.74 | 635 |
 | synthetic 32000, one page edited | head | 1.56 | 4.64 | 0.85 | 578 |
-| aspire API pages, clean, no cache | base | 4.31 | 6.19 | 20.78 | 2428 |
-| aspire API pages, clean, no cache | head | 3.96 | 6.42 | 15.03 | 1113 |
-| aspire API pages, clean, no cache | unbounded | 4.42 | 5.77 | 26.96 | 1740 |
-| aspire API pages, clean, writing the cache | base | 4.98 | 6.60 | 19.65 | 2620 |
-| aspire API pages, clean, writing the cache | head | 4.74 | 7.25 | 16.36 | 1411 |
+| API reference pages, clean, no cache | base | 4.31 | 6.19 | 20.78 | 2428 |
+| API reference pages, clean, no cache | head | 3.96 | 6.42 | 15.03 | 1113 |
+| API reference pages, clean, no cache | unbounded | 4.42 | 5.77 | 26.96 | 1740 |
+| API reference pages, clean, writing the cache | base | 4.98 | 6.60 | 19.65 | 2620 |
+| API reference pages, clean, writing the cache | head | 4.74 | 7.25 | 16.36 | 1411 |
 
 What phase 5 attributed to the channels was mostly elsewhere: every node kept every file that entered it, in the map it
 uses to detect a path delivered by two producers (`NodeRunner._producers`), so every content of every step stayed in
 memory until the build ended (`write` alone held the HTML of every page; found with `dotnet-gcdump` on a JIT build). With
 refs kept instead, the synthetic site peaks at the collections barrier (about 1.05 GB: every page waits there, by design)
-and no longer climbs while the pages stream to `write`. Bounded channels then matter for the aspire pages (1.1 GB against
+and no longer climbs while the pages stream to `write`. Bounded channels then matter for the API reference pages (1.1 GB against
 1.7 GB unbounded) and for time: with them, `render`, `markdown` and `layout` no longer run ahead of `write` and compete with
 it for the file system, and the synthetic build is 15% faster than unbounded (7.4 s to 6.3 s, 12 s less system time). The
 one-page edit uses about 1.4 s more user CPU (the nodes with two producers hash on entry, in parallel) for a faster wall
@@ -286,12 +287,12 @@ Against the targets of section 9.2:
 | Synthetic 32k, clean build: wall under 30 s | 6.3 s (7.2 s writing the cache) | met |
 | Synthetic 32k, clean build: peak RSS under 1.5 GB | 1.08 GB (1.22 GB writing the cache) | met (2.3 GB before) |
 | Synthetic 32k, one page edited: under 2 s from the disk cache | 1.6 s | met |
-| aspire data: render the API pages, wall under 60 s | 4.0 s | met |
-| aspire data: render the API pages, peak RSS under 2.5 GB | 1.1 GB (1.4 GB writing the cache) | met |
+| API reference data: render the API pages, wall under 60 s | 4.0 s | met |
+| API reference data: render the API pages, peak RSS under 2.5 GB | 1.1 GB (1.4 GB writing the cache) | met |
 
 GC modes, measured on head (clean builds without the cache, runs interleaved, median of 3, wall and peak RSS):
 
-| GC | synthetic 32000 | aspire API pages |
+| GC | synthetic 32000 | API reference pages |
 |---|---|---|
 | non concurrent workstation (default) | 6.4-6.6 s, 1.08 GB | 4.3 s, 1.0-1.2 GB |
 | concurrent workstation (`DOTNET_gcConcurrent=1`) | 7.6 s, 1.37 GB | 4.5 s, 1.17 GB |
@@ -301,7 +302,7 @@ GC modes, measured on head (clean builds without the cache, runs interleaved, me
 `DOTNET_gcServer=1` changes nothing measurable on the native AOT binary, which is linked with the workstation GC
 (`libRuntime.WorkstationGC.a`): the "Server GC with DATAS" rows of the phase 5 table and of the .NET 11 measurements
 used it, so they measured the workstation GC. Server GC compiled in (`libRuntime.ServerGC.a`) is 24 to 32% faster on the
-aspire pages and ties on the synthetic site, at the cost of a higher peak (1.46 GB on the synthetic site, at the edge of
+API reference pages and ties on the synthetic site, at the cost of a higher peak (1.46 GB on the synthetic site, at the edge of
 its target). The non concurrent workstation GC stays the default here, since this change is about memory; switching to
 Server GC is a decision of its own (finding 8).
 
@@ -319,7 +320,7 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
 
 2. *Fixed in phase 5 (Merkle hashes cached on nodes, refs computed in parallel).* **Metadata hashing of paginated pages is O(pages²) per paginated file, and the reduce barrier does it on one
    thread.** `Metadata.Hash` serializes the whole `Own` of a page, which holds `pagination.pages` and
-   `pagination.hrefs`, shared by every page of the file. The aspire site has files with up to 2,592 pages
+   `pagination.hrefs`, shared by every page of the file. The API reference site has files with up to 2,592 pages
    (Σ pages² = 12.7 million summaries per hash pass); `collections` spends 16 of the build's 23 s in
    `RunReduceAsync` computing `files.Select(x => x.Ref)` with one thread busy in `CanonicalJson.Write` and 13 idle,
    and `permalink` takes another few seconds rehashing the same pages. Suggested fixes: cache a hash on each published
@@ -359,7 +360,7 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    *Integration:* fixed that way (`SchedulerTests.ExceptionOutsideAUnitFailsTheBuild`); such an exception now fails
    the step and cancels the build.
 
-6. **Smaller observations.** Loading the aspire data is a single unit of the `data` step: 0.9 s wall for 1.26 s of
+6. **Smaller observations.** Loading the API reference data is a single unit of the `data` step: 0.9 s wall for 1.26 s of
    CPU, so parsing the 342 files in parallel would make it about 0.3 s. RSS for the data is about 9 times the JSON size
    (714 MB for 78.5 MB), within the target. The render and layout steps parse each page's template once, which is
    cheap next to findings 1 to 3.
@@ -372,7 +373,7 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
 
 8. **Server GC must be compiled in to be measured.** A native AOT binary links one GC: `DOTNET_gcServer=1` has no effect
    on the published `douze` (workstation GC), so the Server GC rows measured before the bounded channels change were the
-   workstation GC. Published with `-p:ServerGarbageCollection=true`, Server GC with DATAS builds the aspire pages 24 to 32%
+   workstation GC. Published with `-p:ServerGarbageCollection=true`, Server GC with DATAS builds the API reference pages 24 to 32%
    faster (2.9 to 3.3 s against 4.3 s) and the synthetic site in the same time, with a peak 10 to 35% higher (1.35 to 1.46
    GB on the synthetic site against 1.08). Worth deciding on its own: it trades the memory margin of 9.2 for speed on
    data heavy sites.
@@ -385,7 +386,7 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    | Scenario | non concurrent workstation | Server GC (DATAS) | Satori |
    |---|---|---|---|
    | synthetic 32000, clean, no cache | 6.44 s, 1.07 GB | 6.26 s, 1.41 GB | 5.53 s, 1.88 GB |
-   | aspire API pages, clean, no cache | 4.41 s, 1.20 GB | 3.35 s, 1.09 GB | 2.88 s, 1.40 GB |
+   | API reference pages, clean, no cache | 4.41 s, 1.20 GB | 3.35 s, 1.09 GB | 2.88 s, 1.40 GB |
    | synthetic 32000, one page edited | 1.51 s, 0.58 GB | 1.04 s, 0.65 GB | 1.05 s, 0.70 GB |
 
    On a 500 page synthetic site the three take the same time (0.18 to 0.20 s clean, 0.05 to 0.07 s for an edit) and Satori

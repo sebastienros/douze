@@ -1,4 +1,4 @@
-# The aspire.dev API pages (section 4.7 of the workflow engine plan).
+# The API reference pages of a documentation site (section 4.7 of the workflow engine plan).
 site:
   content: content
   includes: templates

@@ -32,14 +32,14 @@ public class DataStepTests : StepTestBase
     [Fact]
     public async Task NestedFolderKey()
     {
-        await Source.WriteTextFileAsync("/_data/pkgs/Aspire.Hosting.json", """{ "name": "Aspire.Hosting" }""");
-        await Source.WriteTextFileAsync("/_data/pkgs/Aspire.Redis.json", """{ "name": "Aspire.Redis" }""");
+        await Source.WriteTextFileAsync("/_data/pkgs/Contoso.Hosting.json", """{ "name": "Contoso.Hosting" }""");
+        await Source.WriteTextFileAsync("/_data/pkgs/Contoso.Redis.json", """{ "name": "Contoso.Redis" }""");
 
         var result = await BuildSuccessfullyAsync(SiteData());
 
         var pkgs = Assert.IsType<NodeObject>(SiteValue(result, "pkgs"));
-        Assert.Equal(["Aspire.Hosting", "Aspire.Redis"], pkgs.Select(x => x.Key));
-        Assert.Equal("Aspire.Hosting", pkgs["Aspire.Hosting"]!["name"]!.GetValue<string>());
+        Assert.Equal(["Contoso.Hosting", "Contoso.Redis"], pkgs.Select(x => x.Key));
+        Assert.Equal("Contoso.Hosting", pkgs["Contoso.Hosting"]!["name"]!.GetValue<string>());
     }
 
     [Fact]

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Usage: bench/run-all.sh [repeat]   (default: 3)
 # Publishes the native AOT douze to tool-out, generates every scenario of bench/README.md under bench/*/data and
-# prints one Markdown table row per scenario (progress goes to stderr). The aspire scenarios run when
-# bench/aspire/data/pkgs exists (bench/fetch-aspire-data.sh).
+# prints one Markdown table row per scenario (progress goes to stderr). The API reference scenarios run
+# when bench/api-reference/data/pkgs exists (bench/fetch-api-data.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repeat=${1:-3}
@@ -44,10 +44,10 @@ cached "synthetic 32000, cache, no change" bench/synthetic/data/32000 warm
 cached "synthetic 32000, cache, one page edited" bench/synthetic/data/32000 edit
 cached "synthetic 32000, cache, one tag edited" bench/synthetic/data/32000 tag
 
-if [ -d bench/aspire/data/pkgs ]; then
-  "$bench" aspire-api --data bench/aspire/data --out bench/aspire/data/site-data --mode data >&2
-  run "aspire API data only" bench/aspire/data/site-data
-  "$bench" aspire-api --data bench/aspire/data --out bench/aspire/data/site >&2
-  run "aspire API pages" bench/aspire/data/site
-  cached "aspire API pages, cache, no change" bench/aspire/data/site warm
+if [ -d bench/api-reference/data/pkgs ]; then
+  "$bench" api-reference --data bench/api-reference/data --out bench/api-reference/data/site-data --mode data >&2
+  run "API reference data only" bench/api-reference/data/site-data
+  "$bench" api-reference --data bench/api-reference/data --out bench/api-reference/data/site >&2
+  run "API reference pages" bench/api-reference/data/site
+  cached "API reference pages, cache, no change" bench/api-reference/data/site warm
 fi

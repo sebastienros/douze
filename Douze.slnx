@@ -14,7 +14,7 @@
   </Folder>
   <Folder Name="/bench/">
     <File Path="bench/README.md" />
-    <File Path="bench/fetch-aspire-data.sh" />
+    <File Path="bench/fetch-api-data.sh" />
     <Project Path="bench/Douze.Bench/Douze.Bench.csproj" />
   </Folder>
   <Project Path="Douze.Tests.FakeTool/Douze.Tests.FakeTool.csproj" />

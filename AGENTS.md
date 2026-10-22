@@ -34,10 +34,11 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 - `Douze/Progress/`: the views of a build: `PlainProgressView` (a line per step), `SpectreProgressView` (live table and summary with a timeline), `SilentProgressView`; `StepSummary` formats what they share.
 - `Douze/Tracing/`: `TraceRecorder` records build, step, command and (with `--trace-units`) unit spans; `ChromeTraceWriter` writes them for Perfetto (`--trace`), `TimelineHtmlWriter` into the self-contained `timeline.html` (`--timeline`).
 - `Douze.Tests.FakeTool/`: the fake external tool of the command step tests, launched with `dotnet Douze.Tests.FakeTool.dll <mode>`; it is in `Douze.slnx` so that it builds in the configuration of the tests.
-- `bench/`: the benchmark harness (`Douze.Bench`: a synthetic site, the aspire.dev API pages) and its results (`bench/README.md`).
+- `bench/`: the benchmark harness (`Douze.Bench`: a synthetic site, the pages of a real-world API reference) and its results (`bench/README.md`).
 
 ## Conventions
 
+- Docs, comments and names don't name the external projects Douze is evaluated against: describe them generically (the target site, a real-world API reference data set).
 - Builds must be deterministic: files are processed in parallel, so anything collected across files must be sorted before it is exposed (reduce and group inputs, collections, results).
 - `VirtualFile` is immutable: a step returns new files (`With`, `Derived`) or the same instance. Metadata nodes are shared between files and never mutated once published: shallow clone (`Metadata.With`) and replace.
 - Data is never copied into files. Folder and site data live in scopes, and steps read metadata only through `ScopeSet.TryResolve`, which records what a unit depends on: a unit is replayed from the cache only while every key it resolved beyond a file's own metadata resolves to the same value (or, for templates, to the same part of it: `ValueAccess`). A step that cannot record what it reads must not be incremental. `NodeHash` caches the hash of objects and arrays once computed: never change a node after it is published.

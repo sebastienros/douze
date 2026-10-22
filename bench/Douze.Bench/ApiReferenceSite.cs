@@ -6,8 +6,8 @@ using System.Text.Json.Nodes;
 namespace Douze.Bench;
 
 /// <summary>
-/// A site that renders the aspire.dev API reference from its JSON data (<c>pkgs/*.json</c>, <c>ts-modules/*.json</c>)
-/// with the routes of aspire.dev: C# package, type and member kind pages, TypeScript module, item and method pages.
+/// A site that renders a real-world API reference from its JSON data (<c>pkgs/*.json</c>, <c>ts-modules/*.json</c>)
+/// with the routes of its documentation site: C# package, type and member kind pages, TypeScript module, item and method pages.
 /// </summary>
 /// <remarks>
 /// The site builds with the default workflow: the JSON files are site data (<c>pkgs.&lt;slug&gt;</c>,
@@ -15,7 +15,7 @@ namespace Douze.Bench;
 /// template per route paginates over it with a size of 1. Section 4.7 of the plan describes the workflow file version
 /// (<c>parse</c> plus <c>liquid</c> with <c>group-by</c>), which needs phase 2.
 /// </remarks>
-internal static class AspireApiSite
+internal static class ApiReferenceSite
 {
     /// <summary>
     /// Writes the site to <paramref name="outDir"/>. With <paramref name="dataOnly"/>, the site has the data and a
@@ -30,7 +30,7 @@ internal static class AspireApiSite
 
         if (csharp.Length == 0 && typescript.Length == 0)
         {
-            throw new BenchException($"no JSON files in '{data}/pkgs' or '{data}/ts-modules'; run bench/fetch-aspire-data.sh first");
+            throw new BenchException($"no JSON files in '{data}/pkgs' or '{data}/ts-modules'; run bench/fetch-api-data.sh first");
         }
 
         if (Directory.Exists(root))
@@ -83,7 +83,7 @@ internal static class AspireApiSite
         }
 
         var total = counts.Values.Sum();
-        Console.WriteLine($"aspire API site with {total} pages written to {root}: {string.Join(", ", counts.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => $"{x.Key} {x.Value}"))}");
+        Console.WriteLine($"API reference site with {total} pages written to {root}: {string.Join(", ", counts.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => $"{x.Key} {x.Value}"))}");
     }
 
     private static string[] Files(string directory)
@@ -147,7 +147,7 @@ internal static class AspireApiSite
                     continue;
                 }
 
-                // Methods get their own page, like aspire.dev; properties are listed on the item page.
+                // Methods get their own page, like on the original site; properties are listed on the item page.
                 var memberSlugs = new HashSet<string>(StringComparer.Ordinal);
                 var capabilities = item["capabilities"]?.AsArray() ?? [];
 
@@ -196,7 +196,7 @@ internal static class AspireApiSite
             <html lang="en">
               <head>
                 <meta charset="utf-8">
-                <title>{{ title }} - Aspire API</title>
+                <title>{{ title }} - API reference</title>
               </head>
               <body>
                 <nav class="sidebar">
@@ -328,7 +328,7 @@ internal static class AspireApiSite
     private static void Count(Dictionary<string, int> counts, string key, int value) => counts[key] = counts.GetValueOrDefault(key) + value;
 
     /// <summary>
-    /// Lower case, letters, digits, dots and dashes: <c>Aspire.Hosting</c> is <c>aspire.hosting</c>,
+    /// Lower case, letters, digits, dots and dashes: <c>Contoso.Hosting</c> is <c>contoso.hosting</c>,
     /// <c>Foo&lt;T&gt;</c> is <c>foo-t</c>.
     /// </summary>
     private static string Slug(string name)

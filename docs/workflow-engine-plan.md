@@ -6,10 +6,14 @@ without having to make architecture decisions. Every type, file, field, rule and
 decision, not a suggestion. When something is left open on purpose it is listed in section 11 with a
 recommended answer, and the recommended answer is what an implementer should use.
 
-Inputs read while planning: `AGENTS.md`, `README.md`, `Douze/todo.txt`, `aspire-dev-gap.md`, every
+Inputs read while planning: `AGENTS.md`, `README.md`, `Douze/todo.txt`, the gap analysis of the target site, every
 file under `Douze/` and `Douze.Tests/`, the Sample site, the CI workflows, the Fluid 3 preview API
 surface (`Fluid.Core 3.0.0-preview-776`), the SharpYaml 3.16 API surface, and an empirical native AOT
 check of Spectre.Console (section 6.1).
+
+The target site is a documentation site of about 32k pages, built today in about 22 minutes. Its API reference is
+rendered from a real-world data set (about 78 MB of JSON: per-package .NET API files and per-module TypeScript API
+files) into about 20k API pages.
 
 How to read this document:
 
@@ -19,7 +23,7 @@ How to read this document:
   trace output, and the incremental design.
 - Section 8 lists the phases, their files, tests, acceptance criteria, model and effort, and which
   phases can run in parallel.
-- Sections 9 to 11 cover benchmarks, the aspire.dev gaps, and risks with open questions.
+- Sections 9 to 11 cover benchmarks, the target site's gaps, and risks with open questions.
 
 Conventions used in signatures: everything is `internal` unless the type is already public today
 (`FPath`, `IFileSystem` and the file system types stay public). Nullable reference types are enabled.
@@ -988,8 +992,8 @@ contributes scopes.
 - `with.scope: site | folder` (required).
 - `with.root: <dir>` (default: the site's data folder for `site`, the content folder for `folder`).
 - `site`: the key of a file is its path relative to `root`, without extension, with each directory
-  level becoming a nested object: `_data/colors.json` -> `colors`, `_data/pkgs/Aspire.Hosting.json`
-  -> `pkgs["Aspire.Hosting"]`. Two files mapping to the same key is an error
+  level becoming a nested object: `_data/colors.json` -> `colors`, `_data/pkgs/Contoso.Hosting.json`
+  -> `pkgs["Contoso.Hosting"]`. Two files mapping to the same key is an error
   ("data key 'colors' is defined by both '/_data/colors.json' and '/_data/colors.yml'"). A file
   whose root is a scalar or an array is stored as is. Keys are recorded in `SiteScope.KeySources`.
   Contribution: `SiteScope("step:<name>", values, keySources)`.
@@ -1010,7 +1014,7 @@ pass through when matched. Options: none.
 
 **`parse`** (map, default match: `**/*.json`, `**/*.yml`, `**/*.yaml`, `**/*.xml`). Parses the whole
 content into Own under `with.as` (default `data`), keeps the content. Used by data-driven workflows
-such as the aspire.dev API pages (one JSON file becomes the model of a template).
+such as the API reference pages of a documentation site (one JSON file becomes the model of a template).
 
 **`markdown`** (map, default match: `**/*.md`). Renders with a `MarkdownPipeline` built once in the
 constructor from `with.extensions` (`none` default, which is today's bare pipeline; `advanced` maps
@@ -1362,7 +1366,7 @@ reorder requires one more (the `footer` capture of `index.md` is written in HTML
 holds Markdown source), and changes the Sample output as listed in "Integration of phases 2, 3, 4
 and B" (section 8).
 
-### 4.7 Example: the aspire.dev API pages
+### 4.7 Example: API reference pages
 
 ```yaml
 site:
@@ -1526,7 +1530,7 @@ the new path otherwise.
 3. Progress and logs, optional, from the worker at any time:
 
 ```json
-{"type":"log","level":"info","message":"loaded aspire.d.ts in 1.2 s"}
+{"type":"log","level":"info","message":"loaded api.d.ts in 1.2 s"}
 ```
 
 4. Shutdown. Douze sends `shutdown` after the last response; the worker exits 0 within 10 seconds
@@ -1595,7 +1599,7 @@ function encode(f, msg) {
 Example step:
 
 ```yaml
-twoslash: { needs: render, run: "node scripts/twoslash-worker.mjs", mode: worker, match: "**/*.md", sources: ["scripts/twoslash-worker.mjs", "data/twoslash/aspire.d.ts"] }
+twoslash: { needs: render, run: "node scripts/twoslash-worker.mjs", mode: worker, match: "**/*.md", sources: ["scripts/twoslash-worker.mjs", "data/twoslash/api.d.ts"] }
 ```
 
 ### 5.4 Node startup cost
@@ -2130,7 +2134,7 @@ when `CommandLine.Output` is null, `site.parallelism` goes to `SiteOptions.Paral
 output, so the project file is not touched).
 
 **Tests.** `WorkflowLoaderTests`: one test per message of 4.5 asserting the message and the line
-and column (about 20 tests), the aspire example of 4.7 loads, `site` values apply, `steps` absent
+and column (about 20 tests), the API reference example of 4.7 loads, `site` values apply, `steps` absent
 uses the default, `--print-workflow` output round trips (load, `ToYaml`, load again, same
 definitions), a duration table test.
 
@@ -2158,7 +2162,7 @@ in a test.
 - Tests: `WorkflowLoaderTests` (91 cases: every message of 4.5 with its line and column, the 4.7 example, typed
   `with`, round trips, scalars, durations), `WorkflowSourceTests` (site section, `-o` over `site.output`, `--workflow`,
   missing file, error location, the two-pipeline fixture site). Fixtures: `Douze.Tests/Fixtures/workflows/`
-  (`aspire.yml`, `all-fields.yml`, `two-pipelines/`).
+  (`api-reference.yml`, `all-fields.yml`, `two-pipelines/`).
 
 ### Phase 3: command steps (Medium)
 
@@ -2253,7 +2257,7 @@ in a terminal shows the live table (screenshot in the PR); `--trace out.json` op
 the four that edits it), `.gitignore` (`bench/**/data/`, `bench/**/out/`).
 
 **Acceptance.** `bench/README.md` has the commands, the first results table is filled in for the
-synthetic site on the implementer's machine, and the aspire data harness runs when the data is
+synthetic site on the implementer's machine, and the API reference data harness runs when the data is
 present.
 
 ### Integration of phases 2, 3, 4 and B
@@ -2373,8 +2377,8 @@ from the disk cache.
   (fixed by sebastienros/fluid#1059, in Fluid 3.0.0-preview-781); and lazily loaded metadata and cached `Hash128?` values were published the same way
   (`Metadata._load` is volatile, `HashSlot` replaces `Hash128?` caches).
 - **Benchmarks** (`bench/README.md`, "Phase 5"): synthetic 32k clean 5.5 s (6.8 s writing the cache), no change 1.1 s
-  (0 units executed), one page edited 1.7 s (8 units), one tag edited 1.5 s; aspire API pages 3.5 s, no change 1.1 s.
-  Peak RSS 2.3 GB for the synthetic site (target 1.5 GB, missed: 9.2), 2.4 GB for the aspire pages. `run --cache
+  (0 units executed), one page edited 1.7 s (8 units), one tag edited 1.5 s; API reference pages 3.5 s, no change 1.1 s.
+  Peak RSS 2.3 GB for the synthetic site (target 1.5 GB, missed: 9.2), 2.4 GB for the API reference pages. `run --cache
   clean|warm|edit|tag` measures builds from the cache; `run-all.sh` includes them.
 - **Left for phase 6.** Deletions and renames (stale outputs are not removed), keeping results in memory across
   rebuilds, `TemplateLoader.Invalidate` use. A worker command step starts its process even when every unit replays.
@@ -2478,14 +2482,13 @@ commands:
   matter (title, date, 2 tags out of 20), 1 layout chain of 2 levels, 3 includes used by the layout,
   `_data` with 5 files, a nav include that loops over 50 items of `collections.all`, 1 paginated
   page over a 2,000-item data file (size 20), and 200 static assets (css, js, png). N defaults to
-  32,000, which is aspire.dev's page count.
-- `aspire-api --data <dir> --out <dir>`: copies `pkgs/*.json` and `ts-modules/*.json` into a
+  32,000, the page count of the target documentation site.
+- `api-reference --data <dir> --out <dir>`: copies `pkgs/*.json` and `ts-modules/*.json` into a
   site with the workflow of 4.7 and two templates (`csharp-package.liquid`, `ts-module.liquid`)
   that render one page per type and per module item from the JSON, so the output size is
-  comparable to the real site (about 24k pages). The data is obtained with
-  `git -C ~/github/aspire.dev show origin/main:src/frontend/src/data/pkgs/<file>` for each file
-  listed by `git ls-tree` (202 files, 15.6 MB, and 140 files, 62.9 MB; the largest is 14.1 MB), by
-  `bench/fetch-aspire-data.sh`. The data is gitignored.
+  comparable to the real site (about 24k pages). The data is a real-world API reference data set (per-package .NET API
+  files and per-module TypeScript API files: 202 files, 15.6 MB, and 140 files, 62.9 MB; the largest is 14.1 MB),
+  extracted from the documentation repository by `bench/fetch-api-data.sh`. The data is gitignored.
 - `run --site <dir> --out <dir> [--douze <path>] [--repeat 3]`: runs the published AOT binary,
   reports wall time, user and system CPU, peak RSS (`/usr/bin/time -l` on macOS, `-v` on Linux,
   `Process.PeakWorkingSet64` on Windows), and the number of output files, as a Markdown table row.
@@ -2498,14 +2501,15 @@ As implemented (phase B):
 - `synthetic` writes layouts `post.html -> base.html`, includes `header`, `nav`, `footer`, and the data files
   `layout.json` (`"post.html"`), `site.json`, `authors.yml`, `menu.json` and `products.json` (2,000 items).
   `--nav index` (the nav indexes `collections.all[i]`) and `--nav none` isolate the cost of the nav loop.
-- `aspire-api` builds with the default workflow until phase 2 lands: the JSON files are site data
+- `api-reference` builds with the default workflow until phase 2 lands: the JSON files are site data
   (`_data/pkgs/<slug>.json`, `_data/tsmodules/<slug>.json`), each package folder has its page index as folder data
-  (`pages.json`), and one template per aspire.dev route paginates over it with a size of 1: C# package, type and
+  (`pages.json`), and one template per route of the documentation site paginates over it with a size of 1: C# package, type and
   member kind pages, TypeScript module, item and method pages, 19,712 pages (not 24k: the Markdown twins of some routes
   are not generated). `--mode data` writes the data and a single page, for the parse target. The workflow of 4.7 is a
   second variant to add after phase 2.
-- The data lives in `src/frontend/src/data/{pkgs,ts-modules}` of aspire.dev; `bench/fetch-aspire-data.sh` fetches
-  `origin` and extracts both folders of `origin/main` with `git archive`, so the checkout is never touched.
+- The data lives in two JSON folders (`pkgs`, `ts-modules`) of the documentation repository;
+  `bench/fetch-api-data.sh <checkout> <destination> <folder>...` fetches `origin` and extracts the folders of
+  `origin/main` with `git archive`, so the checkout is never touched.
 - `run` takes `--label` and passes the options after `--` to douze; `--incremental` waits for phase 5.
   `bench/run-all.sh` publishes the AOT binary and prints the whole results table.
 - The results table and the bottlenecks found, with suggested fixes, are in `bench/README.md`.
@@ -2520,8 +2524,8 @@ Measured on the published native AOT binary, 8 cores, warm file cache, median of
 | Synthetic 32k pages, second build from disk cache, no change | under 3 s | Phase 5; dominated by hashing source files |
 | Synthetic 32k pages, one page edited, watch mode | under 500 ms to the written output | Phase 6; map path only, collections untouched by early cutoff |
 | Synthetic 32k pages, one tag edited | under 5 s | Collections re-run plus every page that reads `collections` (the nav include on every page in this synthetic site is the worst case) |
-| aspire API data: parse 78 MB of JSON | under 4 s, RSS under 1.2 GB for the data | Node tree conversion roughly doubles the footprint (gap B6); if the target is missed, implement the lazy `Node` over `JsonElement` noted in section 11 |
-| aspire API data: render about 24k pages | wall under 60 s, peak RSS under 2.5 GB | Replaces about 18 minutes and an 8 GB heap today |
+| API reference data: parse 78 MB of JSON | under 4 s, RSS under 1.2 GB for the data | Node tree conversion roughly doubles the footprint (gap B6); if the target is missed, implement the lazy `Node` over `JsonElement` noted in section 11 |
+| API reference data: render about 24k pages | wall under 60 s, peak RSS under 2.5 GB | Replaces about 18 minutes and an 8 GB heap today |
 | Worker step round trip | under 2 ms per file of overhead beyond the worker's own work | JSON lines, no process start per file |
 
 Memory is measured as peak RSS of the Douze process only; worker processes are reported
@@ -2533,7 +2537,7 @@ builds in 33 s instead of 43 s on .NET 10 (`bench/README.md`, ".NET 11 and runti
 re-measured the GC modes after its memory changes: non concurrent stays the default (Server GC with DATAS ties, the
 others are slower, none lowers the peak, which is the live set). *Corrected by the bounded channels change:* those
 Server GC runs set `DOTNET_gcServer=1`, which the native AOT binary (linked with the workstation GC) ignores. Published
-with `ServerGarbageCollection=true`, Server GC builds the aspire pages 24 to 32% faster, ties on the synthetic site, and
+with `ServerGarbageCollection=true`, Server GC builds the API reference pages 24 to 32% faster, ties on the synthetic site, and
 peaks higher (1.46 GB on the synthetic site); the non concurrent workstation GC stays the default for its memory margin,
 and Server GC is a decision of its own (`bench/README.md`, finding 8).
 
@@ -2544,12 +2548,12 @@ before phase 6 (risk 6).
 
 *Bounded channels results* (`bench/README.md`, "Bounded channels and duplicate path tracking", median of 3 against the
 phase 5 base measured the same day): synthetic 32k clean 6.3 s and 1.08 GB (base 6.5 s and 2.42 GB), 7.2 s and 1.22 GB
-writing the cache; one page edited 1.6 s; aspire API pages 4.0 s and 1.1 GB (base 4.3 s and 2.43 GB), 1.4 GB writing the
+writing the cache; one page edited 1.6 s; API reference pages 4.0 s and 1.1 GB (base 4.3 s and 2.43 GB), 1.4 GB writing the
 cache. Every target of this table that phases up to 5 own is met.
 
 *Satori GC* (decided by the user after the bounded channels change, `bench/README.md` finding 9): native AOT builds use
 the experimental Satori GC (`PublishWithSatoriGC`, `-p:UseSatoriGC=false` opts out). It builds the synthetic 32k site in
-5.5 s instead of 6.4 s and the aspire pages in 2.9 s instead of 4.4 s, and peaks at 1.88 GB and 1.40 GB: the synthetic
+5.5 s instead of 6.4 s and the API reference pages in 2.9 s instead of 4.4 s, and peaks at 1.88 GB and 1.40 GB: the synthetic
 site's 1.5 GB target is knowingly missed for the speed (the standard GC meets it, 1.07 GB). Small sites peak lower
 than with the standard GC (114 MB against 167 MB for 500 pages). Re-measure when Douze moves to the stable .NET 11.
 
@@ -2563,7 +2567,7 @@ than with the standard GC (114 MB against 167 MB for 500 pages). Re-measure when
 
 ---
 
-## 10. Gaps from `aspire-dev-gap.md`
+## 10. Gaps of the target site
 
 | Gap | Status | Where |
 |---|---|---|
@@ -2583,7 +2587,7 @@ than with the standard GC (114 MB against 167 MB for 500 pages). Re-measure when
 | B5 parse templates once | Solved: `TemplateLoader` cache by content hash | 1b |
 | B6 memory for large JSON | Measured in phase B; lazy `Node` over `JsonElement` is a follow-up if the target is missed | B |
 | B7 multiple outputs from the same data | Two `liquid` steps over the same `parse` output (4.7) | 2 |
-| B9 / B10 / B11 / B14 xref, api tag, pre-highlighted signatures, slugs | Generator side in aspire.dev, not Douze | out of scope |
+| B9 / B10 / B11 / B14 xref, api tag, pre-highlighted signatures, slugs | Generator side in the target site, not Douze | out of scope |
 | B12 per-package sidebar cache | `group-by: file` renders once per package; a `{% cache %}` tag is a follow-up | out of scope |
 | A8 twoslash, A22 OG images, A23 Pagefind | `worker`, `batch`, `batch` command steps | 3 |
 | A3 shortcodes, A5 Markdig extensions, A6 headings, A16 Markdown includes, A10 sidebar helpers, A11 i18n, A19/A20 images and fingerprints, A25 git dates, A28 link validation | Independent features that fit as built-in steps or filters after phase 2; `with.extensions` on `markdown` is wired in 1b | separate work |
@@ -2642,7 +2646,7 @@ Each item has a recommended answer; implementers use it unless the user decides 
    contribution of a reduce step its producer feeds (`paginate` after `permalink` and `collections`), which could not
    run while the producer waits for room. `BackpressureTests` has a test per rule that hangs without it. Most of the 2.3
    GB, though, was not in the channels: every node kept every file that entered it to detect duplicate paths; nodes now
-   keep refs, and only those with several producers track paths. The synthetic site peaks at 1.08 GB, the aspire pages
+   keep refs, and only those with several producers track paths. The synthetic site peaks at 1.08 GB, the API reference pages
    at 1.1 GB (9.2), and both build faster.
 
 7. **Global CPU slots and command steps.** A command step waiting on an external process should

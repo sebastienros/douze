@@ -17,7 +17,7 @@ internal static class SyntheticSite
 
     private static readonly string[] Words =
     [
-        "aspire", "build", "cache", "deploy", "engine", "file", "graph", "host", "input", "join", "kernel", "layout",
+        "action", "build", "cache", "deploy", "engine", "file", "graph", "host", "input", "join", "kernel", "layout",
         "markdown", "node", "output", "page", "query", "render", "step", "template", "unit", "value", "worker",
         "yaml", "zone", "the", "a", "of", "to", "and", "in", "with", "for", "is", "on", "that", "by", "this", "from",
         "site", "data", "scope", "content", "liquid", "include", "collection", "tag", "date", "path", "stream",

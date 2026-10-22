@@ -4,16 +4,16 @@ const string Usage = """
     usage: dotnet run -c Release --project bench/Douze.Bench -- <command> [options]
 
     Commands:
-      synthetic  --out <dir> [--pages 32000] [--nav limit|index|none]
-                 generates a site of N Markdown pages with tags, layouts, includes, data, a paginated page and assets
-      aspire-api --data <dir> --out <dir> [--mode full|data]
-                 generates a site that renders the aspire.dev API reference pages from its JSON data
-                 (bench/fetch-aspire-data.sh fetches the data); --mode data writes the data and a single page
-      run        --site <dir> --out <dir> [--douze <path>] [--repeat 3] [--label <text>] [--cache clean|warm|edit|tag]
-                 [-- <douze options>]
-                 builds the site with the douze binary (default: tool-out/douze) and prints a Markdown table row;
-                 --cache clean (default) deletes the output and the cache before each build, warm builds again without
-                 changes, edit appends a paragraph to one page before each build, tag changes the tags of one page
+      synthetic     --out <dir> [--pages 32000] [--nav limit|index|none]
+                    generates a site of N Markdown pages with tags, layouts, includes, data, a paginated page and assets
+      api-reference --data <dir> --out <dir> [--mode full|data]
+                    generates a site that renders the pages of a real-world API reference from its JSON data
+                    (bench/fetch-api-data.sh fetches the data); --mode data writes the data and a single page
+      run           --site <dir> --out <dir> [--douze <path>] [--repeat 3] [--label <text>] [--cache clean|warm|edit|tag]
+                    [-- <douze options>]
+                    builds the site with the douze binary (default: tool-out/douze) and prints a Markdown table row;
+                    --cache clean (default) deletes the output and the cache before each build, warm builds again without
+                    changes, edit appends a paragraph to one page before each build, tag changes the tags of one page
     """;
 
 try
@@ -31,8 +31,8 @@ try
         case "synthetic":
             SyntheticSite.Generate(options.Required("out"), options.Int("pages", 32_000), options.Get("nav") ?? "limit");
             return 0;
-        case "aspire-api":
-            AspireApiSite.Generate(options.Required("data"), options.Required("out"), (options.Get("mode") ?? "full") switch
+        case "api-reference":
+            ApiReferenceSite.Generate(options.Required("data"), options.Required("out"), (options.Get("mode") ?? "full") switch
             {
                 "full" => false,
                 "data" => true,

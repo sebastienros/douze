@@ -91,7 +91,7 @@ A Markdown page whose `permalink` is not HTML (`feed.xml`) is not rendered to HT
 ## data
 
 Each file of the data folder is a site value named after the file: `_data/colors.json` is `colors`, whatever it
-contains (a list, an object or a single value), and `_data/pkgs/Aspire.Hosting.json` is `pkgs["Aspire.Hosting"]`.
+contains (a list, an object or a single value), and `_data/pkgs/Contoso.Hosting.json` is `pkgs["Contoso.Hosting"]`.
 Two files cannot define the same name.
 
 The top-level keys of the data files of a content folder (`articles/articles.yml`) apply to the pages of that folder
@@ -312,7 +312,7 @@ line (UTF-8, `\n` terminated, protocol 1). It starts with the step and stops whe
 3. Logs, at any time, shown with the step name (`level`: `debug`, `info`, `warn` or `error`):
 
    ```json
-   {"type":"log","level":"info","message":"loaded aspire.d.ts in 1.2 s"}
+   {"type":"log","level":"info","message":"loaded api.d.ts in 1.2 s"}
    ```
 
 4. Shutdown: after the last answer Douze sends `shutdown` and closes stdin; the worker exits with code 0 within 10

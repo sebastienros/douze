@@ -475,9 +475,9 @@ public class WorkflowLoaderTests
     }
 
     [Fact]
-    public void AspireExampleLoads()
+    public void ApiReferenceExampleLoads()
     {
-        var workflow = WorkflowLoader.Load(File.ReadAllText(Path.Combine(Fixtures, "aspire.yml")), "aspire.yml").Workflow!;
+        var workflow = WorkflowLoader.Load(File.ReadAllText(Path.Combine(Fixtures, "api-reference.yml")), "api-reference.yml").Workflow!;
 
         Assert.Equal(13, workflow.Steps.Length);
 
@@ -490,18 +490,18 @@ public class WorkflowLoaderTests
         Assert.Equal(CommandMode.Batch, og.Mode);
         Assert.Equal(["og/*.png"], og.Outputs);
         Assert.Equal(["scripts/og.mjs"], og.Sources);
-        Assert.Equal("aspire.yml", workflow.SourceFile);
+        Assert.Equal("api-reference.yml", workflow.SourceFile);
     }
 
     [Fact]
     public async Task LoadAsyncKeepsTheFullPath()
     {
-        var path = Path.Combine(Fixtures, "aspire.yml");
+        var path = Path.Combine(Fixtures, "api-reference.yml");
 
-        var file = await WorkflowLoader.LoadAsync(path, "aspire.yml", TestContext.Current.CancellationToken);
+        var file = await WorkflowLoader.LoadAsync(path, "api-reference.yml", TestContext.Current.CancellationToken);
 
         Assert.Equal(Path.GetFullPath(path), file.Workflow!.SourceFile);
-        Assert.Equal("aspire.yml", file.Workflow.Steps[0].Location!.Value.File);
+        Assert.Equal("api-reference.yml", file.Workflow.Steps[0].Location!.Value.File);
     }
 
     [Fact]
@@ -523,7 +523,7 @@ public class WorkflowLoaderTests
 
     [Theory]
     [InlineData("all-fields.yml")]
-    [InlineData("aspire.yml")]
+    [InlineData("api-reference.yml")]
     [InlineData("two-pipelines/douze.yml")]
     public void PrintedWorkflowLoadsBackTheSame(string fixture)
     {
