@@ -14,7 +14,10 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+        - { os: ubuntu-latest, rid: linux-x64 }
+        - { os: macos-latest, rid: osx-arm64 }
+        - { os: windows-latest, rid: win-x64 }
 
     runs-on: ${{ matrix.os }}
     env:
@@ -33,11 +36,12 @@ jobs:
     - name: Test
       run: dotnet test -c Release
 
-    - name: Publish douze (native AOT)
-      if: matrix.os == 'ubuntu-latest'
-      run: dotnet publish Douze --configuration Release --output tool-out
-
-    - name: Smoke test douze
-      if: matrix.os == 'ubuntu-latest'
+    # The native AOT tool package of the platform, as build.yml and publish.yml make it.
+    - name: Pack douze (native AOT, ${{ matrix.rid }})
       shell: bash
-      run: ./tool-out/douze -s Sample -o site-out && test -f site-out/index.html
+      run: dotnet pack Douze --configuration Release -r ${{ matrix.rid }} --property:PackTool=true --property:VersionSuffix=pr.${{ github.run_number }} --property:PackageOutputPath="${GITHUB_WORKSPACE}/tool-artifacts"
+
+    # Installs the package with install.sh and install.ps1, and builds the Sample site and an image with it.
+    - name: Smoke test douze and the install scripts
+      shell: pwsh
+      run: ./scripts/test-install.ps1 -Packages tool-artifacts -TestPath

@@ -142,9 +142,9 @@ public class ImageProcessorTests
         var message = ImageProcessor.MissingLibraryMessage(new DllNotFoundException("Unable to load shared library 'libvips.so.42'\nmore"));
 
         Assert.Equal(
-            "image processing needs libvips, which cannot be loaded (Unable to load shared library 'libvips.so.42'). The douze tool packages of win-x64, "
-            + "win-arm64, linux-x64, linux-arm64, osx-x64 and osx-arm64 include it; the platform independent package does not: install douze on one of "
-            + "these platforms, or put libvips 8.18 (libvips.so.42, libvips.42.dylib or libvips-42.dll) next to the douze executable or on the library path",
+            "image processing needs libvips, which cannot be loaded (Unable to load shared library 'libvips.so.42'). Douze includes it on win-x64, "
+            + "win-arm64, linux-x64, linux-arm64, osx-x64 and osx-arm64; on other platforms, put libvips 8.18 (libvips.so.42, libvips.42.dylib or "
+            + "libvips-42.dll) next to the douze executable or on the library path",
             message);
     }
 }
