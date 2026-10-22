@@ -89,7 +89,7 @@ jobs:
         if ($symbols) { throw "$($package.Name) has symbols: $symbols" }
         Write-Host "$($package.Name): $([math]::Round($package.Length / 1MB, 1)) MB"
 
-    - uses: actions/upload-artifact@v6
+    - uses: actions/upload-artifact@v7
       with:
         name: tool-${{ matrix.rid }}
         path: tool-artifacts/*.nupkg
@@ -127,7 +127,7 @@ jobs:
         done
         if echo "$entries" | grep -E '\.pdb$'; then echo "Douze.any has symbols"; exit 1; fi
 
-    - uses: actions/upload-artifact@v6
+    - uses: actions/upload-artifact@v7
       with:
         name: tool-any
         path: |
@@ -144,7 +144,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - uses: actions/download-artifact@v7
+    - uses: actions/download-artifact@v8
       with:
         pattern: tool-*
         path: tool-artifacts
@@ -180,7 +180,7 @@ jobs:
         ls -l release
         cat release/SHA256SUMS
 
-    - uses: actions/upload-artifact@v6
+    - uses: actions/upload-artifact@v7
       with:
         name: release
         path: release/*
@@ -200,7 +200,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - uses: actions/download-artifact@v7
+    - uses: actions/download-artifact@v8
       with:
         name: tool-${{ matrix.rid }}
         path: tool-artifacts
