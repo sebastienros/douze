@@ -73,7 +73,7 @@ jobs:
         $zip.Dispose()
         if (-not $found) { throw "libvips is missing from $($package.Name)" }
 
-    - uses: actions/upload-artifact@v6
+    - uses: actions/upload-artifact@v7
       with:
         name: tool-${{ matrix.rid }}
         path: tool-artifacts/*.nupkg
