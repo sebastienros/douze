@@ -86,7 +86,8 @@ Liquid runs before Markdown, as in Eleventy: a Markdown page can use tags and va
 they produce. A page whose Markdown contains `{{` or `{%` that are not Liquid (code samples) sets `liquid: false` in
 its front matter, or its folder's data file sets it for every page of the folder; `{% raw %}` works too. A variable
 captured in a Markdown page (`{% capture footer %}`) holds Markdown source, which is not rendered: write it in HTML.
-A Markdown page whose `permalink` is not HTML (`feed.xml`) is not rendered to HTML.
+A Markdown page whose `permalink` is not HTML (`feed.xml`) is not rendered to HTML, and a page whose `markdown` is
+`false` is not rendered either.
 
 ## data
 
@@ -131,7 +132,7 @@ itself have a `layout` in its front matter.
 
 # workflow
 
-`douze.yml` at the root of the source folder, or the file given with `--workflow`, configures a site. Both of its
+`douze.yml` at the root of the source folder, or the file given with `--workflow`, configures a site. Its
 sections are optional, and a site without the file builds with the default workflow.
 
 ```yaml
@@ -142,6 +143,9 @@ site:
   output: public         # relative to the source folder; -o wins
   url: https://example.com  # site.url in templates
   parallelism: 8         # -p wins
+
+markdown:                # see "markdown"
+  extensions: [pipetables, footnotes, alerts, customcontainers, attributes]
 
 steps:
   site-data: { inputs: "data/*.json", uses: data, with: { scope: site } }
@@ -174,7 +178,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `needs` | none | a step name or a list: the steps whose files, and data, enter this step |
 | `inputs` | none | a glob or a list: the source files that enter this step |
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -199,6 +203,58 @@ options of built-in steps):
 douze.yml(12,5): error: unknown field 'if' on step 'render'
 douze.yml(14,3): error: step 'render' needs unknown step 'markdwn'; did you mean 'markdown'?
 ```
+
+# markdown
+
+The `markdown` section of `douze.yml` configures how Markdown renders, for the `markdown` step and everything else
+that renders Markdown:
+
+```yaml
+markdown:
+  extensions: [pipetables, footnotes, tasklists, definitionlists, attributes, autolinks, alerts, customcontainers]
+  aside: { tag: aside, class: aside, kinds: [note, tip, caution, danger], titles: { note: Note }, icons: { note: "<svg>...</svg>" } }
+  links: true                                   # .md links to page urls
+  code: { class-prefix: language-, passthrough: [mermaid] }
+  images: { widths: [640, 1280], formats: [webp], quality: 80, output: assets/images, loading: lazy }   # read, not used yet
+```
+
+Without the section, Markdown is CommonMark with no extension. With it, `extensions` defaults to the list above; it
+takes Markdig's names, and `advanced`, Markdig's set without `autoidentifiers` (heading ids are the `headings`
+step's). An unknown name is an error (`unknown Markdown extension 'tabels'; did you mean 'pipetables'?`). The
+`extensions` option of a `markdown` step replaces the extensions for that step and keeps the other settings.
+
+- Asides: `:::note` ... `:::` containers (`customcontainers`) and `> [!NOTE]` alerts (`alerts`) render as
+  `<aside aria-label="Note" class="aside aside--note"><p class="aside__title" aria-hidden="true">Note</p><div class="aside__content">...</div></aside>`,
+  with the classes derived from `class` and the icon of the kind before the title. `:::tip[Before you start]` sets
+  the title. The alerts `IMPORTANT` and `WARNING` are `note` and `caution`, and any other kind renders as the first
+  of `kinds` with a warning.
+- Code: a fence renders as `<pre data-lang="csharp" data-meta="{3-4}"><code class="language-csharp">`, the meta being
+  the rest of the info string, for highlighters; a `passthrough` language renders as `<pre class="mermaid">`.
+- Links: a relative link to a `.md` file of the content folder becomes the url of its page with the default
+  permalinks (`other.md` is `/docs/other/`, `index.md` is `/docs/`, `#fragment` kept). A link to a file that does
+  not exist is left as it is, and the page renders again when the file is created.
+- Raw regions: lines between two lines that are exactly the U+001E character are written as they are, for tags
+  that produce block HTML.
+
+`markdown: false` in front matter or folder data leaves a page as Markdown.
+
+# headings
+
+The `headings` step (`uses: headings`, on `**/*.html`, after `markdown` and before `layout`) works on the HTML of a
+page, whatever produced its headings:
+
+```yaml
+  headings: { needs: markdown, uses: headings, with: { anchors: true, levels: [2, 3] } }
+```
+
+- It gives every heading an id, GitHub style (`What's new?` is `whats-new`, a second `Setup` is `setup-1`), and
+  keeps the ids headings already have (`## Title {#custom}` with `attributes`).
+- It sets `headings` (every heading: `depth`, `text`, `id`), `toc` (the headings of `levels`, default `[2, 3]`, as a
+  tree: each entry has `children`), and `page.heading`, the text of the first `h1`.
+- `anchors: true` appends `<a class="heading-anchor" href="#id" aria-label="Link to this heading">#</a>` to each
+  heading (`anchor-class`, `anchor-label`).
+
+A layout renders the tree with the `toc` filter, as nested lists: `{{ toc | toc: class: "toc", max-depth: 3 }}`.
 
 # commands
 

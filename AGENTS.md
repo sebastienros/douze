@@ -23,13 +23,18 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 
 - `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`), `WorkflowSource` (finds the site options and the workflow), `ViewSelector`.
 - `Douze/Workflow/`: the engine. `WorkflowGraph` validates a `WorkflowDefinition` and instantiates its steps; `SiteBuilder` runs it with the `Scheduling/Scheduler`, which streams files between steps by shape (`map`, `group`, `reduce`). `DefaultWorkflow` is the workflow of a site without a workflow file.
-- `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write`).
+- `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write`).
 - `Douze/Workflow/Cache/`: the disk cache (`<source>/.douze/cache/`, `--no-cache`, `--cache-dir`). `BuildCache` stores the
   result of every unit by `ResultKey` (step, configuration, input refs) with its dependency set, in pack files
   (`PackFile`) under a binary index (`CacheIndex`); `NodeSerializer` writes metadata and nodes keeping their types. The
   scheduler replays a unit whose key is cached and whose dependencies did not change (`Scheduling/ReplayState`).
 - `Douze/Workflow/Yaml/`: `douze.yml` loading. `YamlSource` keeps the position of every node, `WorkflowLoader` reads `site` (`SiteSettings`) and `steps` and reports every error with its line and column, `WorkflowSchema` is the field table shared by the loader and `--print-workflow`.
 - `Douze/Workflow/Commands/`: `run:` steps in the modes `filter` (a process per file), `batch` (a process per input or group) and `worker` (one process, JSON lines over stdin and stdout, `WorkerProtocol`). `ProcessRunner` starts processes and kills their tree on timeout (`ProcessTree`, which avoids `Process.Kill(entireProcessTree: true)` on Unix: it can hang forever on macOS); `douze-worker.mjs` is the Node helper printed by `douze worker-helper`.
+- `Douze/Markdown/`: Markdown rendering. `MarkdownOptions` is the `markdown:` section of `douze.yml`;
+  `MarkdownPipelineFactory` builds the one Markdig pipeline of a build, which `MarkdownRenderer` (`BuildContext.Markdown`)
+  renders with pooled renderers: anything that renders Markdown uses it, never a second configuration. Douze's own
+  markup: raw regions (`RawRegionExtension`), asides (`AsideExtension`), code fences (`CodeFenceRenderer`), `.md`
+  links (`LinkRewriter`). `HeadingScanner` and `Slugger` give the `headings` step the headings of rendered HTML.
 - `Douze/Liquid/`: the Fluid bridge. `TemplateLoader` parses templates once per content hash and serves includes; `MetadataValue` is the model of every render.
 - `Douze/Progress/`: the views of a build: `PlainProgressView` (a line per step), `SpectreProgressView` (live table and summary with a timeline), `SilentProgressView`; `StepSummary` formats what they share.
 - `Douze/Tracing/`: `TraceRecorder` records build, step, command and (with `--trace-units`) unit spans; `ChromeTraceWriter` writes them for Perfetto (`--trace`), `TimelineHtmlWriter` into the self-contained `timeline.html` (`--timeline`).
