@@ -70,7 +70,7 @@ public class HeadingsStepTests : StepTestBase
     [Fact]
     public async Task HeadingsOfARawRegionAndOfCodeBlocks()
     {
-        var file = await BuildPageAsync("## Page\n\n\u001E\n<div>\n\n<h2>From a shortcode</h2>\n\n</div>\n\u001E\n\n```html\n<h2>Not a heading</h2>\n```\n");
+        var file = await BuildPageAsync("## Page\n\n\u001E<div>\u001D\u001D<h2>From a shortcode</h2>\u001D\u001D</div>\u001E\n\n```html\n<h2>Not a heading</h2>\n```\n");
 
         var headings = (NodeArray)file.Metadata.Own["headings"]!;
         Assert.Equal(["page", "from-a-shortcode"], headings.Cast<NodeObject>().Select(x => x["id"]!.GetValue<string>()));

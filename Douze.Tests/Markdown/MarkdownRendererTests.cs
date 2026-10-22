@@ -185,7 +185,7 @@ public class MarkdownRendererTests
     [Fact]
     public async Task RawRegionIsKeptAsItIs()
     {
-        var html = await RenderAsync("Before\n\n\u001E\n<div>\n\n*not emphasis*\n\n</div>\n\u001E\n\nAfter *this*");
+        var html = await RenderAsync("Before\n\n\u001E<div>\u001D\u001D*not emphasis*\u001D\u001D</div>\u001E\n\nAfter *this*");
 
         Assert.Equal("<p>Before</p>\n<div>\n\n*not emphasis*\n\n</div>\n<p>After <em>this</em></p>\n", html);
     }
@@ -193,26 +193,29 @@ public class MarkdownRendererTests
     [Fact]
     public async Task RawRegionInterruptsAParagraph()
     {
-        var html = await RenderAsync("Before\n\u001E\n<div></div>\n\u001E\nAfter");
+        var html = await RenderAsync("Before\n\u001E<div></div>\u001E\nAfter");
 
         Assert.Equal("<p>Before</p>\n<div></div>\n<p>After</p>\n", html);
     }
 
     [Fact]
-    public async Task StrayMarkersAreRemoved()
+    public async Task RawRegionStaysInItsListItem()
     {
-        Assert.Equal("<p>Text and more</p>\n", await RenderAsync("Text \u001Eand more"));
+        var html = await RenderAsync("1. First\n\n   \u001E<div>\u001D\u001D<p>a</p>\u001D</div>\u001E\n2. Second");
+
+        Assert.Equal("<ol>\n<li><p>First</p>\n<div>\n\n<p>a</p>\n</div>\n</li>\n<li><p>Second</p>\n</li>\n</ol>\n", html);
     }
 
     [Fact]
-    public async Task UnclosedRegionWarns()
+    public void EncodeMakesOneLine()
     {
-        var warnings = new List<MarkdownWarning>();
+        Assert.Equal("\u001E<div>\u001D\u001Da</div>\u001E", RawRegionExtension.Encode("<div>\r\n\na</div>\n"));
+    }
 
-        var html = await RenderAsync("\u001E\n<div>", warnings: warnings);
-
-        Assert.Equal("<div>\n", html);
-        Assert.Equal(new MarkdownWarning(1, 1, "a raw region is not closed"), Assert.Single(warnings));
+    [Fact]
+    public async Task StrayMarkersAreRemoved()
+    {
+        Assert.Equal("<p>Text and\nmore</p>\n", await RenderAsync("Text \u001Eand\u001Dmore\u001E"));
     }
 
     // Links.

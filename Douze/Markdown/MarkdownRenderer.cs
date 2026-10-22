@@ -11,8 +11,8 @@ namespace Douze.Markdown;
 /// Renders Markdown to HTML with the pipeline of <see cref="MarkdownOptions"/>. Built once per build
 /// (<see cref="BuildContext.Markdown"/>) and used concurrently: Markdig's HTML renderer is not thread safe, so renders
 /// take one from a pool. The result is final HTML: raw regions (<see cref="RawRegionExtension"/>) are written as they
-/// are, and the U+001E markers that are left after parsing, because they did not delimit a region, are removed from
-/// the output.
+/// are, and what is left of regions that did not start a line (U+001E markers, U+001D encoded newlines) is removed
+/// from the output.
 /// </summary>
 internal sealed class MarkdownRenderer
 {
@@ -50,7 +50,7 @@ internal sealed class MarkdownRenderer
     /// <param name="directory">The source folder of the page, which relative <c>.md</c> links start from; <c>null</c> leaves links as they are.</param>
     /// <param name="deps">Records the link targets that do not exist.</param>
     /// <param name="asideTitles">Titles of aside kinds that replace the configured ones (localized titles).</param>
-    /// <param name="warn">Receives the warnings of the render: unknown aside kinds, raw regions not closed.</param>
+    /// <param name="warn">Receives the warnings of the render: unknown aside kinds.</param>
     public async ValueTask<string> RenderAsync(string markdown, FPath? directory, DependencyTracker? deps, IReadOnlyDictionary<string, string>? asideTitles = null, Action<MarkdownWarning>? warn = null)
     {
         var document = Markdig.Markdown.Parse(markdown, Pipeline);
