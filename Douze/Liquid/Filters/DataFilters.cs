@@ -18,7 +18,8 @@ internal static class DataFilters
             .AddFilter("group_by_exp", GroupByExp)
             .AddFilter("sort_by", SortBy)
             .AddFilter("index_by", IndexBy)
-            .AddFilter("jsonify", MiscFilters.Json);
+            .AddFilter("json", Json)
+            .AddFilter("jsonify", Json);
     }
 
     /// <summary>
@@ -145,5 +146,30 @@ internal static class DataFilters
         }
 
         return string.CompareOrdinal(a.ToStringValue(context), b.ToStringValue(context));
+    }
+
+    /// <summary>
+    /// <c>json</c> and <c>jsonify</c>: a data object or array (site data, a collection) as JSON, in its own order;
+    /// other values through Fluid's <c>json</c> filter. Fluid's filter alone writes <c>null</c> for nodes, which its
+    /// source generated serializer does not know.
+    /// </summary>
+    public static ValueTask<FluidValue> Json(FluidValue input, FilterArguments arguments, TemplateContext context)
+    {
+        // ToObjectValue records the whole value as read (the page depends on all of it).
+        Node? node = input is NodeObjectValue or NodeArrayValue ? input.ToObjectValue(context) as Node : null;
+
+        if (node == null)
+        {
+            return MiscFilters.Json(input, arguments, context);
+        }
+
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+
+        using (var writer = new System.Text.Json.Utf8JsonWriter(buffer))
+        {
+            NodeJson.Write(writer, node);
+        }
+
+        return new ValueTask<FluidValue>(StringValue.Create(System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan), encode: false));
     }
 }

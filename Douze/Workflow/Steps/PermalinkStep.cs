@@ -22,7 +22,13 @@ internal sealed class PermalinkStep : Step, IMapStep
 
     public async ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct)
     {
-        var path = await PermalinkResolver.ResolveAsync(file, file.Metadata, context, _root ?? context.Build.Site.ContentFolder, ct);
+        // A paginated file gets one path per page from the paginate step: its permalink template reads the page's
+        // alias, which does not exist yet, so it is not resolved here.
+        var root = _root ?? context.Build.Site.ContentFolder;
+
+        var path = context.Scopes.TryResolve(file.Metadata, "pagination", null, context.Dependencies, out var pagination, out _) && pagination is NodeObject
+            ? PermalinkResolver.Default(file.Path, root)
+            : await PermalinkResolver.ResolveAsync(file, file.Metadata, context, root, ct);
 
         if (path is not { } output)
         {
