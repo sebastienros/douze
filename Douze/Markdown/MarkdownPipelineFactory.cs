@@ -32,6 +32,7 @@ internal static class MarkdownPipelineFactory
         "definitionlists", "customcontainers", "figures", "mathematics", "bootstrap", "medialinks", "smartypants",
         "tasklists", "diagrams", "nofollowlinks", "noopenerlinks", "noreferrerlinks", "nohtml", "yaml",
         "nonascii-noescape", "autolinks", "globalization", "cjk-friendly-emphasis",
+        "strikethrough",   // Douze's: emphasisextras without subscript, superscript, inserted and marked
     }.ToFrozenSet(StringComparer.Ordinal);
 
     // Other spellings people use for an extension, for the suggestion of an unknown name.
@@ -84,6 +85,13 @@ internal static class MarkdownPipelineFactory
             if (Validate(name) is { } error)
             {
                 throw new ArgumentException(error, nameof(options));
+            }
+
+            if (name == "strikethrough")
+            {
+                // The ~~ of emphasisextras alone: its ~ subscript would turn "~1 minute, up to ~" into one.
+                builder.UseEmphasisExtras(Markdig.Extensions.EmphasisExtras.EmphasisExtraOptions.Strikethrough);
+                continue;
             }
 
             builder.Configure(name);
