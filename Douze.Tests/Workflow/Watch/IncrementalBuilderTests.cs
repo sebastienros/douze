@@ -59,6 +59,25 @@ public class IncrementalBuilderTests
     }
 
     [Fact]
+    public async Task ChangesAreWhatTheSourceFolderSays()
+    {
+        await WriteSiteAsync();
+        using var session = new TestSession(_source);
+        await session.BuildSuccessfullyAsync();
+
+        // FSEvents reports an edit of a recently created file as a creation.
+        await _source.WriteTextFileAsync("/_content/about.md", "---\ntitle: About\n---\nAbout");
+        await _source.WriteTextFileAsync("/_content/new.md", "New");
+        await _source.DeleteFileAsync("/_content/posts/a.md");
+        var changes = Changes(("/_content/about.md", ChangeKind.Added), ("/_content/new.md", ChangeKind.Modified), ("/_content/posts/a.md", ChangeKind.Modified), ("/_content/nothing.md", ChangeKind.Deleted));
+        await session.BuildSuccessfullyAsync(changes);
+
+        Assert.Equal(
+            [("/_content/about.md", ChangeKind.Modified), ("/_content/new.md", ChangeKind.Added), ("/_content/nothing.md", ChangeKind.Deleted), ("/_content/posts/a.md", ChangeKind.Deleted)],
+            changes.Changes.Select(x => (x.Path.FullName, x.Kind)));
+    }
+
+    [Fact]
     public async Task DeletedPageRemovesItsOutputs()
     {
         await WriteSiteAsync();

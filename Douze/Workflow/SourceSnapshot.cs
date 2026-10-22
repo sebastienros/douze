@@ -1,4 +1,5 @@
 using Douze.FileSystems;
+using Douze.Workflow.Watch;
 
 namespace Douze.Workflow;
 
@@ -57,11 +58,14 @@ internal sealed class SourceSnapshot
     /// <summary>
     /// Updates the snapshot with the paths that changed: a path that is a file now is stat'ed again, a folder is listed
     /// again, and the files of a path that is neither are removed. A changed path may be a folder that was renamed or
-    /// deleted: the watcher reports it without its files.
+    /// deleted: the watcher reports it without its files. Returns what each path really is to the snapshot (added,
+    /// modified, deleted), which the events cannot tell reliably (FSEvents reports an edit of a file created recently
+    /// as a creation); a path the snapshot never had and that is not there is left out.
     /// </summary>
-    public async Task ApplyAsync(IFileSystem source, IEnumerable<FPath> changed)
+    public async Task<IReadOnlyList<(FPath Path, ChangeKind Kind)>> ApplyAsync(IFileSystem source, IEnumerable<FPath> changed)
     {
         var listChanged = false;
+        var kinds = new List<(FPath, ChangeKind)>();
 
         foreach (var path in changed)
         {
@@ -71,13 +75,16 @@ internal sealed class SourceSnapshot
             if (file.IsFile && (await source.GetFileEntryAsync(file)).Exists)
             {
                 var info = await source.GetFileMetadataAsync(file);
-                listChanged |= !_files.ContainsKey(file);
+                var added = !_files.ContainsKey(file);
+                listChanged |= added;
                 _files[file] = (info.Length, info.LastWriteTimeUtc);
+                kinds.Add((path, added ? ChangeKind.Added : ChangeKind.Modified));
                 continue;
             }
 
             var wasFile = _files.Remove(file);
             var isDirectory = directory != FPath.Root && (await source.GetDirectoryEntryAsync(directory)).Exists;
+            var had = wasFile;
             listChanged |= wasFile;
 
             // The files that were under the path (a folder renamed or deleted), and the ones under it now.
@@ -87,7 +94,13 @@ internal sealed class SourceSnapshot
                 {
                     _files.Remove(under);
                     listChanged = true;
+                    had = true;
                 }
+            }
+
+            if (isDirectory || had)
+            {
+                kinds.Add((path, !isDirectory ? ChangeKind.Deleted : had ? ChangeKind.Modified : ChangeKind.Added));
             }
 
             if (isDirectory)
@@ -108,6 +121,12 @@ internal sealed class SourceSnapshot
             }
         }
 
+        Refresh(listChanged);
+        return kinds;
+    }
+
+    private void Refresh(bool listChanged)
+    {
         if (listChanged)
         {
             _matching = null;

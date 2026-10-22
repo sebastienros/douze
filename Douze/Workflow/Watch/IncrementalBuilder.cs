@@ -84,7 +84,10 @@ internal sealed class IncrementalBuilder : IDisposable
             }
             else if (_sources != null)
             {
-                await _sources.ApplyAsync(site.Source, changes.Changes.Select(x => x.Path));
+                foreach (var (path, kind) in await _sources.ApplyAsync(site.Source, changes.Changes.Select(x => x.Path)))
+                {
+                    changes.Correct(path, kind);
+                }
             }
         }
 

@@ -12,12 +12,13 @@ namespace Douze.Progress;
 internal sealed class RebuildProgressView : IProgressView
 {
     private readonly TextWriter _output;
-    private readonly string _change;
+    private readonly Func<string> _change;
     private readonly Lock _lock = new();
 
     /// <param name="output">Where the lines go.</param>
-    /// <param name="change">What started the build: <c>_content/index.md changed</c>.</param>
-    public RebuildProgressView(TextWriter output, string change)
+    /// <param name="change">What started the build, described once it ended (<c>_content/index.md changed</c>): the
+    /// session corrects the kinds of the changes when the build starts.</param>
+    public RebuildProgressView(TextWriter output, Func<string> change)
     {
         _output = output;
         _change = change;
@@ -47,7 +48,7 @@ internal sealed class RebuildProgressView : IProgressView
 
     public void BuildCompleted(BuildResult result)
     {
-        WriteLine(Headline(result, _change));
+        WriteLine(Headline(result, _change()));
     }
 
     /// <summary>

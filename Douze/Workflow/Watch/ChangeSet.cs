@@ -54,6 +54,17 @@ internal sealed class ChangeSet
         Add(to, ChangeKind.Added);
     }
 
+    /// <summary>
+    /// Replaces the kind of a change with what the source folder says it is.
+    /// </summary>
+    public void Correct(FPath path, ChangeKind kind)
+    {
+        if (_changes.ContainsKey(path))
+        {
+            _changes[path] = kind;
+        }
+    }
+
     public void AddRescan() => Rescan = true;
 
     /// <summary>

@@ -140,7 +140,7 @@ internal static class WatchCommand
             return new PlainProgressView(Console.Out, verbose: true);
         }
 
-        return new RebuildProgressView(Console.Out, changes.ToString());
+        return new RebuildProgressView(Console.Out, changes.ToString);
     }
 
     private static string Relative(string path)
