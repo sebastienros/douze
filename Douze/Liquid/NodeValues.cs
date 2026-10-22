@@ -144,7 +144,15 @@ internal sealed class NodeObjectValue : FluidValue
     public override bool Equals(FluidValue other)
     {
         _recorder?.ReadWhole();
-        return other is NodeObjectValue nodeObject && (ReferenceEquals(nodeObject.Value, Value) || nodeObject.Value.Equals(Value));
+
+        if (other is not NodeObjectValue nodeObject)
+        {
+            return false;
+        }
+
+        // The other object is read whole too: it may be a value from the scopes of its own.
+        nodeObject._recorder?.ReadWhole();
+        return ReferenceEquals(nodeObject.Value, Value) || nodeObject.Value.Equals(Value);
     }
 
     // An object is true whatever its members. Like Fluid's dictionary value, it counts its members: 'empty' and the
@@ -290,9 +298,15 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
     {
         _recorder?.ReadWhole();
 
-        if (other is NodeArrayValue nodeArray && (ReferenceEquals(nodeArray.Value, Value) || nodeArray.Value.Equals(Value)))
+        if (other is NodeArrayValue nodeArray)
         {
-            return true;
+            // The other array is read whole too: it may be a value from the scopes of its own.
+            nodeArray._recorder?.ReadWhole();
+
+            if (ReferenceEquals(nodeArray.Value, Value) || nodeArray.Value.Equals(Value))
+            {
+                return true;
+            }
         }
 
         if (other is IFluidArray array && other.Type == FluidValues.Array)
