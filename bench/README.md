@@ -33,6 +33,10 @@ bench/out/bin/Douze.Bench aspire-api --data bench/aspire/data --out bench/aspire
 # Options after '--' go to douze.
 bench/out/bin/Douze.Bench run --site bench/synthetic/data/32000 --out bench/out/site --repeat 3 --label "synthetic 32000"
 bench/out/bin/Douze.Bench run --site bench/synthetic/data/32000 --out bench/out/site -- -p 4
+
+# Builds from the disk cache (phase 5): --cache clean (default: no output folder, no cache), warm (a second build
+# without changes), edit (a paragraph appended to the middle page before each build), tag (its tags changed).
+bench/out/bin/Douze.Bench run --site bench/synthetic/data/32000 --out bench/out/site --cache edit
 ```
 
 `run` measures with `/usr/bin/time -l` on macOS, `/usr/bin/time -v` on Linux and `Process.PeakWorkingSet64`
@@ -179,6 +183,67 @@ Finding 1 is fixed: the `limit:` loop now costs what the indexed loop costs (6.1
 builds in 6.1 s instead of 34.3 s and its peak RSS drops from 6.2 to 3.2 GB. The aspire pages do not use `limit:` and
 are unchanged (their RSS varies between 4.8 and 5.9 GB from run to run, as before).
 
+### Phase 5: disk cache, hashing and memory, 2026-10-21
+
+Same machine and data, native AOT, Fluid 3.0.0-preview-781, non concurrent GC, median of 3 runs. *Clean* builds start
+without an output folder and without a cache (`.douze/`), and either do not use the cache (`--no-cache`) or write it.
+*No change*, *one page edited* and *one tag edited* start from the output and cache of a previous build of the same site
+(`run --cache warm|edit|tag`; the edit appends a paragraph to the middle page, so its date changes too).
+
+| Scenario | Wall (s) | User (s) | Sys (s) | Peak RSS (MB) |
+|---|---:|---:|---:|---:|
+| synthetic 32000, clean, no cache | 5.51 | 7.55 | 18.57 | 2318 |
+| synthetic 32000, clean, writing the cache | 6.78 | 9.14 | 18.76 | 2665 |
+| synthetic 32000, no change | 1.14 | 2.97 | 0.71 | 449 |
+| synthetic 32000, one page edited | 1.73 | 3.26 | 1.31 | 752 |
+| synthetic 32000, one tag edited | 1.50 | 3.30 | 0.77 | 747 |
+| aspire API pages, clean, no cache | 3.52 | 5.55 | 11.28 | 2440 |
+| aspire API pages, clean, writing the cache | 4.08 | 6.08 | 10.82 | 2625 |
+| aspire API pages, no change | 1.07 | 1.80 | 0.47 | 704 |
+
+The cache takes 794 MB for the synthetic site and 964 MB for the aspire pages (contents of every step, metadata, data).
+Against the base of the phase (00f309e: synthetic 34.3 s and 6.2 GB, aspire 7.1 s and 5.5 GB): finding 1 (Fluid
+`IFluidArray`) took the synthetic site to 6.1 s and 3.2 GB; finding 2 (Merkle hashes cached on nodes, parallel refs) took
+the aspire pages from 7.0 to 3.4 s and 5.0 to 3.3 GB; finding 3 (refs instead of contents in results, sources released,
+weak page templates, no UTF-8 copy kept by `write`) took the synthetic site to 2.3 GB and the aspire pages to 2.4 GB.
+Precise dependencies cost about 2 s of user CPU on the synthetic site (8 s against 5.7 s, spread over 14 cores; the wall
+time did not change): a page records what its templates read of `collections`.
+
+Against the targets of section 9.2:
+
+| Target | Result | |
+|---|---|---|
+| Synthetic 32k, clean build: wall under 30 s | 5.5 s (6.8 s writing the cache) | met |
+| Synthetic 32k, clean build: peak RSS under 1.5 GB | 2.3 GB (2.7 GB writing the cache) | missed, see below |
+| Synthetic 32k, second build, no change: under 3 s | 1.1 s, 0 units executed | met |
+| Synthetic 32k, one page edited: under 2 s from the disk cache (phase 5 acceptance) | 1.7 s, 8 units executed | met |
+| Synthetic 32k, one tag edited: under 5 s | 1.5 s | met |
+| aspire data: render the API pages, wall under 60 s | 3.5 s | met |
+| aspire data: render the API pages, peak RSS under 2.5 GB | 2.4 GB (2.6 GB writing the cache) | met without writing the cache |
+
+Where the synthetic site's memory goes: sampling RSS during a clean build shows about 0.8 GB at the collections barrier
+(every page held, by design of the barrier), then a climb to 2.3 GB while `render`, `markdown` and `layout` run ahead of
+`write`, which ends 1.5 s after `layout`: pages wait in the unbounded channels in front of the slowest step. Under
+`DOTNET_GCHeapHardLimit=0x60000000` (1.5 GB) the build runs out of memory, so this is the live set, not GC slack, and
+the GC modes do not change it (below). The fix is backpressure on the channels whose consumer reads as soon as its
+producer writes (not those in front of a barrier, which must hold everything), with two conditions: a unit must not
+hold its work slot while it waits to write its outputs (the consumer needs a slot), and a consumer that stops early must
+release its producers. Left for a follow-up.
+
+GC modes, measured after findings 1 to 3 (clean builds without the cache, 2 runs each, wall and peak RSS):
+
+| GC | synthetic 32000 | aspire API pages |
+|---|---|---|
+| non concurrent (default) | 5.6 s, 2.6-2.8 GB | 3.6 s, 3.3 GB |
+| `GCgen0size` 32 MB / 64 MB | 5.7-5.8 s, 2.6-2.7 GB | 3.5-3.6 s, 3.3 GB |
+| `GCConserveMemory=5` | 6.0 s, 2.6-2.7 GB | 3.9 s, 3.3 GB |
+| Server GC with DATAS | 5.7-5.9 s, 2.6 GB | 3.4 s, 3.3 GB |
+| concurrent | 6.7-7.2 s, 2.5 GB | 4.4 s, 3.4 GB |
+
+The non concurrent workstation GC stays the default: Server GC with DATAS ties with it, the other settings are slower
+and none lowers the peak by more than 10%, since the peak is the live set. Most of the system time of a clean build
+(about 18 s) is the kernel providing fresh memory to the GC and creating the output folders, not the GC itself.
+
 ## Findings
 
 Measured on the engine of phase 1b. None of these are fixed here (phase B owns only `bench/`); they feed phase 5.
@@ -191,7 +256,7 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    `NodeArrayValue` expose a sliced enumeration that the `for` tag uses; either way, wrap items lazily. Eleventy sites
    loop over collections with `limit` all the time, so this is the first thing to fix.
 
-2. **Metadata hashing of paginated pages is O(pages²) per paginated file, and the reduce barrier does it on one
+2. *Fixed in phase 5 (Merkle hashes cached on nodes, refs computed in parallel).* **Metadata hashing of paginated pages is O(pages²) per paginated file, and the reduce barrier does it on one
    thread.** `Metadata.Hash` serializes the whole `Own` of a page, which holds `pagination.pages` and
    `pagination.hrefs`, shared by every page of the file. The aspire site has files with up to 2,592 pages
    (Σ pages² = 12.7 million summaries per hash pass); `collections` spends 16 of the build's 23 s in
@@ -202,7 +267,7 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    consider leaving `pages`/`hrefs` out of the per-page hash (they are a function of the source file and its data,
    which are already in the unit's key).
 
-3. **Every intermediate content stays in memory until the build ends (open question 18 matters).** A heap dump of the
+3. *Mostly fixed in phase 5 (see above; the pages waiting in channels remain).* **Every intermediate content stays in memory until the build ends (open question 18 matters).** A heap dump of the
    32k synthetic build (`--nav index`, JIT build, during `write`) holds 2.8 GB in 4.1 million objects, mostly 128,000
    strings over 10 KB: four UTF-16 copies of each page (front matter, Markdown, render and layout outputs) kept by
    `StepRun.Results` (each `UnitResult` keeps its output files), plus about 32,000 parsed page templates kept by the
@@ -238,7 +303,7 @@ Measured on the engine of phase 1b. None of these are fixed here (phase B owns o
    (714 MB for 78.5 MB), within the target. The render and layout steps parse each page's template once, which is
    cheap next to findings 1 to 3.
 
-7. **The GC mode matters as much as the code on .NET 11.** Background GCs throttle allocating threads, which made the
+7. *Re-measured in phase 5: non concurrent stays the default.* **The GC mode matters as much as the code on .NET 11.** Background GCs throttle allocating threads, which made the
    allocation heavy `limit:` loop 40% slower than on .NET 10 until `douze` turned concurrent GC off (".NET 11 and
    runtime async" above). Re-measure the GC modes (concurrent, non concurrent, Server GC with DATAS) after each memory
    change of phase 5: once findings 1 and 3 cut the allocation rate and the live set, concurrent GC or a lower peak RSS

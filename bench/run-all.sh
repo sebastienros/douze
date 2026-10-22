@@ -31,10 +31,23 @@ for nav in index none; do
 done
 
 run "synthetic 32000, nav index, -p 4" bench/synthetic/data/32000-index -p 4
+run "synthetic 32000, no cache" bench/synthetic/data/32000 --no-cache
+
+# Builds from the disk cache: no change, one page edited, the tags of one page edited.
+cached() { # label site mode
+  local row
+  row=$("$bench" run --site "$2" --out "bench/out/site" --repeat "$repeat" --label "$1" --cache "$3")
+  echo "$row" | tail -1
+}
+
+cached "synthetic 32000, cache, no change" bench/synthetic/data/32000 warm
+cached "synthetic 32000, cache, one page edited" bench/synthetic/data/32000 edit
+cached "synthetic 32000, cache, one tag edited" bench/synthetic/data/32000 tag
 
 if [ -d bench/aspire/data/pkgs ]; then
   "$bench" aspire-api --data bench/aspire/data --out bench/aspire/data/site-data --mode data >&2
   run "aspire API data only" bench/aspire/data/site-data
   "$bench" aspire-api --data bench/aspire/data --out bench/aspire/data/site >&2
   run "aspire API pages" bench/aspire/data/site
+  cached "aspire API pages, cache, no change" bench/aspire/data/site warm
 fi

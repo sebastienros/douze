@@ -23,6 +23,10 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 - `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`), `WorkflowSource` (finds the site options and the workflow), `ViewSelector`.
 - `Douze/Workflow/`: the engine. `WorkflowGraph` validates a `WorkflowDefinition` and instantiates its steps; `SiteBuilder` runs it with the `Scheduling/Scheduler`, which streams files between steps by shape (`map`, `group`, `reduce`). `DefaultWorkflow` is the workflow of a site without a workflow file.
 - `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write`).
+- `Douze/Workflow/Cache/`: the disk cache (`<source>/.douze/cache/`, `--no-cache`, `--cache-dir`). `BuildCache` stores the
+  result of every unit by `ResultKey` (step, configuration, input refs) with its dependency set, in pack files
+  (`PackFile`) under a binary index (`CacheIndex`); `NodeSerializer` writes metadata and nodes keeping their types. The
+  scheduler replays a unit whose key is cached and whose dependencies did not change (`Scheduling/ReplayState`).
 - `Douze/Workflow/Yaml/`: `douze.yml` loading. `YamlSource` keeps the position of every node, `WorkflowLoader` reads `site` (`SiteSettings`) and `steps` and reports every error with its line and column, `WorkflowSchema` is the field table shared by the loader and `--print-workflow`.
 - `Douze/Workflow/Commands/`: `run:` steps in the modes `filter` (a process per file), `batch` (a process per input or group) and `worker` (one process, JSON lines over stdin and stdout, `WorkerProtocol`). `ProcessRunner` starts processes and kills their tree on timeout; `douze-worker.mjs` is the Node helper printed by `douze worker-helper`.
 - `Douze/Liquid/`: the Fluid bridge. `TemplateLoader` parses templates once per content hash and serves includes; `MetadataValue` is the model of every render.
@@ -35,7 +39,7 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 
 - Builds must be deterministic: files are processed in parallel, so anything collected across files must be sorted before it is exposed (reduce and group inputs, collections, results).
 - `VirtualFile` is immutable: a step returns new files (`With`, `Derived`) or the same instance. Metadata nodes are shared between files and never mutated once published: shallow clone (`Metadata.With`) and replace.
-- Data is never copied into files. Folder and site data live in scopes, and steps read metadata only through `ScopeSet.TryResolve`, which records what a unit depends on.
+- Data is never copied into files. Folder and site data live in scopes, and steps read metadata only through `ScopeSet.TryResolve`, which records what a unit depends on: a unit is replayed from the cache only while every key it resolved beyond a file's own metadata resolves to the same value (or, for templates, to the same part of it: `ValueAccess`). A step that cannot record what it reads must not be incremental. `NodeHash` caches the hash of objects and arrays once computed: never change a node after it is published.
 - Data files are keyed by file name: `_data/colors.json` is `colors`. The nearest scope wins: own data, folder data (nearest folder first), site data, the `site:` settings of `douze.yml` (`site.url`, whose `site` object is completed rather than hidden by a `site` data object), then the front matter of layouts.
 - Collection items (`collections.all`, `collections.<tag>`) are sorted by date ascending, using front matter `date` if defined, or `page.date` (the file date) otherwise, then by path (ordinal). This matches Eleventy.
 - Pagination pages (`pagination.pages`, `page.next`, ...) only link pages generated from the same template.

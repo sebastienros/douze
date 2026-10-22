@@ -107,7 +107,7 @@ Douze/
              WorkerProtocol.cs  WorkerProcess.cs  ProcessRunner.cs  CommandTemplate.cs
              douze-worker.mjs (embedded resource)
     Yaml/WorkflowLoader.cs  YamlSource.cs  WorkflowSchema.cs  WorkflowFile.cs
-    Cache/BuildCache.cs  CacheIndex.cs  ResultKey.cs  (phase 5)
+    Cache/BuildCache.cs  CacheIndex.cs  ResultKey.cs  NodeSerializer.cs  PackFile.cs  (phase 5)
     Watch/FileWatcher.cs  IncrementalBuilder.cs  DevServer.cs  LiveReload.cs  (phase 6)
   Progress/IProgressView.cs  PlainProgressView.cs  SilentProgressView.cs  SpectreProgressView.cs
   Tracing/ITraceRecorder.cs  TraceRecorder.cs  TraceSession.cs  ChromeTraceWriter.cs
@@ -438,7 +438,7 @@ internal sealed class BuildContext : IAsyncDisposable
     public SemaphoreSlim ProcessSlots { get; }      // slots for external processes (command steps), same size, see 2.6
     public CancellationToken Cancellation { get; }  // user cancellation (Ctrl+C)
     public string TempRoot { get; }                 // <cache dir>/tmp/<build id>/ for batch commands, deleted by DisposeAsync (kept with --verbose)
-    public BuildCache? Cache { get; }               // null until phase 5
+    public BuildCache? Cache { get; }               // the disk cache; null with --no-cache, for a site not on disk, or when another build holds it (phase 5)
 }
 ```
 
@@ -708,6 +708,14 @@ internal static class ResultKey
 
 Early cutoff (section 7.2) compares the **output** refs of a unit with its previous result: when
 all outputs are identical, dependents are not re-run for those files.
+
+*As implemented (phase 5):* `ResultKey` is in `Douze/Workflow/Cache/`. The dependency set records keys rather than
+data files and scope sources (7.3), and a result is reused when every recorded lookup still resolves to the same
+value. Command steps do not record every scope: they cannot read scopes (their model has the file, the folders and
+`with`; workers receive the own metadata only), so `ScopeSet.Hash` in their keys would only re-run them for nothing;
+what a command reads from disk is declared with `sources`. A step that reads only metadata (`Step.ReadsContent`, false
+for `collect`) leaves the content hashes of its inputs out of its keys. Early cutoff needs no comparison: a unit that
+runs again and produces the same outputs gives its dependents the same input refs, hence the same keys.
 
 ### 2.8 Templates and the Liquid bridge
 
@@ -1719,6 +1727,30 @@ When tracking is incomplete (a step implementation that reads scopes without goi
 of its `ScopeSet` (every site source and every folder data file), so any data change re-runs it:
 correctness over minimal rebuilds.
 
+*As implemented (phase 5):* the record is per key, and per part of a value for templates:
+
+- `TryResolve` records nothing for a key of the file's own metadata (it is in the input ref). Any other key is a
+  `Lookup(Directory, Key, Hash, Access)`: the directory of the metadata it was resolved for, the key, and
+  `ScopeSet.ResolveHash(directory, key)`, the hash of what the key resolves to beyond own metadata (folder scopes
+  from the directory up, site scopes, settings; `DependencySet.Absent` when nothing defines it; combined with the
+  settings' value when the settings define the key, since they complete objects). A replay recomputes the hash in the
+  step's current scopes. This replaces `DataFiles`, `Scopes`, `SiteScope.KeySources` and `FolderScope.Sources`, and
+  it is both finer and complete: a data file edit re-runs only the units that resolved a key whose value changed; a
+  folder data file added on the lookup path shadows the value only when it defines the key, and the hash says so
+  (the gap of the phase 1b review); `settings` (`site.url`) is part of the hash of the keys it defines.
+- A template does not depend on a whole value: `MetadataValue` resolves through `ScopeSet.TryResolveTracked`, and the
+  `NodeObjectValue` and `NodeArrayValue` of a value from the scopes record what the template reads (`ValueAccess`,
+  `Douze/Workflow/ValueAccess.cs`): members read (present or not), items read, whether the count was read, and the
+  whole value when it is enumerated, compared, written or converted. The lookup's hash is then the hash of that part
+  (`ScopeSet.ProjectHash`). A nav that lists `collections.all limit: 50` depends on the number of pages and on the
+  metadata of those 50, so editing another page does not run every layout again. Steps written in C# depend on the
+  whole value (`TryResolve`).
+- Templates: `TemplateLoader` records the paths it looked for and did not find with `DependencySet.Absent`
+  (`nav.liquid` before `nav.html`, earlier includes folders), so a file added in front of the one used re-runs its
+  users.
+- `write` records the files it wrote with their length and modification time (`DependencySet.Written`): a replay
+  writes nothing, so it checks that the output file is still there, unchanged; otherwise it runs again.
+
 ### 7.4 Disk cache (phase 5)
 
 `<source>/.douze/cache/` (gitignored by phase 5's change to `.gitignore` in the Sample and in the
@@ -1736,6 +1768,35 @@ scopes/<hash>.json  serialized reduce contributions (collections are re-material
 as units complete), `Prune(TimeSpan olderThan)` run at build end for blobs not referenced by the
 index. Cold starts and CI read it; watch mode keeps everything in memory and writes it on exit.
 A version mismatch in `index.json` discards the cache.
+
+*As implemented (phase 5):* `<cache dir>/cache/` holds `index.bin`, `packs/*.pack` and `lock`:
+
+- **Packs, not one file per blob.** A build appends the blobs of the units it runs (contents, metadata, nodes, by
+  hash) to a new pack file (`PackFile`), and the index makes them visible when it is saved (written to a temporary file
+  and renamed): a build that stops before saving leaves a pack that nothing lists, deleted by the next build. The 32k
+  synthetic site has about 130,000 blobs per clean build; creating that many files would cost what writing the site
+  costs (benchmark finding 4).
+- **A binary index, not `index.json`.** The 32k synthetic site has about 225,000 units; its index is 33 MB with every
+  string stored once (`CacheIndex`), and JSON would be several times larger and slower to read at the start of every
+  build. There is no `CacheJsonContext`.
+- **Binary metadata and nodes.** `NodeSerializer` keeps the type of every value (a date stays a date, `1` an integer),
+  so that a value read back hashes and renders like the original. An object or array over 1 KB is stored apart, by
+  hash, and read back as one shared node: the pages of a pagination, shared by every page, are stored once (stored
+  inline they would be O(pages²) bytes, like finding 2 for hashing).
+- **What is stored.** For each unit that runs: its outputs (path, content hash and length, metadata hash, content
+  type, source path and date) whose contents and metadata are stored unless they are those of an input (a replay takes
+  them from the input), its dependency set (shared by every unit with the same set), and for a reduce unit its
+  contribution: each site scope's values as a node blob with the hashes of its keys, each folder scope's values. A
+  replayed output reads its content and its metadata from the packs only if a step reads them; a replayed site scope
+  reads its values only when a unit resolves one of its keys and runs (checking lookups needs the key hashes only).
+- **Source files** are not read when their length and modification time match the previous build's (`SourceStat`);
+  a file whose time is within 2 s of the build that recorded it is read again (a change in the same second).
+- **Retention.** A successful build keeps the units it used, replayed or ran: the results of an edited page's previous
+  version, or of a deleted page, are dropped, so the cache does not grow with edits (switching between two branches
+  rebuilds what differs). A failed or cancelled build keeps the previous units too. When less than half the bytes of
+  the packs are in use (and they hold more than 4 MB), the used blobs are copied to a new pack and the others deleted.
+- An index of another format or Douze version is discarded (info message); a damaged one is discarded with a
+  warning; a cache that another build holds (`lock`) is not used, with a warning.
 
 ### 7.5 Watch mode (phase 6)
 
@@ -2213,6 +2274,59 @@ of modifications only (no adds or deletes yet).
 second time; the synthetic 32k site of section 9 rebuilds after one page edit in under 2 seconds
 from the disk cache.
 
+**As implemented** (phase 6 builds on these; sections 2.7, 7.3, 7.4 and risk 18 have the details):
+
+- **Fluid first.** Fluid 3.0.0-preview-780 adds `IFluidArray`, which `NodeArrayValue` implements (open question 20,
+  benchmark finding 1); preview-781 fixes a race in `TextSpanStatement` found by this phase's tests.
+- **Hashes** (finding 2). `NodeHash` hashes nodes as a Merkle tree and caches the hash of every object and array on the
+  node (`NodeHashCache`, reset by every change; nodes are not changed once published): the pagination shared by the
+  pages of a file is hashed once instead of once per page. Values are hashed with their type. `CanonicalJson` remains
+  for configuration hashes and the metadata given to commands. The refs of a reduce or group input are computed in
+  parallel.
+- **Memory** (finding 3, risk 18): unit results keep refs (`UnitResult.Outputs` are `FileRef`s, the files only with
+  `BuildOptions.KeepFiles`, which the tests set), `BuildResult.Outputs` is refs, the source files are released once
+  every root has read them, `write` keeps the paths it wrote, and the template cache holds page templates weakly.
+- **Dependencies** (7.3): lookups by key with the hash of what they resolve to, or of the part a template read
+  (`ValueAccess`, bounded to 64 members or items per value and 1,024 parts per lookup, beyond which the value counts as
+  read whole); template paths looked for and missing; files written. `DataFiles`, `Scopes`, `SiteScope.KeySources` and
+  `FolderScope.Sources` are gone; `SiteScope` is a class whose values can be read lazily from the cache.
+- **Cache** (7.4): `BuildCache`, `CacheIndex` (binary), `PackFile`, `NodeSerializer`, `ResultKey` in
+  `Douze/Workflow/Cache/`. Deviations: packs instead of one file per blob, a binary index instead of `index.json`
+  (no `CacheJsonContext`), binary metadata and nodes instead of JSON, nodes over 1 KB stored apart; `Prune` is the
+  retention and compaction done by `Save` (7.4). `BuildContext.Cache` is opened when the site is on disk or a cache
+  folder is given, and `UseCache` is set; `BuildContext.CacheRoot` and `ExcludedSourceFolders` (the output and cache
+  folders inside the source folder, never sources). Unchanged source files are not read (`SourceStat`).
+- **Replay** (`Scheduler.RunUnitAsync`, `ReplayState`). With the cache, every unit of an incremental step computes its
+  key; a cached result whose dependency set is unchanged (checked once per step and set, except written files) is
+  replayed: its outputs are the inputs when equal, or files whose content and metadata are read from the cache on
+  demand; a reduce unit's contribution is restored. A replayed unit is a unit like any other for counts, progress and
+  results (`UnitResult.Replayed`, `StepRun.UnitsReplayed`, `BuildResult.UnitsExecuted`); exceptions of a replay are the
+  unit's failure, so `NodeRunner.RunAsync` still completes the contribution, the channel and `Completed` in its
+  `finally`. A step that keeps state across units is told about replayed units (`IReplayObserver`): `write` registers
+  their paths, so a duplicate output is still an error. Early cutoff comes from the keys (2.7). `incremental: false`
+  never replays nor stores. Command steps add `CacheVersion` (`version` and the files `sources` match, outside the
+  output and cache folders) and do not depend on scopes (2.7). Steps declare `ReadsContent` (false for `collect`).
+- **CLI and views.** `--no-cache` and `--cache-dir` work; `.douze/` is skipped as a source and ignored by the Sample's
+  `.gitignore`; the headline ends with `N units executed, M cached`, a step line with `M cached`, and the live summary
+  has a `Cached` column. `MemoryFileSystem` truncates rewritten files and gives each reader its own stream.
+- **Tests.** `BuildCacheTests` (round trip, blobs visible once saved, version mismatch, prune and compaction, damaged
+  index, a cache in use), `ResultKeyTests` (4), `EarlyCutoffTests` (no change, body edit with and without a date change,
+  tag edit, include edit and a shadowing include, data file edit and a shadowing folder data file, `incremental:
+  false`, a deleted output folder), `ColdStartTests` (two processes on disk, `.douze` and the output folder inside a
+  source without `_content`), `IncrementalEqualsCleanTests` (25 seeds of 12 random modifications of a 40-page site with
+  layouts, includes, site and folder data, tags and two paginated pages, each incremental build compared with a clean
+  one), `NodeHashTests`, `ValueAccessTests`.
+- **Races found by `IncrementalEqualsCleanTests`** in repeated runs on ARM64: Fluid's `TextSpanStatement` published its
+  prepared text without a barrier, so a page rendering a freshly parsed layout concurrently could lose a text segment
+  (fixed by sebastienros/fluid#1059, in Fluid 3.0.0-preview-781); and lazily loaded metadata and cached `Hash128?` values were published the same way
+  (`Metadata._load` is volatile, `HashSlot` replaces `Hash128?` caches).
+- **Benchmarks** (`bench/README.md`, "Phase 5"): synthetic 32k clean 5.5 s (6.8 s writing the cache), no change 1.1 s
+  (0 units executed), one page edited 1.7 s (8 units), one tag edited 1.5 s; aspire API pages 3.5 s, no change 1.1 s.
+  Peak RSS 2.3 GB for the synthetic site (target 1.5 GB, missed: 9.2), 2.4 GB for the aspire pages. `run --cache
+  clean|warm|edit|tag` measures builds from the cache; `run-all.sh` includes them.
+- **Left for phase 6.** Deletions and renames (stale outputs are not removed), keeping results in memory across
+  rebuilds, `TemplateLoader.Invalidate` use. A worker command step starts its process even when every unit replays.
+
 ### Phase 6: watch mode, dev server, live reload (High, review)
 
 **Goal.** `douze watch` and `douze serve` with partial replays, deletions and renames handled
@@ -2322,7 +2436,12 @@ separately.
 Douze runs on .NET 11 with runtime async and the non concurrent GC since the integration: on .NET 11 the
 concurrent GC throttles the allocating threads (40% slower on the synthetic site), without it the synthetic site
 builds in 33 s instead of 43 s on .NET 10 (`bench/README.md`, ".NET 11 and runtime async", finding 7). Phase 5
-re-measures the GC modes after its memory changes.
+re-measured the GC modes after its memory changes: non concurrent stays the default (Server GC with DATAS ties, the
+others are slower, none lowers the peak, which is the live set).
+
+*Phase 5 results* (`bench/README.md`, "Phase 5"): every target is met except the synthetic site's peak RSS (2.3 GB
+clean without the cache, 2.7 GB writing it, against 1.5 GB): pages wait in the unbounded channels in front of `write`,
+the slowest step; backpressure on the channels that do not feed a barrier is the follow-up.
 
 ### 9.3 Validation beyond tests
 
@@ -2453,6 +2572,10 @@ Each item has a recommended answer; implementers use it unless the user decides 
     only pass through to `write`. Recommended: accept for now and measure in phase B (gap B6 covers
     the data side); if it matters, phase 5 can hash pass-through files by streaming and release
     the content of files already written when not in watch mode.
+    *Phase 5:* unit results keep refs, not files (`UnitResult.Files` only with `BuildOptions.KeepFiles`, for tests),
+    `BuildResult.Outputs` is refs, `write` keeps the paths it wrote, the source files are released once every root has
+    read them, and page templates are held weakly by the template cache. A file's content stays in memory while a step
+    or a channel holds it; a replayed file's content is read from the cache only when a step reads it.
 
 19. **The default workflow cannot paginate collections.** `paginate` runs before `collect` (4.6), so
     `pagination.data: collections.post`, the blog index pattern of Eleventy, resolves to nothing and
@@ -2475,6 +2598,9 @@ Each item has a recommended answer; implementers use it unless the user decides 
     as a candidate for phase 5, following the "Fluid changes" rule of `AGENTS.md` (separate Fluid
     worktree and branch, tests in Fluid, validated in Douze with a locally packed preview; Douze keeps
     the published preview until the change ships).
+    *Resolved in phase 5:* Fluid 3.0.0-preview-780 adds `IFluidArray` (sebastienros/fluid#1057), which
+    `NodeArrayValue` implements: `for` with `limit`/`offset`, `tablerow` and the `first`, `last` and `slice` filters
+    convert only the items they use. The synthetic 32k site builds in 6.1 s instead of 34.3 s (`bench/README.md`).
 
 ---
 
