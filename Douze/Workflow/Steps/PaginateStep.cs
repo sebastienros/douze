@@ -20,7 +20,7 @@ namespace Douze.Workflow.Steps;
 /// </remarks>
 internal sealed class PaginateStep : Step, IMapStep
 {
-    private static readonly GlobSet Pages = GlobSet.Parse(["**/*.html", "**/*.md"]);
+    private static readonly GlobSet Pages = GlobSet.Parse(["**/*.html", "**/*.md", "**/*.liquid"]);   // pages and output templates
 
     private readonly FPath? _root;
 
