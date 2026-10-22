@@ -259,9 +259,14 @@ internal sealed class DevServer : IAsyncDisposable
     {
         await _stopping.CancelAsync();
 
-        if (_listener.IsListening)
+        // Close only: the managed HttpListener removes its prefixes again on Close after Stop, and binds the port to do
+        // so, which fails once another process took it.
+        try
         {
-            _listener.Stop();
+            _listener.Close();
+        }
+        catch (HttpListenerException)
+        {
         }
 
         if (_accepting != null)
@@ -269,7 +274,6 @@ internal sealed class DevServer : IAsyncDisposable
             await _accepting;
         }
 
-        _listener.Close();
         _stopping.Dispose();
     }
 }
