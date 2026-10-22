@@ -93,7 +93,7 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
 
                 try
                 {
-                    result = new ParseResult(new ParsedTemplate(TextSpanPreparer.Prepare(parser.Parse(text)), hash), null);
+                    result = new ParseResult(new ParsedTemplate(parser.Parse(text), hash), null);
                 }
                 catch (ParseException e)
                 {
@@ -195,7 +195,7 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     {
         if (_includeHashes.TryGetValue(subpath, out var hash))
         {
-            _includeTemplates.TryAdd(hash, TextSpanPreparer.Prepare(template));
+            _includeTemplates.TryAdd(hash, template);
         }
     }
 
