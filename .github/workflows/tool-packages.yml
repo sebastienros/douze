@@ -84,7 +84,7 @@ jobs:
         $entries = $zip.Entries | ForEach-Object { $_.FullName }
         $zip.Dispose()
         $entries | ForEach-Object { Write-Host $_ }
-        if (-not ($entries -match '^tools/any/${{ matrix.rid }}/(lib)?vips[-.]42')) { throw "libvips is missing from $($package.Name)" }
+        if (-not ($entries -match '^tools/any/${{ matrix.rid }}/(libvips-42\.dll|libvips\.42\.dylib|libvips\.so\.42)$')) { throw "libvips is missing from $($package.Name)" }
         $symbols = $entries -match '\.(dSYM|dbg|pdb)(/|$)'
         if ($symbols) { throw "$($package.Name) has symbols: $symbols" }
         Write-Host "$($package.Name): $([math]::Round($package.Length / 1MB, 1)) MB"
