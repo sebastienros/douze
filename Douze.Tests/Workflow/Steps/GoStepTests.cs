@@ -71,7 +71,7 @@ public sealed partial class GoStepTests : CacheTestBase
     private static WorkflowDefinition Workflow(string path, params (string Key, Node? Value)[] options) => StepTestBase.Workflow(
         StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
         StepTestBase.Step("markdown", "markdown", needs: ["pages"]),
-        StepTestBase.Step("go", "go", needs: ["markdown"], with: StepTestBase.With([("path", NodeValue.Create(path)), .. options])),
+        StepTestBase.Step("go", "hover-go", needs: ["markdown"], with: StepTestBase.With([("path", NodeValue.Create(path)), .. options])),
         StepTestBase.Step("write", "write", needs: ["go"]));
 
     private static string Fence(string code, string meta = "") => $"```go {meta}\n{code}\n```\n\n";
@@ -295,13 +295,13 @@ public sealed partial class GoStepTests : CacheTestBase
 
         var e = await Assert.ThrowsAsync<WorkflowValidationException>(() => BuildAsync(StepTestBase.Workflow(
             StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
-            StepTestBase.Step("go", "go", needs: ["pages"], with: StepTestBase.With(("modules", new NodeObject { ["app"] = new NodeObject { ["require"] = new NodeObject() } })))), Options()));
+            StepTestBase.Step("go", "hover-go", needs: ["pages"], with: StepTestBase.With(("modules", new NodeObject { ["app"] = new NodeObject { ["require"] = new NodeObject() } })))), Options()));
 
         Assert.Contains("module 'app' of step 'go' has an unknown field 'require'; did you mean 'requires'?", e.Message);
 
         e = await Assert.ThrowsAsync<WorkflowValidationException>(() => BuildAsync(StepTestBase.Workflow(
             StepTestBase.Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
-            StepTestBase.Step("go", "go", needs: ["pages"], with: StepTestBase.With(("modules", new NodeObject { ["app"] = new NodeObject { ["files"] = new NodeObject { ["s1/a.go"] = NodeValue.Create("a.go") } } })))), Options()));
+            StepTestBase.Step("go", "hover-go", needs: ["pages"], with: StepTestBase.With(("modules", new NodeObject { ["app"] = new NodeObject { ["files"] = new NodeObject { ["s1/a.go"] = NodeValue.Create("a.go") } } })))), Options()));
 
         Assert.Contains("has a reserved path 's1/a.go'", e.Message);
     }
@@ -322,9 +322,11 @@ public sealed partial class GoStepTests : CacheTestBase
         // Any existing file stands for gopls, which does not start.
         await Source.WriteTextFileAsync("/docs/a.md", Fence("var a = 1"));
 
-        var result = await BuildAsync(Workflow(typeof(GoStepTests).Assembly.Location, ("go", NodeValue.Create("/missing/go"))), Options());
+        // A full path, which the message prints as is (a rooted path gets a drive on Windows).
+        var go = Path.Combine(Path.GetTempPath(), "douze-missing-" + Guid.NewGuid().ToString("N"), "go");
+        var result = await BuildAsync(Workflow(typeof(GoStepTests).Assembly.Location, ("go", NodeValue.Create(go))), Options());
 
         // A requirement: the build fails before any unit runs.
-        Assert.Contains("go does not exist at '/missing/go': install Go from https://go.dev/dl, or set the option 'go' of step 'go'", Assert.Single(result.Errors).Message);
+        Assert.Contains($"go does not exist at '{go}': install Go from https://go.dev/dl, or set the option 'go' of step 'go'", Assert.Single(result.Errors).Message);
     }
 }
