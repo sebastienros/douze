@@ -57,6 +57,8 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     private ConcurrentDictionary<FPath, SourceStat> _sources;
     private readonly ConcurrentDictionary<Hash128, Metadata> _metadata = new();
     private readonly ConcurrentDictionary<Hash128, Lazy<Node>> _nodes = new();
+    private readonly ConcurrentDictionary<Hash128, (string Owner, Hash128 Value)> _memos = new();
+    private readonly ConcurrentDictionary<string, byte> _memoOwners = new(StringComparer.Ordinal);
 
     private BuildCache(string directory, FileStream lockFile, IProgressView view, CacheIndex previous, TimeProvider time)
     {
@@ -240,6 +242,45 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
         {
             _sources[path] = new SourceStat(length, lastWriteTimeUtc, hash);
         }
+    }
+
+    /// <summary>
+    /// The value that step <paramref name="owner"/> stored with <see cref="PutMemo"/> under <paramref name="key"/> in
+    /// this build or a previous one, such as the result of a code snippet that a unit of many snippets computed: the
+    /// next run of the unit reuses the snippets that did not change. Once a step reads or stores a memo in a build, the
+    /// build keeps only the memos of the step that it read or stored (as it keeps the units it used); the memos of a
+    /// step that did not run (its units were replayed) are all kept.
+    /// </summary>
+    public bool TryGetMemo(string owner, Hash128 key, [NotNullWhen(true)] out byte[]? value)
+    {
+        _memoOwners.TryAdd(owner, 0);
+
+        if (_memos.TryGetValue(key, out var memo) || _previous.Memos.TryGetValue(key, out memo))
+        {
+            value = ReadBlob(new BlobId(BlobKind.Content, memo.Value));
+            _memos.TryAdd(key, (owner, memo.Value));
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Stores a memo of step <paramref name="owner"/> (<see cref="TryGetMemo"/>).
+    /// </summary>
+    public void PutMemo(string owner, Hash128 key, ReadOnlySpan<byte> value)
+    {
+        _memoOwners.TryAdd(owner, 0);
+        var hash = Hash128.Of(value);
+        var id = new BlobId(BlobKind.Content, hash);
+
+        if (!Exists(id) && _writing.TryAdd(id, 0))
+        {
+            Append(id, value, []);
+        }
+
+        _memos[key] = (owner, hash);
     }
 
     /// <summary>
@@ -617,6 +658,29 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
             index.Dependencies.TryAdd(hash, set);
         }
 
+        // The memos this build read or stored; those it did not, of the steps that read or stored some, are dropped
+        // when it succeeded.
+        if (succeeded && !_memoOwners.IsEmpty)
+        {
+            foreach (var (key, (owner, _)) in index.Memos)
+            {
+                if (_memoOwners.ContainsKey(owner) && !_memos.ContainsKey(key))
+                {
+                    index.Memos.Remove(key);
+                    changed = true;
+                }
+            }
+        }
+
+        foreach (var (key, value) in _memos)
+        {
+            if (!index.Memos.TryGetValue(key, out var previous) || previous != value)
+            {
+                index.Memos[key] = value;
+                changed = true;
+            }
+        }
+
         // The packs of this build are read like the others from now on.
         if (_writer is { } writer)
         {
@@ -671,6 +735,8 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
         _writing.Clear();
         _put.Clear();
         _dependencies.Clear();
+        _memos.Clear();
+        _memoOwners.Clear();
         (_reused, _sources) = NewBuildSets(index);
 
         if (changed)
@@ -728,6 +794,12 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
                     Use(new BlobId(BlobKind.Node, values));
                 }
             }
+        }
+
+        foreach (var (key, memo) in previous.Memos)
+        {
+            index.Memos[key] = memo;
+            Use(new BlobId(BlobKind.Content, memo.Value));
         }
 
         var entries = new Dictionary<BlobId, BlobEntry>();

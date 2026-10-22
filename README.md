@@ -219,7 +219,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write` |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `twoslash`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -575,6 +575,53 @@ with text laid out over it.
   `height` default to 1200 and 630.
 - The step passes every page through unchanged and adds the image to the page's outputs: it sits in the page chain,
   not on a branch. A layout computes the url with the same template: `{{ page | social_image_url: "og/{{ slug }}.png" }}`.
+
+# twoslash
+
+The `twoslash` step computes the type information of TypeScript code fences, as
+[twoslash](https://twoslash.netlify.app) does, without Node: with [tsrs](https://github.com/oxc-project/tsrs), the
+TypeScript 7 compiler and language server in Rust, which Douze downloads.
+
+````yaml
+  twoslash: { needs: markdown, uses: twoslash,
+              with: { files: { ".aspire/modules/sdk.mts": data/types/sdk.d.ts },
+                      compiler: { moduleResolution: bundler, lib: [es2022, dom] }, handbook: { noErrorValidation: true } } }
+````
+
+Every fence of an HTML page that the `markdown` step wrote with a language of `languages` (`ts`, `tsx`, `typescript`)
+and the word `twoslash` in its meta (```` ```ts twoslash ````) gets a `data-twoslash` attribute: twoslash's result for
+its code, `{ "code": ..., "nodes": [...] }`, the code without its notations and the hovers, `^?` queries, errors,
+`^^^` highlights, `^|` completions and custom tags with their offsets, lines and characters. A highlighter renders the
+popups from it instead of running twoslash (with Expressive Code, a `twoslasher` that returns it). The fence itself is
+unchanged.
+
+- Notations: `// @errors: 2322`, `// @noErrors`, `// @noErrorValidation` and the other handbook options, compiler
+  options (`// @strict: false`, `// @target: es2015`), `// ---cut---` (`-before`, `-after`, `-start`, `-end`),
+  `// @filename: a.ts` for several files, and the tags of `tags` (`annotate`, `log`, `warn`, `error` by default).
+  `showEmit` is not supported.
+- `compiler`: tsconfig compiler options over twoslash's defaults (`strict`, `module` and `target` `esnext`, `allowJs`,
+  `skipLibCheck`, `moduleDetection: force`). `files`: files placed next to every snippet, a path to a file of the
+  source folder (a declaration file the snippets import). `handbook`: handbook options for every snippet.
+- `trim` (true): the code is checked as highlighters render it, without trailing spaces and blank lines around it.
+  `tab-width` replaces tabs first.
+- A snippet that twoslash would reject (an error its `// @errors` does not list, a query that finds nothing) fails the
+  build with its page and line.
+
+All the snippets of a build are checked at once: the snippets that share their compiler options are the files of one
+project (each in its own folder, the `files` shared), checked by one language server whose requests are sent in
+parallel; `processes` (4) language servers run at once, `timeout` (300 seconds) each. Each result is kept in the cache
+by its code and what the step depends on (the tsrs version, the options, the content of `files`): a build checks only
+new snippets, and starts no tsrs when there is none.
+
+tsrs is downloaded on first use from the npm registry (`registry`), the package of the platform (macOS on Apple
+silicon, Linux x64 and arm64, glibc or musl), verified against its integrity (the one Douze pins for its default
+version), into `<cache>/tools/tsrs/<version>/<platform>/`; later builds use it offline. `version` picks another
+release; `path` (relative to the source folder) uses a tsrs binary instead, for offline machines and the platforms
+tsrs does not publish (Windows, Intel macOS).
+
+The hover texts are TypeScript 7's, which prints some types differently from TypeScript 5: no `(+1 overload)` after
+a signature resolved at a call, no `import x` line under an alias, union members in another order
+(`bench/twoslash.md` has a comparison).
 
 # commands
 

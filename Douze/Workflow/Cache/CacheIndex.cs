@@ -48,12 +48,13 @@ internal readonly record struct SourceStat(long Length, DateTime LastWriteTimeUt
 
 /// <summary>
 /// The index of the disk cache: the units by result key, their dependency sets, the blobs and the packs that hold them,
-/// and the hashes of the source files. Stored as a binary file whose strings are written once each: a site of 32,000
+/// the hashes of the source files, and the memos of steps (a value a step computed from part of a unit, by key: the
+/// result of a code snippet). Stored as a binary file whose strings are written once each: a site of 32,000
 /// pages has about 200,000 units.
 /// </summary>
 internal sealed class CacheIndex
 {
-    public const int FormatVersion = 1;
+    public const int FormatVersion = 2;
 
     private static readonly byte[] Magic = "DOUZE-CACHE\n"u8.ToArray();
 
@@ -66,6 +67,11 @@ internal sealed class CacheIndex
     public Dictionary<Hash128, CachedUnit> Units { get; } = [];
 
     public Dictionary<FPath, SourceStat> Sources { get; } = [];
+
+    /// <summary>
+    /// The memos of steps: by key, the step that stored it and the content blob that holds the value.
+    /// </summary>
+    public Dictionary<Hash128, (string Owner, Hash128 Value)> Memos { get; } = [];
 
     public void Write(Stream stream, string douzeVersion)
     {
@@ -245,6 +251,15 @@ internal sealed class CacheIndex
                 writer.Write(stat.Length);
                 Date(stat.LastWriteTimeUtc);
                 Hash(stat.Hash);
+            }
+
+            writer.Write7BitEncodedInt(Memos.Count);
+
+            foreach (var (key, (owner, value)) in Memos)
+            {
+                Hash(key);
+                String(owner);
+                Hash(value);
             }
         }
 
@@ -476,6 +491,22 @@ internal sealed class CacheIndex
             var length = reader.ReadInt64();
             var lastWrite = Date() ?? default;
             index.Sources[path] = new SourceStat(length, lastWrite, Hash());
+        }
+
+        var memos = reader.Read7BitEncodedInt();
+
+        for (var i = 0; i < memos; i++)
+        {
+            var key = Hash();
+            var owner = RequiredString();
+            var value = Hash();
+
+            if (!index.Blobs.ContainsKey(new BlobId(BlobKind.Content, value)))
+            {
+                throw new InvalidDataException("A memo refers to an unknown blob");
+            }
+
+            index.Memos[key] = (owner, value);
         }
 
         return index;
