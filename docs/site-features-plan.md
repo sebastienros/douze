@@ -81,6 +81,15 @@ Each feature is one of:
 
 The decision for each feature, with the reason, is in its subsection and summarized in section 5.4.
 
+**Native tools first.** When a feature is delegated to an executable, a fast native tool is preferred over a Node
+script when one exists with the fidelity needed and builds for macOS, Linux and Windows on x64 and arm64: the search
+indexer (a native binary), the JavaScript bundler (esbuild, a Go binary), the CSS bundler and minifier (lightningcss,
+Rust), SVG rasterization (libvips through NetVips in the tool itself, 3.8; `resvg` is the standalone alternative),
+image processing (libvips). Node stays where it is the only faithful option: the highlighter of 3.7 (the Expressive
+Code engine's frames, markers and collapsible sections are the site's rendering contract, and twoslash needs the
+TypeScript compiler; a TextMate engine through a native library or tree-sitter would highlight but not reproduce that
+output) and any tool that only exists as a JavaScript library. Each choice and its reason is recorded in 5.4.
+
 ### 1.3 Rules for every phase
 
 The rules of the engine plan (section 1 and 8.0) apply: `dotnet test` passes, the Sample output is unchanged or every
@@ -1672,8 +1681,10 @@ exercises.
 | Token substitution | built-in step | must run before fence protection |
 | Diagnostics | tags and options | a few lines |
 | Fragment cache | Liquid tag | dependency sets make it correct |
-| Search | command step (batch) | indexer and client are one product |
-| CSS pipeline, bundling | command step (batch) | not a site generator's job |
+| Search | command step (batch, native binary) | indexer and client are one product |
+| CSS bundling and minification | command step (batch, lightningcss: native) | not a site generator's job |
+| JavaScript bundling | command step (batch, esbuild: native) | not a site generator's job |
+| SVG rasterization | built-in (libvips) or resvg | native either way; libvips is already in the tool |
 
 ---
 
