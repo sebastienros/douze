@@ -44,8 +44,9 @@ public class TemplateLoaderTests
                 deps.ToSet().Templates.Select(x => (x.Path.FullName, x.Hash)));
         }
 
-        // Each include file was read once, whatever the number of renders.
+        // Each include file was read once and parsed once, whatever the number of renders.
         Assert.Equal(2, fs.Opens);
+        Assert.Equal(2, loader.IncludeCount);
 
         var missing = loader.GetOrParse(Hash128.OfText("missing"), "{% include 'nope' %}", "/page.html");
         var missingDeps = new DependencyTracker();

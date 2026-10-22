@@ -31,10 +31,9 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     // Files of the includes folders by relative path, read once, with the paths looked for before them.
     private readonly ConcurrentDictionary<FPath, Lazy<Task<Resolution>>> _files = new();
 
-    // Fluid include names to the content hash of the file they resolved to, for the template cache.
-    private readonly ConcurrentDictionary<string, Hash128> _includeHashes = new(StringComparer.Ordinal);
-
-    private readonly ConcurrentDictionary<Hash128, IFluidTemplate> _includeTemplates = new();
+    // Parsed includes by the cache key Fluid gives the template cache: the content hash of the file, which
+    // GetFileInfoAsync returns as the key of its source.
+    private readonly ConcurrentDictionary<string, IFluidTemplate> _includeTemplates = new(StringComparer.Ordinal);
 
     public TemplateLoader(IFileSystem source, IReadOnlyList<FPath> includesFolders, FluidParser parser)
     {
@@ -49,6 +48,11 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     /// The number of distinct templates parsed (or that failed to parse).
     /// </summary>
     public int ParsedCount => _parsed.Count;
+
+    /// <summary>
+    /// The number of parsed includes kept for <c>{% include %}</c> and <c>{% render %}</c>.
+    /// </summary>
+    public int IncludeCount => _includeTemplates.Count;
 
     /// <summary>
     /// Returns the parsed template for <paramref name="text"/>, parsing it only once per <paramref name="contentHash"/>.
@@ -172,31 +176,20 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
             throw new DouzeException($"include '{subpath}' not found in {string.Join(", ", _includesFolders.Select(x => $"'{x}'"))}");
         }
 
-        _includeHashes[subpath] = file.ContentHash;
-
         var bytes = file.Bytes;
         return new TemplateSourceInfo(DateTimeOffset.MinValue, _ => new ValueTask<Stream>(new MemoryStream(bytes, writable: false)), file.ContentHash.ToString());
     }
 
-    bool ITemplateCache.TryGetTemplate(string subpath, DateTimeOffset lastModified, [MaybeNullWhen(false)] out IFluidTemplate template)
+    // Fluid calls the template cache with the key of the source GetFileInfoAsync returned: the content hash. The
+    // modification date is ignored.
+    bool ITemplateCache.TryGetTemplate(string key, DateTimeOffset lastModified, [MaybeNullWhen(false)] out IFluidTemplate template)
     {
-        // The modification date is ignored: the cache is keyed by content hash.
-        if (_includeHashes.TryGetValue(subpath, out var hash) && _includeTemplates.TryGetValue(hash, out var cached))
-        {
-            template = cached;
-            return true;
-        }
-
-        template = null;
-        return false;
+        return _includeTemplates.TryGetValue(key, out template);
     }
 
-    void ITemplateCache.SetTemplate(string subpath, DateTimeOffset lastModified, IFluidTemplate template)
+    void ITemplateCache.SetTemplate(string key, DateTimeOffset lastModified, IFluidTemplate template)
     {
-        if (_includeHashes.TryGetValue(subpath, out var hash))
-        {
-            _includeTemplates.TryAdd(hash, template);
-        }
+        _includeTemplates.TryAdd(key, template);
     }
 
     private async Task<Resolution> ResolveIncludeAsync(string subpath)
