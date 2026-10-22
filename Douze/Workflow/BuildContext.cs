@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Douze.Progress;
 using Douze.Workflow.Cache;
 using Douze.Liquid;
+using Douze.Images;
 using Douze.Markdown;
 using Douze.Tracing;
 using Douze.FileSystems;
@@ -45,7 +46,11 @@ internal sealed class BuildContext : IAsyncDisposable
         }
 
         BaseScopes = ScopeSet.FromSettings(SiteValues(site));
+
+        _images = new Lazy<ImageProcessor>(() => options.Images(message => view.Message(LogLevel.Warning, null, $"libvips: {message}")), LazyThreadSafetyMode.ExecutionAndPublication);
     }
+
+    private readonly Lazy<ImageProcessor> _images;
 
     /// <summary>
     /// The virtual path of a folder of the disk when it is inside the source folder.
@@ -94,6 +99,14 @@ internal sealed class BuildContext : IAsyncDisposable
     public TemplateLoader Templates { get; }        // shared parsed template cache + include file provider
     public TemplateOptions LiquidOptions { get; }   // built once by LiquidOptions.Create
     public MarkdownRenderer Markdown { get; }       // the site's Markdown pipeline (the markdown section of douze.yml), built once
+
+    /// <summary>
+    /// The libvips bridge of the image features, created on first use, once per build: a build without image features
+    /// never loads it.
+    /// </summary>
+    /// <exception cref="DouzeException">libvips is missing; every unit that needs it fails with the install hint.</exception>
+    public ImageProcessor Images => _images.Value;
+
     public ITraceRecorder Trace { get; }
     public IProgressView View { get; }
     public int MaxDegreeOfParallelism { get; }

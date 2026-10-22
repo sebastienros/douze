@@ -17,4 +17,5 @@ internal sealed class BuildOptions
     public bool UseCache { get; init; } = true;      // --no-cache
     public bool KeepFiles { get; init; }             // keeps the output files of every unit in UnitResult.Files (tests)
     public CancellationToken Cancellation { get; init; }
+    public Func<Action<string>, Images.ImageProcessor> Images { get; init; } = Douze.Images.ImageProcessor.Create;  // creates BuildContext.Images (tests replace it)
 }

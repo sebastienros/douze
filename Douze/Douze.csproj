@@ -54,11 +54,27 @@
   <ItemGroup>
     <None Include="..\README.md" Pack="true" PackagePath="" />
     <PackageReference Include="Markdig" />
+    <PackageReference Include="NetVips" />
     <PackageReference Include="Fluid.Core" />
     <PackageReference Include="SharpYaml" />
     <PackageReference Include="Spectre.Console" />
     <PackageReference Include="System.IO.Hashing" />
     <PackageReference Include="ZString" />
+  </ItemGroup>
+
+  <!-- libvips, the native library of the image features (NetVips, loaded by its module initializer at process start):
+       the package of the runtime identifier being built, which puts the library next to the binary of a native AOT
+       publish and in the RID-specific tool packages; for builds and tests without a runtime identifier, the package of
+       the SDK's. A portable tool package (the CoreCLR fallback 'any', the framework dependent previews) has none, and
+       its image features report how to get one. Items are evaluated after every property, so RuntimeIdentifier is
+       final here, including the one the Satori import sets below. -->
+  <PropertyGroup>
+    <_NetVipsNativeRids>;win-x64;win-arm64;linux-x64;linux-arm64;osx-x64;osx-arm64;</_NetVipsNativeRids>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NetVips.Native.$(RuntimeIdentifier)" Condition="'$(RuntimeIdentifier)' != '' and $(_NetVipsNativeRids.Contains(';$(RuntimeIdentifier);'))" />
+    <PackageReference Include="NetVips.Native.$(NETCoreSdkRuntimeIdentifier)" Condition="'$(RuntimeIdentifier)' == '' and '$(PackTool)' != 'true' and $(_NetVipsNativeRids.Contains(';$(NETCoreSdkRuntimeIdentifier);'))" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(UseSatoriGC)' == 'true'">
