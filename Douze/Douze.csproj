@@ -19,6 +19,9 @@
     <IsPackable Condition="'$(PackTool)' == 'true'">true</IsPackable>
     <PackAsTool>true</PackAsTool>
     <IncludeSymbols>false</IncludeSymbols>
+    <!-- The symbols of the binary (douze.dSYM, douze.dbg, douze.pdb: several times its size) stay out of the packages
+         and of the release archives made from them; a dotnet publish keeps them. -->
+    <CopyOutputSymbolsToPublishDirectory Condition="'$(PackTool)' == 'true'">false</CopyOutputSymbolsToPublishDirectory>
     <PackageId>Douze</PackageId>
     <ToolCommandName>douze</ToolCommandName>
     <Title>Douze static site generator</Title>
@@ -66,9 +69,10 @@
   <!-- libvips, the native library of the image features (NetVips, loaded by its module initializer at process start):
        the package of the runtime identifier being built, which puts the library next to the binary of a native AOT
        publish and in the RID-specific tool packages; for builds and tests without a runtime identifier, the package of
-       the SDK's. A portable tool package (the CoreCLR fallback 'any', the framework dependent previews) has none, and
-       its image features report how to get one. Items are evaluated after every property, so RuntimeIdentifier is
-       final here, including the one the Satori import sets below. -->
+       the SDK's. The CoreCLR fallback package ('any') carries the library of every runtime identifier of the tool
+       packages under runtimes/<rid>/native, which the host picks for the machine; elsewhere the image features report
+       how to get one. Items are evaluated after every property, so RuntimeIdentifier is final here, including the one
+       the Satori import sets below. -->
   <PropertyGroup>
     <_NetVipsNativeRids>;win-x64;win-arm64;linux-x64;linux-arm64;osx-x64;osx-arm64;</_NetVipsNativeRids>
   </PropertyGroup>
@@ -76,6 +80,15 @@
   <ItemGroup>
     <PackageReference Include="NetVips.Native.$(RuntimeIdentifier)" Condition="'$(RuntimeIdentifier)' != '' and $(_NetVipsNativeRids.Contains(';$(RuntimeIdentifier);'))" />
     <PackageReference Include="NetVips.Native.$(NETCoreSdkRuntimeIdentifier)" Condition="'$(RuntimeIdentifier)' == '' and '$(PackTool)' != 'true' and $(_NetVipsNativeRids.Contains(';$(NETCoreSdkRuntimeIdentifier);'))" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'any'">
+    <PackageReference Include="NetVips.Native.win-x64" />
+    <PackageReference Include="NetVips.Native.win-arm64" />
+    <PackageReference Include="NetVips.Native.linux-x64" />
+    <PackageReference Include="NetVips.Native.linux-arm64" />
+    <PackageReference Include="NetVips.Native.osx-x64" />
+    <PackageReference Include="NetVips.Native.osx-arm64" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(UseSatoriGC)' == 'true'">
