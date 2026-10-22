@@ -21,5 +21,7 @@ internal static class BuiltInSteps
             ["liquid"] = static d => new LiquidStep(d),
             ["layout"] = static d => new LayoutStep(d),
             ["write"] = static d => new WriteStep(d),
+            ["replace"] = static d => new ReplaceStep(d),
+            ["fork"] = static d => new ForkStep(d),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 }
