@@ -81,6 +81,8 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
         private readonly Lock _lock = new();
         private volatile WeakReference<ParseResult>? _result;
 
+        public bool IsAlive => _result is not { } result || result.TryGetTarget(out _);
+
         public ParseResult GetOrParse(FluidParser parser, Hash128 hash, string text)
         {
             if (_result != null && _result.TryGetTarget(out var result))
@@ -146,20 +148,94 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     }
 
     /// <summary>
-    /// Forgets a source file that changed (watch mode).
+    /// Forgets a source file that changed, was added or was deleted (watch mode): the names that resolved to it, the
+    /// names that resolved to nothing (they may resolve to it now), and the parsed include of its content. A directory
+    /// path forgets every file under it.
     /// </summary>
     public void Invalidate(FPath sourcePath)
     {
         foreach (var entry in _files)
         {
-            var file = entry.Value.IsValueCreated && entry.Value.Value.IsCompletedSuccessfully ? entry.Value.Value.Result.File : null;
+            var resolution = entry.Value.IsValueCreated && entry.Value.Value.IsCompletedSuccessfully ? entry.Value.Value.Result : null;
+            var file = resolution?.File;
 
-            // Entries that were not found may resolve to the new file.
-            if (file == null || file.Path == sourcePath)
+            // Entries that were not found, or found after the path, may resolve to the new file.
+            if (file == null || file.Path == sourcePath || sourcePath.IsDirectory && file.Path.IsInDirectory(sourcePath)
+                || resolution!.Missing.Any(x => x == sourcePath || sourcePath.IsDirectory && x.IsInDirectory(sourcePath)))
             {
                 _files.TryRemove(entry.Key, out _);
+
+                if (file != null)
+                {
+                    Forget(file.ContentHash);
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Forgets every file read from the includes folders (watch mode, when the changes are not known).
+    /// </summary>
+    public void InvalidateAll()
+    {
+        _files.Clear();
+        _includeTemplates.Clear();
+    }
+
+    /// <summary>
+    /// Drops the slots of parsed templates that nobody holds anymore: a watch session parses the new content of every
+    /// page it rebuilds.
+    /// </summary>
+    public void Trim()
+    {
+        foreach (var (hash, slot) in _parsed)
+        {
+            if (!slot.IsAlive)
+            {
+                _parsed.TryRemove(new KeyValuePair<Hash128, ParseSlot>(hash, slot));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The hash of a file of the includes folders as this loader sees it, or <see cref="DependencySet.Absent"/> for a
+    /// path it looked for and did not find. Returns <c>false</c> when the loader did not look for it: units that run
+    /// would read it as it is on disk.
+    /// </summary>
+    public bool TryGetHash(FPath sourcePath, out Hash128 hash)
+    {
+        foreach (var entry in _files)
+        {
+            if (!entry.Value.IsValueCreated || !entry.Value.Value.IsCompletedSuccessfully)
+            {
+                continue;
+            }
+
+            var resolution = entry.Value.Value.Result;
+
+            if (resolution.File is { } file && file.Path == sourcePath)
+            {
+                hash = file.ContentHash;
+                return true;
+            }
+
+            if (resolution.Missing.Contains(sourcePath))
+            {
+                hash = DependencySet.Absent;
+                return true;
+            }
+        }
+
+        hash = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Forgets the parsed include of a content.
+    /// </summary>
+    private void Forget(Hash128 contentHash)
+    {
+        _includeTemplates.TryRemove(contentHash.ToString(), out _);
     }
 
     async ValueTask<TemplateSourceInfo> ITemplateFileProvider.GetFileInfoAsync(string subpath, TemplateContext context, CancellationToken cancellationToken)

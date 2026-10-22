@@ -56,6 +56,41 @@ public class TemplateLoaderTests
     }
 
     [Fact]
+    public async Task InvalidatedFilesAreReadAgain()
+    {
+        var fs = new CountingFileSystem();
+        await fs.WriteTextFileAsync("/_includes/header.liquid", "Header 1");
+        await fs.WriteTextFileAsync("/_includes/footer.liquid", "Footer");
+
+        var loader = Loader(fs);
+        var template = loader.GetOrParse(Hash128.OfText("page"), "{% include 'header' %} {% include 'nav' %}{% include 'footer' %}", "/page.html");
+
+        async Task<string> RenderAsync() => await template.Template.RenderAsync(Context(loader, new DependencyTracker()));
+
+        await fs.WriteTextFileAsync("/_includes/nav.liquid", "");
+        Assert.Equal("Header 1 Footer", await RenderAsync());
+
+        // Changed files are not read again until they are invalidated.
+        await fs.WriteTextFileAsync("/_includes/header.liquid", "Header 2");
+        await fs.WriteTextFileAsync("/_includes/nav.liquid", "Nav ");
+        Assert.Equal("Header 1 Footer", await RenderAsync());
+
+        loader.Invalidate("/_includes/header.liquid");
+        loader.Invalidate("/_includes/nav.liquid");
+        Assert.Equal("Header 2 Nav Footer", await RenderAsync());
+
+        // The parsed include of the previous content is dropped; the footer's stays, its file was not read again.
+        Assert.Equal(3, loader.IncludeCount);
+        Assert.True(loader.TryGetHash("/_includes/footer.liquid", out var footer));
+        Assert.Equal(Hash128.OfText("Footer"), footer);
+        Assert.Equal(5, fs.Opens);
+
+        // A folder forgets its files.
+        loader.Invalidate("/_includes/");
+        Assert.False(loader.TryGetHash("/_includes/footer.liquid", out _));
+    }
+
+    [Fact]
     public async Task LoadAsyncStripsFrontMatterAndParsesOncePerContent()
     {
         var fs = new CountingFileSystem();

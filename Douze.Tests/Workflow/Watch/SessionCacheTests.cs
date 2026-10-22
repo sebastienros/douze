@@ -65,6 +65,34 @@ public sealed class SessionCacheTests : IDisposable
         Assert.Equal(0, last.UnitsExecuted);
     }
 
+    [Fact]
+    public async Task TheIndexIsWrittenWhenTheSessionEnds()
+    {
+        var source = new MemoryFileSystem();
+        await source.WriteTextFileAsync("/_content/index.md", "---\ntitle: Home\n---\nHome");
+        await source.WriteTextFileAsync("/_content/about.md", "---\ntitle: About\n---\nAbout");
+
+        int units;
+        var cacheDirectory = _directory;
+
+        using (var session = new TestSession(source, cacheDirectory: cacheDirectory))
+        {
+            units = (await session.BuildSuccessfullyAsync()).Build.UnitsExecuted;
+
+            await source.WriteTextFileAsync("/_content/about.md", "---\ntitle: About\n---\nAbout us");
+            await session.BuildSuccessfullyAsync(TestSession.Changes(("/_content/about.md", Douze.Workflow.Watch.ChangeKind.Modified)));
+
+            Assert.False(File.Exists(Path.Combine(cacheDirectory, "cache", "index.bin")));
+        }
+
+        Assert.True(File.Exists(Path.Combine(cacheDirectory, "cache", "index.bin")));
+
+        // The index lists the units of the last build, and the packs that hold their blobs are the only ones left.
+        using var cache = BuildCache.Open(Path.Combine(cacheDirectory, "cache"), new MessageView(_messages))!;
+        Assert.Equal(units, cache.PreviousUnits);
+        Assert.Equal(cache.PackCount, Directory.GetFiles(Path.Combine(cacheDirectory, "cache", "packs")).Length);
+    }
+
     public void Dispose()
     {
         try
