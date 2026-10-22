@@ -19,16 +19,16 @@ public abstract class CacheTestBase : SiteTestBase, IDisposable
     /// <summary>
     /// Builds with the disk cache (unless <paramref name="cache"/> is false) and fails the test when the build fails.
     /// </summary>
-    internal async Task<BuildResult> BuildCachedAsync(WorkflowDefinition? workflow = null, bool cache = true)
+    internal async Task<BuildResult> BuildCachedAsync(WorkflowDefinition? workflow = null, bool cache = true, int parallelism = 4)
     {
-        var result = await BuildAsync(workflow, Options(cache));
+        var result = await BuildAsync(workflow, Options(cache, parallelism));
         Assert.True(result.Succeeded, string.Join(Environment.NewLine, result.Errors.Select(x => $"{x}\n{x.Exception}")));
         return result;
     }
 
-    internal BuildOptions Options(bool cache = true) => new()
+    internal BuildOptions Options(bool cache = true, int parallelism = 4) => new()
     {
-        MaxDegreeOfParallelism = 4,
+        MaxDegreeOfParallelism = parallelism,
         KeepFiles = true,
         CacheDirectory = CacheDirectory,
         UseCache = cache,

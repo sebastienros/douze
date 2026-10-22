@@ -17,6 +17,9 @@ internal sealed class Scheduler
 {
     private const string UnitCategory = "unit";
 
+    // Files a bounded channel holds per unit that can run at once (BuildOptions.MaxDegreeOfParallelism).
+    private const int FilesPerSlot = 2;
+
     private readonly WorkflowGraph _graph;
     private readonly BuildContext _context;
     private readonly ReplayState? _replay;
@@ -114,6 +117,42 @@ internal sealed class Scheduler
     }
 
     /// <summary>
+    /// The capacity of the channel from <paramref name="producer"/> to <paramref name="consumer"/>, null for unbounded.
+    /// A map step reads as soon as its needs write, so a few files per slot are enough and the producer waits beyond
+    /// them: the files do not pile up in front of the slowest step. A barrier (reduce, group) holds its whole input.
+    /// </summary>
+    private int? GetCapacity(GraphNode producer, GraphNode consumer)
+    {
+        if (consumer.Step.EffectiveShape != StepShape.Map)
+        {
+            return null;
+        }
+
+        // A step reads nothing before the reduce steps upstream of it published their contributions. When a full
+        // channel would stop a node that feeds one of them (the producer, or one of its ancestors, which stop once the
+        // producer stops reading), the reduce step would wait for files waiting for it: the channel holds everything.
+        // Reduce steps upstream of the producer published theirs before the producer started.
+        var producerAncestors = _graph.Ancestors(producer.Definition.Name);
+
+        foreach (var name in _graph.Ancestors(consumer.Definition.Name))
+        {
+            if (_graph[name].Step.EffectiveShape != StepShape.Reduce || producerAncestors.Contains(name))
+            {
+                continue;
+            }
+
+            var reduceAncestors = _graph.Ancestors(name);
+
+            if (name == producer.Definition.Name || reduceAncestors.Contains(producer.Definition.Name) || producerAncestors.Overlaps(reduceAncestors))
+            {
+                return null;
+            }
+        }
+
+        return FilesPerSlot * _context.MaxDegreeOfParallelism;
+    }
+
+    /// <summary>
     /// The source files, released once every node with <c>inputs</c> has read them, so that their contents do not stay
     /// in memory until the build ends.
     /// </summary>
@@ -150,6 +189,7 @@ internal sealed class Scheduler
         private TraceSpan _span;
         private bool _upstreamUnavailable;
         private int _sourcesReleased;
+        private int _draining;
 
         // Set once the step is initialized: the cache, when the step's results are cached, and what its result keys
         // depend on beyond its definition and inputs.
@@ -164,7 +204,7 @@ internal sealed class Scheduler
             _stepCts = CancellationTokenSource.CreateLinkedTokenSource(buildCts.Token);
             Node = node;
             Run = new StepRun(node);
-            Output = new FileChannel(node.Dependents.Select(x => x.Definition.Name));
+            Output = new FileChannel(node.Dependents.Select(x => (x.Definition.Name, scheduler.GetCapacity(node, x))));
 
             // Only reduce steps contribute scopes; the others never make their descendants wait.
             if (node.Step.EffectiveShape != StepShape.Reduce)
@@ -210,6 +250,7 @@ internal sealed class Scheduler
             finally
             {
                 ReleaseSources(sources);
+                DrainInputs();
                 ContributionReady.TrySetResult();
                 Output.Complete(Run.State == StepState.Succeeded ? null : new StepUnavailableException(Name, Run.State));
                 Completed.TrySetResult();
@@ -221,6 +262,42 @@ internal sealed class Scheduler
             if (Node.Inputs != null && Interlocked.Exchange(ref _sourcesReleased, 1) == 0)
             {
                 sources.Release();
+            }
+        }
+
+        /// <summary>
+        /// Reads what remains in the channels of the needs and drops it, once the node stopped reading them. A node that
+        /// stopped early (a failure, a skip, a cancellation) must not leave its needs waiting on a full channel; a node
+        /// that read its inputs to the end finds them complete. Called once the node's own readers have returned, since
+        /// each channel has a single reader.
+        /// </summary>
+        private void DrainInputs()
+        {
+            if (Interlocked.Exchange(ref _draining, 1) != 0)
+            {
+                return;
+            }
+
+            foreach (var need in Node.Needs)
+            {
+                _ = DrainAsync(_runners[need.Index].Output.Subscribe(Name));
+            }
+
+            static async Task DrainAsync(ChannelReader<VirtualFile> reader)
+            {
+                try
+                {
+                    while (await reader.WaitToReadAsync(CancellationToken.None))
+                    {
+                        while (reader.TryRead(out _))
+                        {
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                    // The need did not succeed: its own run reports why.
+                }
             }
         }
 
@@ -312,11 +389,14 @@ internal sealed class Scheduler
         /// <summary>
         /// Makes the run final, then reports it; <see cref="RunAsync"/> then completes the channel. The needs of the node
         /// are reported first: a node that stopped early (a failure, a cancellation) waits for them, so that for every
-        /// edge A -> B the view, the trace and the result see A complete before B. Waiting is safe: needs never wait on
-        /// their dependents, and writes to the channels of a node that stopped never block.
+        /// edge A -> B the view, the trace and the result see A complete before B. Waiting is safe: a need waits on this
+        /// node only for room in its channel, which <see cref="DrainInputs"/> makes.
         /// </summary>
         private async Task CompleteAsync(CancellationToken token)
         {
+            // Before waiting for the needs, which may be waiting for room in the channels of this node.
+            DrainInputs();
+
             MarkStarted();
             Run.EndedAt = DateTimeOffset.UtcNow;
 
@@ -409,7 +489,7 @@ internal sealed class Scheduler
         /// Reads the entering files (matching source files and the outputs of every need), detects paths coming from two
         /// producers, passes through files the step does not match, and hands the others to <paramref name="consume"/>.
         /// </summary>
-        private async Task ReadInputsAsync(SourceFiles sources, Action<VirtualFile> consume, CancellationToken token)
+        private async Task ReadInputsAsync(SourceFiles sources, Func<VirtualFile, ValueTask> consume, CancellationToken token)
         {
             var pumps = new List<Task>(Node.Needs.Count + 1);
 
@@ -464,7 +544,7 @@ internal sealed class Scheduler
             token.ThrowIfCancellationRequested();
         }
 
-        private async ValueTask AcceptAsync(VirtualFile file, string producer, Action<VirtualFile> consume, CancellationToken token)
+        private async ValueTask AcceptAsync(VirtualFile file, string producer, Func<VirtualFile, ValueTask> consume, CancellationToken token)
         {
             (string Producer, VirtualFile File)? conflict = null;
 
@@ -510,7 +590,7 @@ internal sealed class Scheduler
             if (Node.Match.IsMatch(file.Path))
             {
                 Run.AddConsumed();
-                consume(file);
+                await consume(file);
             }
             else
             {
@@ -523,7 +603,8 @@ internal sealed class Scheduler
         private async Task RunMapAsync(SourceFiles sources, CancellationToken token)
         {
             var step = (IMapStep)Node.Step;
-            var work = Channel.CreateUnbounded<VirtualFile>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false });
+            // Bounded like the channels of the needs: the files a map step accepted wait for a unit here.
+            var work = Channel.CreateBounded<VirtualFile>(new BoundedChannelOptions(Context.MaxDegreeOfParallelism) { SingleReader = false, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait });
 
             var reading = Task.Run(async () =>
             {
@@ -532,7 +613,7 @@ internal sealed class Scheduler
                     await ReadInputsAsync(sources, file =>
                     {
                         Run.AddUnits(1);
-                        work.Writer.TryWrite(file);
+                        return work.Writer.WriteAsync(file, token);
                     }, token);
                 }
                 finally
@@ -680,6 +761,8 @@ internal sealed class Scheduler
                 {
                     files.Add(file);
                 }
+
+                return ValueTask.CompletedTask;
             }, token);
 
             files.Sort(static (a, b) => a.Path.CompareTo(b.Path));
@@ -720,13 +803,14 @@ internal sealed class Scheduler
                 return;
             }
 
-            // Dependents start with the contribution of a reduce step: published as soon as it is known.
+            // Dependents start with the contribution of a reduce step, so it is published before its outputs: a
+            // dependent may have to read them to make room in its channel.
             if (Node.Step.EffectiveShape == StepShape.Reduce)
             {
                 ContributionReady.TrySetResult();
             }
 
-            // Written without the slot, which another unit can use meanwhile.
+            // Without the slot: a full channel waits for its consumer, whose units need slots to empty it.
             for (var i = 0; i < files.Count; i++)
             {
                 await Output.WriteAsync(files[i], ct);
