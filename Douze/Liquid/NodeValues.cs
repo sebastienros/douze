@@ -90,6 +90,15 @@ internal sealed class NodeObjectValue : FluidValue
 
     public NodeObject Value { get; }
 
+    /// <summary>
+    /// The object, read whole: for a filter that uses all of it.
+    /// </summary>
+    internal NodeObject ReadAll()
+    {
+        _recorder?.ReadWhole();
+        return Value;
+    }
+
     public override FluidValues Type => FluidValues.Dictionary;
 
     public override ValueTask<FluidValue> GetValueAsync(string name, TemplateContext context)
@@ -206,6 +215,15 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
     }
 
     public NodeArray Value { get; }
+
+    /// <summary>
+    /// The array, read whole: for a filter that uses all of it.
+    /// </summary>
+    internal NodeArray ReadAll()
+    {
+        _recorder?.ReadWhole();
+        return Value;
+    }
 
     public override FluidValues Type => FluidValues.Array;
 

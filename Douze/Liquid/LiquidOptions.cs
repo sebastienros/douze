@@ -1,3 +1,4 @@
+using Douze.Liquid.Filters;
 using Fluid;
 
 namespace Douze.Liquid;
@@ -9,8 +10,14 @@ internal static class LiquidOptions
 {
     public static TemplateOptions Create(TemplateLoader loader)
     {
-        return new TemplateOptionsBuilder()
-            .AddFilter("slug", SlugFilter.Slugify)
+        var builder = new TemplateOptionsBuilder().AddFilter("slug", SlugFilter.Slugify);
+
+        DataFilters.Register(builder);
+        OutputFilters.Register(builder);
+        LocaleFilters.Register(builder);
+        NavigationFilters.Register(builder);
+
+        return builder
             .WithJsonSerializerOptions(DouzeJsonContext.Default.Options)
             .WithFileProvider(loader)                 // {% include %} / {% render %} from the includes folders
             .WithTemplateCache(loader)                // includes are parsed once per content hash
