@@ -54,6 +54,16 @@ public class ResultKeyTests
     }
 
     [Fact]
+    public void ChangesWithTheDateOfAnInput()
+    {
+        ImmutableArray<FileRef> inputs = [Ref("/a.md"), Ref("/b.md")];
+        DateTime? date = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        Assert.NotEqual(ResultKey.Compute(Markdown, inputs, Hash128.Empty, dates: [date, null]), ResultKey.Compute(Markdown, inputs, Hash128.Empty, dates: [date.Value.AddDays(1), null]));
+        Assert.Equal(ResultKey.Compute(Markdown, inputs, Hash128.Empty, dates: [date, null]), ResultKey.Compute(Markdown, [Ref("/b.md"), Ref("/a.md")], Hash128.Empty, dates: [null, date]));
+    }
+
+    [Fact]
     public void ChangesWithCommandVersion()
     {
         ImmutableArray<FileRef> inputs = [Ref("/a.md")];

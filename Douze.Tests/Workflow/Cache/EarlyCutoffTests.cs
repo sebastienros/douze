@@ -157,6 +157,23 @@ public class EarlyCutoffTests : CacheTestBase
     }
 
     [Fact]
+    public async Task DateChangeWithoutAnEditRerunsThePage()
+    {
+        await WriteSiteAsync();
+        await Source.WriteTextFileAsync("/_content/dated.md", "---\ntitle: Dated\n---\n{{ page.date | date: '%Y' }}");
+        Source.SetLastWriteTimeUtc("/_content/dated.md", new DateTime(2020, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        await BuildCachedAsync();
+        Assert.Contains("2020", await OutputAsync("/dated/index.html"));
+
+        // A touched file (a checkout, a copy) has the same content and a new page.date.
+        Source.SetLastWriteTimeUtc("/_content/dated.md", new DateTime(2021, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        var result = await BuildCachedAsync();
+
+        Assert.Equal(["/_content/dated.md"], Executed(result, "pages"));
+        Assert.Contains("2021", await OutputAsync("/dated/index.html"));
+    }
+
+    [Fact]
     public async Task NonIncrementalStepAlwaysRuns()
     {
         await Source.WriteTextFileAsync("/a.txt", "a");

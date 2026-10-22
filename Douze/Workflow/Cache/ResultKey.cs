@@ -14,21 +14,28 @@ internal static class ResultKey
     /// Combines the step name, its configuration hash, the input refs sorted by path, and the command version
     /// (<see cref="Hash128.Empty"/> for built-in steps). Without <paramref name="contents"/> (a step that reads only the
     /// metadata of its inputs, such as <c>collect</c>), the content hashes of the inputs are left out.
+    /// <paramref name="dates"/>, in the order of <paramref name="inputs"/>, are the dates of the source files the inputs
+    /// come from (<see cref="VirtualFile.LastWriteTimeUtc"/>): a step can read them (<c>page.date</c>), and a file can
+    /// change its date without changing its content.
     /// </summary>
-    public static Hash128 Compute(StepDefinition definition, ImmutableArray<FileRef> inputs, Hash128 commandVersion, bool contents = true)
+    public static Hash128 Compute(StepDefinition definition, ImmutableArray<FileRef> inputs, Hash128 commandVersion, bool contents = true, IReadOnlyList<DateTime?>? dates = null)
     {
-        var sorted = inputs.Sort(static (a, b) => a.Path.CompareTo(b.Path));
-        var hashes = new Hash128[sorted.Length * 3 + 3];
+        var order = Enumerable.Range(0, inputs.Length).ToArray();
+        Array.Sort(order, (a, b) => inputs[a].Path.CompareTo(inputs[b].Path));
+
+        var hashes = new Hash128[inputs.Length * 4 + 3];
         var i = 0;
 
         hashes[i++] = Hash128.OfText(definition.Name);
         hashes[i++] = definition.ConfigHash;
 
-        foreach (var input in sorted)
+        foreach (var index in order)
         {
+            var input = inputs[index];
             hashes[i++] = Hash128.OfText(input.Path.FullName);
             hashes[i++] = contents ? input.ContentHash : Hash128.Empty;
             hashes[i++] = input.MetadataHash;
+            hashes[i++] = dates?[index] is { } date ? new Hash128((ulong)date.Ticks, (ulong)date.Kind) : Hash128.Empty;
         }
 
         hashes[i++] = commandVersion;
