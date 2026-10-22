@@ -46,7 +46,7 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
 
         _encoder = options.GetString("encode", "html") switch
         {
-            "html" => HtmlEncoder.Default,
+            "html" => HtmlEncoders.Html,
             "none" => NullEncoder.Default,
             var other => throw new WorkflowValidationException($"option 'encode' of step '{Name}' must be 'html' or 'none', not '{other}'", definition.Location),
         };

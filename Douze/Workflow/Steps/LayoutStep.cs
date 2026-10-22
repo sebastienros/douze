@@ -93,7 +93,7 @@ internal sealed class LayoutStep : Step, IMapStep
             templateContext.SetValue("content", StringValue.Create(content, false));
             templateContext.AmbientValues[AmbientKeys.TemplatePath] = loaded.Path.FullName;
 
-            content = await loaded.Template.Template.RenderAsync(templateContext, HtmlEncoder.Default);
+            content = await loaded.Template.Template.RenderAsync(templateContext, HtmlEncoders.Html);
 
             if (LayoutName(loaded.FrontMatter["layout"]) is not { } next)
             {
