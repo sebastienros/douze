@@ -306,6 +306,27 @@ API reference pages and ties on the synthetic site, at the cost of a higher peak
 its target). The non concurrent workstation GC stays the default here, since this change is about memory; switching to
 Server GC is a decision of its own (finding 8).
 
+### Images (NetVips), 2026-10-22
+
+Apple M4 Pro (14 cores), native AOT with the Satori GC (the standard GC in parentheses), clean builds without the cache.
+The input is a synthetic set of 200 JPEG photos, 1600x1200, about 1.2 MB each (gradients with a quarter of every row
+noise, encoded at quality 85), through `images: { inputs: "img/**/*.jpg", uses: images }` and `write`:
+
+| Variants | Wall of `images` | Variants per second | Peak RSS |
+|---|---:|---:|---:|
+| `widths: [640, 1280], formats: [webp]`: 400 variants and 200 originals | 2.7 s (3.0 s) | about 150 | 0.85 GB (0.80 GB) |
+| `widths: [400], formats: [webp]`: 200 variants and 200 originals | 0.5 s | about 400 | 0.47 GB |
+
+The 400 px case matches the NetVips check (about 400 thumbnails per second, 1600x1200 JPEG to 400 px WebP, libvips
+at one thread per operation and units in parallel); encoding 1280 px WebP is what costs in the first row. Both GCs
+produce byte identical files. Social images (`social-image`, the SVG template rasterized at 1200x630 and two Pango text
+blocks with a font file): 100 pages in 1.2 s, about 12 ms per image, mostly serial (libvips renders text under a global
+lock); the first run on a machine takes 1.6 s more while fontconfig builds its cache.
+
+Tool packages (`dotnet pack -r osx-arm64 -p:PackTool=true`): 17.3 MB before, 25.6 MB with `libvips.42.dylib` (17.9 MB
+uncompressed); the binary grows by 66 KB (16.82 to 16.88 MB). The `any` package grows by 65 KB (the managed NetVips
+assembly) and has no native library.
+
 ## Findings
 
 Measured on the engine of phase 1b. None of these are fixed here (phase B owns only `bench/`); they feed phase 5.

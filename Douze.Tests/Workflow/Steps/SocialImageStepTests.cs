@@ -81,11 +81,15 @@ public class SocialImageStepTests : StepTestBase
         Assert.Equal([32, 64, 128, 255], TestImages.Pixel(png, 600, 610));
         Assert.Equal([255, 0, 0, 255], TestImages.Pixel(png, 70, 70));
 
-        using var image = Image.NewFromBuffer(png);
-        using var title = image.Crop(80, 160, 1040, 220);
-        using var description = image.Crop(80, 400, 1040, 150);
-        Assert.True(title.ExtractBand(2).Max() > 240, "no white title");
-        Assert.True(description.ExtractBand(0).Max() > 240 && description.ExtractBand(1).Max() > 240, "no yellow description");
+        // Without a font file (a machine without fonts), Pango may render nothing.
+        if (TestImages.FontFile() != null)
+        {
+            using var image = Image.NewFromBuffer(png);
+            using var title = image.Crop(80, 160, 1040, 220);
+            using var description = image.Crop(80, 400, 1040, 150);
+            Assert.True(title.ExtractBand(2).Max() > 240, "no white title");
+            Assert.True(description.ExtractBand(0).Max() > 240 && description.ExtractBand(1).Max() > 240, "no yellow description");
+        }
 
         // The page goes through as it is; the image is an output of its unit; the layout finds the same url.
         var unit = result["og"].Results.Single(x => x.Key.Unit == "/docs/a.md");

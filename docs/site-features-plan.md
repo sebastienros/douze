@@ -979,7 +979,7 @@ internal sealed class ImageProcessor
 {
     public static ImageProcessor Create();   // throws DouzeException with the install hint when libvips is missing (ModuleInitializer.Exception)
     public ImageInfo Probe(ReadOnlyMemory<byte> source);                                   // width, height, format, hasAlpha, pages
-    public ReadOnlyMemory<byte> Variant(ReadOnlyMemory<byte> source, ImageVariant variant);   // ThumbnailBuffer + save (keep: none)
+    public ProcessedImage Variant(ReadOnlyMemory<byte> source, ImageVariant variant);   // ThumbnailBuffer + save (keep: none); bytes, width, height
     public ReadOnlyMemory<byte> Rasterize(string svg, int width, int height);              // svgload at scale
     public ReadOnlyMemory<byte> Compose(ReadOnlyMemory<byte> background, IReadOnlyList<TextBlock> blocks);   // Pango text layers, PNG
 }
@@ -987,7 +987,17 @@ internal sealed class ImageProcessor
 internal readonly record struct ImageVariant(int? Width, string Format, int Quality);
 internal sealed record TextBlock(string Text, string Font, string? FontFile, int X, int Y, int Width, int Height, string Color, string Align);
 internal readonly record struct ImageInfo(int Width, int Height, string Format, bool HasAlpha);
+internal sealed record ProcessedImage(ReadOnlyMemory<byte> Bytes, int Width, int Height);
 ```
+
+**As implemented** (phase S4). `Variant` returns the size with the bytes: the markup needs the height libvips rounds
+to. `BuildContext.Images` is an `ImageProcessor` created on first use that throws the install hint, rather than a
+nullable property. The `image` tag has its own small argument parser (Parlot), since Fluid's argument list has no list
+literal (`widths: [640, 1280]`); values are strings, numbers, booleans, lists and variables. `write` waits for the
+first writer of an identical file before recording it, so that a replayed unit always finds the file it depends on.
+`WorkflowSchema` has no table of built-in steps: registering the steps in `BuiltInSteps` is enough. `liquid` and
+`layout` fold `MarkdownOptions.Hash` into their cache version, since the tag reads the image defaults. Assets paths
+(3.9) as sources, the fontconfig warning for an unresolved family, and the Sample's docs section are not done yet.
 
 **Tests** (`Douze.Tests/Images/`, `Liquid/Tags/ImageTagTests.cs`, `Steps/SocialImageStepTests.cs`; skipped with
 `Assert.Skip` when libvips is not available, and CI runs them on `linux-x64` and `osx-arm64`): variants have the

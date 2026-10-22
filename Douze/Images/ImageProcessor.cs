@@ -74,12 +74,19 @@ internal sealed class ImageProcessor
     /// </summary>
     public static string MissingLibraryMessage(Exception? exception)
     {
-        var reason = exception?.Message is { Length: > 0 } message ? $" ({message.Split('\n')[0].Trim()})" : "";
+        var reason = exception?.Message is { Length: > 0 } message ? $" ({FirstSentence(message)})" : "";
 
         return $"image processing needs libvips, which cannot be loaded{reason}. The douze tool packages of win-x64, "
             + "win-arm64, linux-x64, linux-arm64, osx-x64 and osx-arm64 include it; the platform independent package does "
             + "not: install douze on one of these platforms, or put libvips 8.18 (libvips.so.42, libvips.42.dylib or "
             + "libvips-42.dll) next to the douze executable or on the library path";
+    }
+
+    private static string FirstSentence(string message)
+    {
+        var line = message.Split('\n')[0].Trim();
+        var end = line.IndexOf(". ", StringComparison.Ordinal);
+        return end > 0 ? line[..end] : line.TrimEnd('.');
     }
 
     /// <summary>

@@ -62,6 +62,17 @@ jobs:
         VERSION="${GITHUB_REF_NAME#v}"
         dotnet pack Douze --configuration Release -r ${{ matrix.rid }} --property:PackTool=true --property:Version=$VERSION --property:ContinuousIntegrationBuild=True --property:PackageOutputPath="${GITHUB_WORKSPACE}/tool-artifacts"
 
+    # The image features need libvips next to the binary (NetVips.Native.<rid>, Douze.csproj).
+    - name: Check the native library of the package (${{ matrix.rid }})
+      shell: pwsh
+      run: |
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $package = Get-ChildItem tool-artifacts -Filter "Douze.${{ matrix.rid }}.*.nupkg" | Select-Object -First 1
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($package.FullName)
+        $found = $zip.Entries | Where-Object { $_.FullName -match '^tools/any/${{ matrix.rid }}/(lib)?vips[-.]42' }
+        $zip.Dispose()
+        if (-not $found) { throw "libvips is missing from $($package.Name)" }
+
     - uses: actions/upload-artifact@v6
       with:
         name: tool-${{ matrix.rid }}

@@ -113,6 +113,12 @@ public class ImageProcessorTests
         // Outside the text, the background; inside the boxes, some text pixels.
         Assert.Equal([32, 64, 128, 255], TestImages.Pixel(png, 10, 10));
 
+        // Without a font file (a machine without fonts), Pango may render nothing.
+        if (font == null)
+        {
+            return;
+        }
+
         using var image = Image.NewFromBuffer(png.ToArray());
         using var title = image.Crop(80, 100, 1040, 200);
         using var centered = image.Crop(0, 500, 1200, 100);
