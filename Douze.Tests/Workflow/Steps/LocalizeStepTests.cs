@@ -147,8 +147,9 @@ public class LocalizeStepTests : StepTestBase
         var result = await BuildSuccessfullyAsync(Localize());
 
         var unit = result["localize"].Results.Single(x => x.Inputs.Single().Path == "/guide/index.md");
-        var lookup = Assert.Single(unit.Dependencies.Lookups);
-        Assert.Equal("collections", lookup.Key);
+        // The opt-out key (localize) is looked up too, as a miss.
+        var lookup = Assert.Single(unit.Dependencies.Lookups, x => x.Key == "collections");
+        Assert.Single(unit.Dependencies.Lookups, x => x.Key == Douze.Workflow.Steps.LocalizeStep.OptOutKey);
 
         var urls = Assert.Single(lookup.Access!.Members);
         Assert.Equal("urls", urls.Key);
