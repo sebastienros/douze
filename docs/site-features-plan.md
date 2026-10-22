@@ -533,7 +533,11 @@ rendering of a site without `douze.yml`, so the Sample is unchanged); `markdown:
 markdown step folds the options' hash into its `CacheVersion` (the existing per-step key part, read after
 `InitializeAsync`), which is what the state hash of 2.2 would do. Alerts `IMPORTANT` and `WARNING` map to `note` and
 `caution`; another unknown kind is a warning, reported through a callback of the render (`MarkdownWarning`, with the
-line) that the step logs with the file.
+line) that the step logs with the file. `smartypants` also turns the apostrophes of words typographic
+(`ApostropheExtension`: Markdig's smart quotes leave `it's` straight, the target site's did not); `strikethrough` is
+the `~~` of `emphasisextras` alone. The `paginate` step matches the output templates by default (`x.json.liquid` is
+`x.json` once the permalink step gave it its default path), and `localize: false` in a file's front matter or folder
+data keeps it out of the locales (paginated templates, pages that exist once).
 A name Markdig does not know is `douze.yml(12,5): error: unknown Markdown extension 'tabels'; did you mean 'pipetables'?`.
 
 **Fenced code.** `CodeFenceRenderer` replaces Markdig's `CodeBlockRenderer`: a fence renders as
@@ -606,6 +610,11 @@ passes of shortcodes, Markdown includes, HTML pages), and one pass over it gives
   duplicate id on the page gets `-1`, `-2`, ... (GitHub's rule). The step writes the id into the tag.
 - `with.anchors: true` (default false) appends `<a class="heading-anchor" href="#<id>" aria-label="...">#</a>`
   inside the heading (the class and the label text are `with.anchor-class`, `with.anchor-label`).
+
+  *As implemented:* the anchor is `<a class href><span aria-hidden="true">{anchor-html}</span><span class="sr-only">{label}</span></a>`
+  (`with.anchor-html`, default `#`); `{text}` in `with.anchor-label` is the heading's text (`Section titled "{text}"`);
+  with `with.wrapper-class` the heading and its anchor are wrapped in `<div class="<wrapper> level-hN">`, and
+  `with.skip-classes` leaves the headings inside elements of those classes alone (component markup).
 - Sets Own `headings` to an array of `{ depth, text, id }` in document order, and `toc` to the nested tree of the
   levels in `with.levels` (default `[2, 3]`): each entry `{ depth, text, id, children }`.
 - The first `h1`'s text is stored as `page.heading` when the page has one (a layout can use it when `title` is absent).
