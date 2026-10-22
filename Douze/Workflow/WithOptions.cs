@@ -93,6 +93,24 @@ internal sealed class WithOptions
     }
 
     /// <summary>
+    /// Reads a string or a list of strings, or returns an empty list when the option is absent.
+    /// </summary>
+    public IReadOnlyList<string> GetStrings(string key)
+    {
+        if (!_definition.With.TryGetItem(key, out var value) || value is null)
+        {
+            return [];
+        }
+
+        return value switch
+        {
+            NodeValue<string> s => [s.Value],
+            NodeArray array when array.All(x => x is NodeValue<string>) => [.. array.Select(x => ((NodeValue<string>)x!).Value)],
+            _ => throw TypeError(key, "a string or a list of strings"),
+        };
+    }
+
+    /// <summary>
     /// Reads a glob or a list of globs, or returns <paramref name="defaultValue"/> when the option is absent.
     /// </summary>
     public GlobSet? GetGlobs(string key, GlobSet? defaultValue = null)

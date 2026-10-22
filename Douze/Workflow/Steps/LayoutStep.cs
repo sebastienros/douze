@@ -70,6 +70,7 @@ internal sealed class LayoutStep : Step, IMapStep
 
             var templateContext = context.CreateTemplateContext(new MetadataValue(file.Metadata, fallback), file, ct);
             templateContext.SetValue("content", StringValue.Create(content, false));
+            templateContext.AmbientValues[AmbientKeys.TemplatePath] = loaded.Path.FullName;
 
             content = await loaded.Template.Template.RenderAsync(templateContext, HtmlEncoder.Default);
 

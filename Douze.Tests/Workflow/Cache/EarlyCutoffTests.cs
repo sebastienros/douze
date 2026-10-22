@@ -133,6 +133,41 @@ public class EarlyCutoffTests : CacheTestBase
     }
 
     [Fact]
+    public async Task ShortcodeEditRerunsOnlyItsUsers()
+    {
+        await WriteSiteAsync();
+        await Source.WriteTextFileAsync("/_includes/shortcodes/note.liquid", "---\nblock: true\n---\n<aside>{{ body }}</aside>");
+        await Source.WriteTextFileAsync("/_includes/shortcodes/badge.liquid", "<b>{{ args[0] }}</b>");
+        await EditAsync("/_content/posts/a.md", "---\ntitle: A\ndate: 2020-02-01\ntags: [post]\nlayout: post.html\n---\n{% note %}a *body*{% endnote %}", keepDate: true);
+        await EditAsync("/_content/posts/b.md", "---\ntitle: B\ndate: 2020-02-02\ntags: [post]\nlayout: post.html\n---\nb {% badge \"new\" %}", keepDate: true);
+        await BuildCachedAsync();
+
+        await EditAsync("/_includes/shortcodes/note.liquid", "---\nblock: true\n---\n<aside class=\"note\">{{ body }}</aside>");
+        var result = await BuildCachedAsync();
+
+        Assert.Equal(["/posts/a/index.md"], Executed(result, "render"));
+        Assert.Equal(["/posts/a/index.html"], Executed(result, "layout"));
+        Assert.Contains("<aside class=\"note\"><p>a <em>body</em></p>\n</aside>", await OutputAsync("/posts/a/index.html"));
+    }
+
+    [Fact]
+    public async Task MarkdownIncludeEditRerunsOnlyItsUsers()
+    {
+        await WriteSiteAsync();
+        await Source.WriteTextFileAsync("/_content/partials/options.md", "---\npermalink: false\n---\n- `--all`");
+        await EditAsync("/_content/posts/c.md", "---\ntitle: C\ndate: 2020-02-03\ntags: [post]\nlayout: post.html\n---\n{% include_markdown \"partials/options.md\" %}", keepDate: true);
+        await BuildCachedAsync();
+
+        await EditAsync("/_content/partials/options.md", "---\npermalink: false\n---\n- `--none`", keepDate: true);
+        var result = await BuildCachedAsync();
+
+        // The partial is not a page: its permalink is false.
+        Assert.Equal(["/posts/c/index.md"], Executed(result, "render"));
+        Assert.Equal(["/posts/c/index.html"], Executed(result, "layout"));
+        Assert.Contains("<code>--none</code>", await OutputAsync("/posts/c/index.html"));
+    }
+
+    [Fact]
     public async Task DataFileEditRerunsOnlyTheUnitsThatResolvedItsKeys()
     {
         await WriteSiteAsync();

@@ -4,15 +4,18 @@ namespace Douze.Workflow.Steps;
 
 /// <summary>
 /// <c>uses: frontmatter</c>. Moves the YAML front matter of a file into its metadata, removes it from the content, and
-/// sets <c>page.date</c> to the modification time of the source file.
+/// sets <c>page.date</c> to the modification time of the source file. <c>with.require</c> lists keys that every file
+/// it consumes must have, in its front matter or through the scopes (folder or site data).
 /// </summary>
 internal sealed class FrontMatterStep : Step, IMapStep
 {
     private static readonly GlobSet Templates = GlobSet.Parse(["**/*.{md,html,liquid}"]);
 
+    private readonly IReadOnlyList<string> _require;
+
     public FrontMatterStep(StepDefinition definition) : base(definition)
     {
-        _ = new WithOptions(definition);
+        _require = new WithOptions(definition, "require").GetStrings("require");
     }
 
     public override StepShape NativeShape => StepShape.Map;
@@ -40,6 +43,17 @@ internal sealed class FrontMatterStep : Step, IMapStep
 
             MergeInto(own, values);
         });
+
+        var missing = _require
+            .Where(key => !context.Scopes.TryResolve(metadata, key, null, context.Dependencies, out var value, out _) || value is null)
+            .ToList();
+
+        if (missing.Count > 0)
+        {
+            throw new DouzeException(missing.Count == 1
+                ? $"required key '{missing[0]}' is missing"
+                : $"required keys {string.Join(", ", missing.Select(x => $"'{x}'"))} are missing");
+        }
 
         // Without front matter the content is kept as is, with its hash.
         var newContent = ReferenceEquals(content, text) ? file.Content : FileContent.FromText(content);

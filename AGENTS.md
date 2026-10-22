@@ -38,6 +38,11 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
   links (`LinkRewriter`). `HeadingScanner` and `Slugger` give the `headings` step the headings of rendered HTML.
 - `Douze/Liquid/`: the Fluid bridge. `TemplateLoader` parses templates once per content hash and serves includes; `MetadataValue` is the model of every render.
 - `Douze/Liquid/Filters/`: Douze's filters (`DataFilters`, `OutputFilters`, `LocaleFilters`, `NavigationFilters`), each with a static `Register` called by `LiquidOptions.Create`; `FilterHelpers` resolves names like a template does.
+  `DouzeParser` (the parser of a build, from `LiquidOptions.CreateParser`) exposes Fluid's protected argument and
+  expression parsers to Douze's tags in `Tags/`: shortcodes (`ShortcodeRegistry`, scanned by `BuildContext.CreateAsync`
+  before any template is parsed, `ShortcodeTag`, `ShortcodeModel`), `markdown`, `include_markdown` and `slot`
+  (`MarkdownTags`), `error` and `warn` (`DiagnosticTags`). `FenceTable` protects the fences of Markdown pages in the
+  `liquid` step.
 - `Douze/Progress/`: the views of a build: `PlainProgressView` (a line per step), `SpectreProgressView` (live table and summary with a timeline), `SilentProgressView`; `StepSummary` formats what they share.
 - `Douze/Tracing/`: `TraceRecorder` records build, step, command and (with `--trace-units`) unit spans; `ChromeTraceWriter` writes them for Perfetto (`--trace`), `TimelineHtmlWriter` into the self-contained `timeline.html` (`--timeline`).
 - `Douze.Tests.FakeTool/`: the fake external tool of the command step tests, launched with `dotnet Douze.Tests.FakeTool.dll <mode>`; it is in `Douze.slnx` so that it builds in the configuration of the tests.
@@ -55,6 +60,14 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 - Filters read page and site data through the model (`FilterHelpers.ResolveAsync`, member by member), never from the scopes directly, so that a render depends on what it read; a filter that uses a whole value reads it whole (`NodeArrayValue.ReadAll`), and one that uses the locales reads `site.locales` (`FilterHelpers.GetLocalesAsync`). A step that looks values up from C# records its member reads on the `AccessRecorder` that `ScopeSet.TryResolveTracked` returns (`LocalizeStep`).
 - `permalink` removes the locale root (`site.locales.root`) from the paths under it, so that locale folders are url prefixes (`/ja/x/`).
 - Pagination pages (`pagination.pages`, `page.next`, ...) only link pages generated from the same template.
+- Tags reach the build through the ambient values of the render (`AmbientKeys`: the step context, the page's model,
+  the tracker, whether the output is Markdown, the page's fence table), never through statics. A tag that renders
+  Markdown uses `TagRendering.RenderMarkdownAsync` (the site's pipeline), restores the page's fences in a body before
+  (`TagRendering.RenderBodyAsync` does), and records the files it reads (`DependencyTracker.RecordTemplate`, absent
+  files included). In a Markdown page, block HTML from a tag is written as a raw region
+  (`RawRegionExtension.Encode`: one line, so that it stays in the tag's list item).
+- Shortcode names are file names: lowercase letters, digits and underscores; a new built-in tag must be registered in
+  `LiquidOptions.CreateParser`, so that a shortcode cannot hide it.
 
 ## Build and test
 

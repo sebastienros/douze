@@ -59,6 +59,7 @@ there. `--no-cache` builds without reading or writing the cache, `--cache-dir` m
 | content | `_content` if it exists, else the source folder | pages, data files that apply to a folder, and any other file to publish |
 | data | `_data` if it exists, else none | site data |
 | includes | `_includes` if it exists, else the source folder | layouts, includes and templates |
+| shortcodes | `shortcodes` in the includes folder | shortcodes, see "shortcodes" |
 
 The output folder and the `.douze` folder are skipped when they are inside the source folder.
 
@@ -86,8 +87,9 @@ workflow:
    they are.
 
 Liquid runs before Markdown, as in Eleventy: a Markdown page can use tags and variables, and Markdown renders what
-they produce. A page whose Markdown contains `{{` or `{%` that are not Liquid (code samples) sets `liquid: false` in
-its front matter, or its folder's data file sets it for every page of the folder; `{% raw %}` works too. A variable
+they produce. The fenced code blocks of a Markdown page are not Liquid: `{{ }}` in a code sample is kept as it is. A
+page whose Markdown contains other `{{` or `{%` that are not Liquid (inline code) uses `{% raw %}`, or sets
+`liquid: false` in its front matter, or its folder's data file sets it for every page of the folder. A variable
 captured in a Markdown page (`{% capture footer %}`) holds Markdown source, which is not rendered: write it in HTML.
 A Markdown page whose `permalink` is not HTML (`feed.xml`) is not rendered to HTML, and a page whose `markdown` is
 `false` is not rendered either.
@@ -143,6 +145,7 @@ site:
   content: docs          # default: _content if it exists, else the source folder
   data: data             # default: _data if it exists, else none
   includes: templates    # default: _includes if it exists, else the source folder
+  shortcodes: templates/components  # default: shortcodes in the includes folder
   output: public         # relative to the source folder; -o wins
   url: https://example.com  # site.url in templates
   parallelism: 8         # -p wins
@@ -237,8 +240,8 @@ step's). An unknown name is an error (`unknown Markdown extension 'tabels'; did 
 - Links: a relative link to a `.md` file of the content folder becomes the url of its page with the default
   permalinks (`other.md` is `/docs/other/`, `index.md` is `/docs/`, `#fragment` kept). A link to a file that does
   not exist is left as it is, and the page renders again when the file is created.
-- Raw regions: lines between two lines that are exactly the U+001E character are written as they are, for tags
-  that produce block HTML.
+- Raw regions: a line that starts and ends with the U+001E character is HTML written as it is, its U+001D characters
+  being newlines, for tags that produce block HTML (shortcodes).
 
 `markdown: false` in front matter or folder data leaves a page as Markdown.
 
@@ -395,6 +398,78 @@ same.
 | `url \| locale_url: "ja"` | the url in another locale, whether or not a page exists there (`/ja/guide/`); no argument: without its prefix |
 | `url \| locale_of` | the locale of a url |
 | `collections.all \| locale_pages` | every page of every locale as `{ locale, lang, url, fallback, data }`, fallback copies included: for sitemaps |
+
+# shortcodes
+
+A shortcode is a Liquid file of the shortcodes folder (`_includes/shortcodes/` by default, `site.shortcodes` in
+`douze.yml`) that every template can use as a tag: `shortcodes/badge.liquid` is `{% badge %}`. File names are tag
+names: lowercase letters, digits and underscores (`link_card.liquid` is `{% link_card %}`), and a name that is a
+Liquid or Douze tag (`include`, `raw`, `markdown`...) is an error. The front matter of the file says what kind of tag it
+is:
+
+```liquid
+---
+block: true       # paired: {% tabs %}...{% endtabs %}; default false: {% badge "New" %}
+display: block    # block or inline; default block when paired, inline otherwise
+args: [label]     # optional: names of the positional arguments
+---
+<div class="tabs" data-sync="{{ sync }}">{{ body }}</div>
+```
+
+```liquid
+{% tabs sync: "lang" %}
+{% tab "C#" %}
+Some **Markdown**, and a fence:
+
+```csharp
+var x = 1;
+```
+{% endtab %}
+{% endtabs %}
+
+Install it with {% badge "v2", variant: "note" %}.
+```
+
+- Arguments are positional values and `name: value` pairs separated by commas, and any value or variable
+  (`{% tab page.title %}`). In the template, a named argument is a variable, the positional ones are `args` and, when
+  `args` names them, variables too. The page's names (`title`, `page`, data, `collections`, `site`) resolve as in an
+  include. A shortcode can use another one.
+- The body of a paired shortcode is rendered with the page's variables, then, in a Markdown page, as Markdown to HTML
+  with the site's pipeline: that is `body`, and `source` is the body before Markdown. A `display: inline` body has no
+  `<p>` (`Press {% kbd %}**Ctrl**{% endkbd %}`). In an HTML page or a layout, `body` is the body as it is.
+- In a Markdown page, the output of a `display: block` shortcode is a raw region (see "markdown"): one line at the
+  column of the tag, which the page's Markdown pass keeps as it is, blank lines included, in the list item or block
+  quote of the tag. An inline shortcode's output is written in the text.
+- `{% slot "title" %}...{% endslot %}` in a body renders as `<div data-slot="title">...</div>`, its content rendered
+  like a body, for a shortcode template that places the parts of its body.
+- A page renders again when a shortcode it uses changes. An error in a shortcode names it and the page
+  (`error: render: /docs/a.md: shortcode 'tabs' (/_includes/shortcodes/tabs.liquid(3,12)): ...`), an unknown tag
+  suggests a shortcode (`Unknown tag 'tabss'; did you mean 'tabs'?`), and an invalid shortcode file stops the build
+  before it starts, with its position.
+
+# markdown includes
+
+- `{% include_markdown "reference/options.md", version: "2.0" %}` renders a Markdown file of the content folder, or
+  of the including file's folder with `./` and `../`, as a Liquid template with the page's variables. Its front matter
+  values are variables that the page's names hide, and the named arguments hide both. In a Markdown page its output
+  is Markdown that the page renders, so its headings are the page's, and every line is indented like the tag, so an
+  include stays in its list item. Elsewhere it is rendered to HTML. Its fences are not Liquid, a missing file is an
+  error, includes nest up to 16 deep, and the page renders again when the file changes. A partial that is not a page
+  sets `permalink: false`.
+- `{% markdown %}...{% endmarkdown %}` renders its body as Markdown, in layouts and HTML pages.
+- `{{ text | markdownify }}` renders a string as Markdown; `markdownify: inline: true` leaves a single paragraph without
+  `<p>`. `{{ text | strip_markdown }}` is its plain text, `{{ content | excerpt }}` the first paragraph as HTML, or
+  what comes before `<!-- more -->`.
+
+# diagnostics
+
+- `{% error "unknown API reference " | append: name %}` fails the page with the position of the tag
+  (`error: render: /docs/a.md(12,3): unknown API reference Foo`); `{% warn "deprecated" %}` logs a warning.
+- The `frontmatter` step's `require` lists keys every page must have, in its front matter or in folder or site data:
+  `{ uses: frontmatter, with: { require: [title, description] } }`.
+- The `liquid` step's `strict: true` makes an undefined variable an error rather than nothing; shortcode templates
+  are not strict, so their optional arguments work.
+- The `liquid` step's `protect: none` renders the fences of Markdown pages as Liquid.
 
 # commands
 

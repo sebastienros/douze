@@ -72,7 +72,22 @@ internal static class BuildCommand
                 Cancellation = cancellation.Token,
             };
 
-            var result = await SiteBuilder.BuildAsync(graph, site, options);
+            BuildResult result;
+
+            try
+            {
+                result = await SiteBuilder.BuildAsync(graph, site, options);
+            }
+            catch (WorkflowValidationException e)
+            {
+                // Invalid shortcodes: the build did not start.
+                foreach (var error in e.Errors)
+                {
+                    Console.Error.WriteLine(error);
+                }
+
+                return ExitCodes.Usage;
+            }
 
             // A failed or cancelled build is traced too: that is when the trace is the most useful.
             KeyValuePair<string, string>[] otherData = [new("douze", StepDefinition.DouzeVersion), new("site", sourceDirectory)];

@@ -45,7 +45,8 @@ internal sealed class StepContext
 
     /// <summary>
     /// A template context whose model is <paramref name="model"/>, with the ambient values every render needs: the
-    /// scopes, the dependency tracker of the unit, the file being rendered, the site's locales and this context.
+    /// scopes, the dependency tracker of the unit, the file being rendered, the site's locales, this context and the
+    /// model (for tags that render with the page's names).
     /// </summary>
     public TemplateContext CreateTemplateContext(FluidValue model, VirtualFile? file, CancellationToken ct)
     {
@@ -54,6 +55,7 @@ internal sealed class StepContext
         context.AmbientValues[AmbientKeys.Dependencies] = Dependencies;
         context.AmbientValues[AmbientKeys.Locales] = Build.Locales;
         context.AmbientValues[AmbientKeys.StepContext] = this;
+        context.AmbientValues[AmbientKeys.Model] = model;
 
         if (file != null)
         {

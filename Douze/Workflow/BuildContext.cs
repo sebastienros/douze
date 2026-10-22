@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Douze.Progress;
 using Douze.Workflow.Cache;
 using Douze.Liquid;
+using Douze.Liquid.Tags;
 using Douze.Markdown;
 using Douze.Tracing;
 using Douze.FileSystems;
@@ -15,7 +16,20 @@ namespace Douze.Workflow;
 /// </summary>
 internal sealed class BuildContext : IAsyncDisposable
 {
-    public BuildContext(SiteOptions site, BuildOptions options, IProgressView view, ITraceRecorder trace)
+    /// <summary>
+    /// Creates the context of a build: scans the shortcodes, whose tags every template of the build is parsed with,
+    /// before creating the template loader.
+    /// </summary>
+    /// <exception cref="WorkflowValidationException">A shortcode is invalid: the build does not start.</exception>
+    public static async Task<BuildContext> CreateAsync(SiteOptions site, BuildOptions options, IProgressView view, ITraceRecorder trace, CancellationToken ct = default)
+    {
+        var parser = Liquid.LiquidOptions.CreateParser();
+        var shortcodes = await ShortcodeRegistry.ScanAsync(site.Source, site.ShortcodesFolder, parser, ct);
+
+        return new BuildContext(site, options, view, trace, parser, shortcodes);
+    }
+
+    private BuildContext(SiteOptions site, BuildOptions options, IProgressView view, ITraceRecorder trace, DouzeParser parser, ShortcodeRegistry shortcodes)
     {
         Site = site;
         Options = options;
@@ -28,7 +42,8 @@ internal sealed class BuildContext : IAsyncDisposable
         Parallelism = new SemaphoreSlim(parallelism, parallelism);
         ProcessSlots = new SemaphoreSlim(parallelism, parallelism);
 
-        Templates = new TemplateLoader(site.Source, [site.IncludesFolder], Liquid.LiquidOptions.CreateParser());
+        Shortcodes = shortcodes;
+        Templates = new TemplateLoader(site.Source, [site.IncludesFolder], parser);
         LiquidOptions = Liquid.LiquidOptions.Create(Templates);
         Markdown = new MarkdownRenderer(site.Markdown, site.Source, site.ContentFolder);
 
@@ -102,6 +117,7 @@ internal sealed class BuildContext : IAsyncDisposable
     public TemplateLoader Templates { get; }        // shared parsed template cache + include file provider
     public TemplateOptions LiquidOptions { get; }   // built once by LiquidOptions.Create
     public MarkdownRenderer Markdown { get; }       // the site's Markdown pipeline (the markdown section of douze.yml), built once
+    public ShortcodeRegistry Shortcodes { get; }    // the shortcodes of site.shortcodes, registered on the parser of Templates
     public ITraceRecorder Trace { get; }
     public IProgressView View { get; }
     public int MaxDegreeOfParallelism { get; }

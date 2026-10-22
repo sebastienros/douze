@@ -26,7 +26,27 @@ internal sealed class MetadataValue : FluidValue
 
     public override FluidValues Type => FluidValues.Dictionary;
 
+    /// <summary>
+    /// Resolves <paramref name="name"/>. With <see cref="AmbientKeys.Strict"/> set, a name that resolves to nothing is
+    /// an error rather than nil (<c>with.strict</c> of the <c>liquid</c> step).
+    /// </summary>
+    /// <exception cref="DouzeException">Strict mode and <paramref name="name"/> is not defined.</exception>
     public override ValueTask<FluidValue> GetValueAsync(string name, TemplateContext context)
+    {
+        var value = GetValueOrNil(name, context);
+
+        if (value.IsNil() && context.AmbientValues.TryGetValue(AmbientKeys.Strict, out var strict) && strict is true)
+        {
+            throw new DouzeException($"undefined variable '{name}'");
+        }
+
+        return new(value);
+    }
+
+    /// <summary>
+    /// Resolves <paramref name="name"/>, nil when it is not defined, even in strict mode.
+    /// </summary>
+    public FluidValue GetValueOrNil(string name, TemplateContext context)
     {
         var scopes = context.AmbientValues.TryGetValue(AmbientKeys.Scopes, out var s) && s is ScopeSet scopeSet ? scopeSet : ScopeSet.Empty;
         var deps = context.AmbientValues.TryGetValue(AmbientKeys.Dependencies, out var d) ? d as DependencyTracker : null;
@@ -34,10 +54,10 @@ internal sealed class MetadataValue : FluidValue
         // The unit depends on what the template reads of a value from the scopes, not on all of it.
         if (scopes.TryResolveTracked(Metadata, name, _fallback, deps, out var node, out var recorder))
         {
-            return new(NodeValues.ToFluidValue(node, recorder));
+            return NodeValues.ToFluidValue(node, recorder);
         }
 
-        return new(NilValue.Instance);
+        return NilValue.Instance;
     }
 
     public override ValueTask<FluidValue> GetIndexAsync(FluidValue index, TemplateContext context)

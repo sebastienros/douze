@@ -18,7 +18,7 @@ internal static partial class WorkflowSchema
 
     public static readonly ImmutableArray<string> TopLevelKeys = ["site", "markdown", "steps"];
 
-    public static readonly ImmutableArray<string> SiteKeys = ["content", "data", "includes", "output", "url", "parallelism", "locales"];
+    public static readonly ImmutableArray<string> SiteKeys = ["content", "data", "includes", "shortcodes", "output", "url", "parallelism", "locales"];
 
     public static readonly ImmutableArray<string> MarkdownKeys = ["extensions", "aside", "links", "code", "images"];
 

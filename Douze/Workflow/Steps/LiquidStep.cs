@@ -1,6 +1,7 @@
 using System.Text.Encodings.Web;
 using Douze.FileSystems;
 using Douze.Liquid;
+using Douze.Liquid.Tags;
 using Douze.Nodes;
 using Fluid;
 using Fluid.Values;
@@ -14,6 +15,11 @@ namespace Douze.Workflow.Steps;
 /// includes folder), renders that template once per file (<c>file</c> in the template) or once per group with
 /// <c>group-by</c> (<c>group</c>), to the path rendered from <c>with.permalink</c>.
 /// </summary>
+/// <remarks>
+/// In a Markdown file, fenced code blocks are not Liquid (<c>with.protect: fences</c>, the default; <c>none</c> turns
+/// it off): they are replaced by placeholders before the content is parsed and restored in the output
+/// (<see cref="FenceTable"/>). <c>with.strict: true</c> makes an undefined variable an error.
+/// </remarks>
 internal sealed class LiquidStep : Step, IMapStep, IGroupStep
 {
     /// <summary>
@@ -28,10 +34,12 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
     private readonly string? _permalink;
     private readonly NodeObject? _data;
     private readonly TextEncoder _encoder;
+    private readonly bool _protectFences;
+    private readonly bool _strict;
 
     public LiquidStep(StepDefinition definition) : base(definition)
     {
-        var options = new WithOptions(definition, "template", "permalink", "data", "encode");
+        var options = new WithOptions(definition, "template", "permalink", "data", "encode", "protect", "strict");
 
         _template = options.GetString("template") is { } template ? new FPath(template).ToRelative() : (FPath?)null;
         _permalink = options.GetString("permalink");
@@ -42,6 +50,15 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
             "none" => NullEncoder.Default,
             var other => throw new WorkflowValidationException($"option 'encode' of step '{Name}' must be 'html' or 'none', not '{other}'", definition.Location),
         };
+
+        _protectFences = options.GetString("protect", "fences") switch
+        {
+            "fences" => true,
+            "none" => false,
+            var other => throw new WorkflowValidationException($"option 'protect' of step '{Name}' must be 'fences' or 'none', not '{other}'", definition.Location),
+        };
+
+        _strict = options.GetBool("strict");
 
         if (definition.With["data"] is { } data)
         {
@@ -80,19 +97,56 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
         }
 
         var text = await file.Content.ReadTextAsync(ct);
-        var template = context.Build.Templates.GetOrParse(file.ContentHash, text, file.Path.FullName);
+        var markdown = file.EffectiveContentType == "text/markdown";
+        FenceTable? fences = null;
+        var hash = file.ContentHash;
+
+        if (markdown && _protectFences)
+        {
+            var protectedText = FenceTable.Protect(text, out fences);
+
+            if (fences != null)
+            {
+                text = protectedText;
+                hash = Hash128.OfText(text);
+            }
+        }
+
+        var template = Parse(hash, text, file.Path.FullName, context);
         var templateContext = context.CreateTemplateContext(new MetadataValue(file.Metadata), file, ct);
+        templateContext.AmbientValues[AmbientKeys.TemplatePath] = file.Path.FullName;
+
+        if (markdown)
+        {
+            templateContext.AmbientValues[AmbientKeys.Markdown] = true;
+        }
+
+        if (fences != null)
+        {
+            templateContext.AmbientValues[AmbientKeys.Fences] = fences;
+        }
+
+        if (_strict)
+        {
+            templateContext.AmbientValues[AmbientKeys.Strict] = true;
+        }
 
         // Captured variables ({% capture footer %}) are kept in the file's metadata, for its layout.
         NodeObject? captured = null;
 
         templateContext.Captured = (identifier, value, context) =>
         {
-            (captured ??= new NodeObject())[identifier] = NodeValue.Create(value.ToStringValue(context));
+            var captureText = value.ToStringValue(context);
+            (captured ??= new NodeObject())[identifier] = NodeValue.Create(fences?.Restore(captureText) ?? captureText);
             return ValueTask.FromResult(value);
         };
 
         var html = await template.Template.RenderAsync(templateContext, _encoder);
+
+        if (fences != null)
+        {
+            html = fences.Restore(html);
+        }
 
         var newMetadata = captured == null ? file.Metadata : file.Metadata.With(own =>
         {
@@ -140,6 +194,13 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
 
         var templateContext = context.CreateTemplateContext(scopeModel, file, ct);
         templateContext.SetValue(name, new NodeObjectValue(model));
+        templateContext.AmbientValues[AmbientKeys.TemplatePath] = loaded.Path.FullName;
+
+        if (_strict)
+        {
+            templateContext.AmbientValues[AmbientKeys.Strict] = true;
+        }
+
         var content = await loaded.Template.Template.RenderAsync(templateContext, _encoder);
 
         var own = new NodeObject { ["url"] = NodeValue.Create(path.FullName) };
@@ -153,6 +214,21 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
         }
 
         return (path, FileContent.FromText(content), new Metadata(own, directory));
+    }
+
+    /// <summary>
+    /// Parses a page; an unknown tag that is close to a shortcode name gets a suggestion.
+    /// </summary>
+    private static ParsedTemplate Parse(Hash128 hash, string text, string path, StepContext context)
+    {
+        try
+        {
+            return context.Build.Templates.GetOrParse(hash, text, path);
+        }
+        catch (TemplateParseException e) when (ShortcodeRegistry.SuggestTag(e.Reason, context.Build.Shortcodes.Shortcodes.Select(x => x.Name)) is { Length: > 0 } suggestion)
+        {
+            throw new TemplateParseException(e.Path, e.Line, e.Column, e.Reason + suggestion);
+        }
     }
 
     private static async ValueTask<NodeObject> FileModelAsync(VirtualFile file, CancellationToken ct)
