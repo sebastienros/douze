@@ -24,10 +24,11 @@ internal sealed record CodeFence(int File, int Index, int TagEnd, string Languag
 /// fence itself is left as it is.
 /// </summary>
 /// <remarks>
-/// <para>The step is a reduce: the fences of every page are checked at once, by the step's engine. Each result is
-/// memoized in the disk cache by the fence's code, language (and whatever else of the fence it depends on:
-/// <see cref="FenceKeyParts"/>) and the key of the step's settings (<see cref="PrepareAsync"/>): a build checks only the
-/// fences whose result is not known, and starts no engine when there is none.</para>
+/// <para>The step is a reduce: the fences of every page are checked at once, by the step's engine. Each outcome (the
+/// result, the errors) is memoized in the disk cache by the fence's code, language (and whatever else of the fence it
+/// depends on: <see cref="FenceKeyParts"/>) and the key of the step's settings (<see cref="PrepareAsync"/>): a build
+/// checks only the fences whose outcome is not known, and starts no engine when there is none. A memoized error is
+/// reported again by every build that uses it.</para>
 /// <para>Shared options: <c>errors</c> (<c>fail</c>, the default, or <c>warn</c>: a rejected snippet is a warning, and
 /// its fence gets its result when there is one, its errors rendered); <c>languages</c>; <c>tab-width</c> (tabs are
 /// replaced by that many spaces first, as the highlighter does); <c>trim</c> (true by default: the spaces at the end of
@@ -157,22 +158,23 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
             return new StepOutput(FileList.Of(files));
         }
 
-        // The results: memoized ones, then the others, checked at once.
-        var results = new Dictionary<Hash128, string>();
+        // The outcomes: memoized ones, then the others, checked at once. An outcome with errors is memoized too: it is
+        // the same for the same key, and reported again from the memo.
+        var outcomes = new Dictionary<Hash128, (string? Json, string? Error)>();
         var cache = context.Build.Cache;
         var missing = new List<CodeFence>();
         var missingKeys = new HashSet<Hash128>();
 
         foreach (var fence in fences)
         {
-            if (results.ContainsKey(fence.Key) || missingKeys.Contains(fence.Key))
+            if (outcomes.ContainsKey(fence.Key) || missingKeys.Contains(fence.Key))
             {
                 continue;
             }
 
             if (cache != null && cache.TryGetMemo(Name, fence.Key, out var memo))
             {
-                results[fence.Key] = Encoding.UTF8.GetString(memo);
+                outcomes[fence.Key] = ReadMemo(memo);
             }
             else
             {
@@ -183,44 +185,47 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
 
         if (missing.Count > 0)
         {
-            var errors = new List<string>();
-            var outcomes = await CheckAsync(missing, state, context, ct);
-            var byKey = fences.ToLookup(x => x.Key);
+            var checkedOutcomes = await CheckAsync(missing, state, context, ct);
 
             for (var i = 0; i < missing.Count; i++)
             {
-                var (result, error) = outcomes[i];
-
-                if (error != null)
-                {
-                    // Every fence with that code is reported, by its page's source and its number on the page. Its
-                    // result is not memoized, so that the next build that checks it reports it again.
-                    errors.AddRange(byKey[missing[i].Key].Select(x => $"{files[x.File].SourcePath ?? files[x.File].Path}: {FenceKind} fence {x.Index} ('{FirstLine(x.Code)}'): {error}"));
-
-                    if (Warn && result != null)
-                    {
-                        results[missing[i].Key] = result.ToJson();
-                    }
-                }
-                else if (result != null)
-                {
-                    var json = result.ToJson();
-                    results[missing[i].Key] = json;
-                    cache?.PutMemo(Name, missing[i].Key, Encoding.UTF8.GetBytes(json));
-                }
+                var (result, error) = checkedOutcomes[i];
+                var outcome = (result?.ToJson(), error);
+                outcomes[missing[i].Key] = outcome;
+                cache?.PutMemo(Name, missing[i].Key, WriteMemo(outcome));
             }
+        }
 
-            errors.Sort(StringComparer.Ordinal);
+        // Every fence whose snippet is rejected is reported, by its page's source and its number on the page; with
+        // errors: warn, it gets its result when there is one.
+        var results = new Dictionary<Hash128, string>();
+        var errors = new List<string>();
 
-            if (errors.Count > 0 && !Warn)
+        foreach (var fence in fences)
+        {
+            var (json, error) = outcomes[fence.Key];
+
+            if (error != null)
             {
-                throw new DouzeException(string.Join(Environment.NewLine, errors));
+                errors.Add($"{files[fence.File].SourcePath ?? files[fence.File].Path}: {FenceKind} fence {fence.Index} ('{FirstLine(fence.Code)}'): {error}");
             }
 
-            foreach (var error in errors)
+            if (json != null && (error == null || Warn))
             {
-                context.Log(LogLevel.Warning, error);
+                results[fence.Key] = json;
             }
+        }
+
+        errors.Sort(StringComparer.Ordinal);
+
+        if (errors.Count > 0 && !Warn)
+        {
+            throw new DouzeException(string.Join(Environment.NewLine, errors));
+        }
+
+        foreach (var error in errors)
+        {
+            context.Log(LogLevel.Warning, error);
         }
 
         var outputs = new VirtualFile[files.Count];
@@ -253,6 +258,28 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
         }
 
         return new StepOutput(FileList.Of(outputs));
+    }
+
+    /// <summary>
+    /// A memoized outcome: the result's JSON alone, or <c>!</c>, the error, a NUL and the JSON of the result if there
+    /// is one.
+    /// </summary>
+    private static byte[] WriteMemo((string? Json, string? Error) outcome) => Encoding.UTF8.GetBytes(outcome.Error == null
+        ? outcome.Json ?? ""
+        : $"!{outcome.Error}\0{outcome.Json}");
+
+    private static (string? Json, string? Error) ReadMemo(byte[] memo)
+    {
+        var text = Encoding.UTF8.GetString(memo);
+
+        if (!text.StartsWith('!'))
+        {
+            return (text, null);
+        }
+
+        var separator = text.IndexOf('\0', StringComparison.Ordinal);
+        var json = text[(separator + 1)..];
+        return (json.Length == 0 ? null : json, text[1..separator]);
     }
 
     /// <summary>

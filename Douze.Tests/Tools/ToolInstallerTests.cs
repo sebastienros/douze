@@ -220,6 +220,60 @@ public sealed class ToolInstallerTests : IDisposable
         Assert.Throws<DouzeException>(() => Integrity.Parse("md5-abc"));
     }
 
+    /// <summary>
+    /// A NuGet package: <c>tools/net10.0/&lt;platform&gt;/Tool.dll</c>.
+    /// </summary>
+    private static byte[] NuGetPackage()
+    {
+        using var memory = new MemoryStream();
+
+        using (var zip = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            using var stream = zip.CreateEntry($"tools/net10.0/{Platform}/Tool.dll").Open();
+            stream.Write("not really a dll"u8);
+        }
+
+        return memory.ToArray();
+    }
+
+    private static NuGetTool NuGet(string integrity) => new(
+        "fake-nuget",
+        "1.0.0-Beta.1",
+        new Dictionary<string, string> { [Platform] = "Fake.Tool." + Platform },
+        "tools/net10.0/{platform}/Tool.dll",
+        new Dictionary<string, string> { [Platform] = integrity });
+
+    [Fact]
+    public async Task InstallsNuGetPackages()
+    {
+        var package = NuGetPackage();
+        _responses[$"/registry/fake.tool.{Platform}/1.0.0-beta.1/fake.tool.{Platform}.1.0.0-beta.1.nupkg"] = (200, package);
+
+        var path = await Installer().InstallAsync(NuGet(Sri(package)), "1.0.0-Beta.1", Ct, Platform);
+
+        Assert.Equal(Path.Combine(_root, "fake-nuget", "1.0.0-Beta.1", Platform, "tools/net10.0/test-x64/Tool.dll"), path);
+        Assert.Equal("not really a dll", await File.ReadAllTextAsync(path, Ct));
+
+        // Installed once.
+        await Installer().InstallAsync(NuGet(Sri(package)), "1.0.0-Beta.1", Ct, Platform);
+        Assert.Single(_requests);
+    }
+
+    [Fact]
+    public async Task NuGetPackagesAreVerified()
+    {
+        _responses[$"/registry/fake.tool.{Platform}/1.0.0-beta.1/fake.tool.{Platform}.1.0.0-beta.1.nupkg"] = (200, NuGetPackage());
+
+        var e = await Assert.ThrowsAsync<DouzeException>(() => Installer().InstallAsync(NuGet(Sri("other"u8.ToArray())), "1.0.0-Beta.1", Ct, Platform));
+
+        Assert.Contains("does not match its integrity", e.Message);
+        Assert.False(Directory.Exists(Path.Combine(_root, "fake-nuget", "1.0.0-Beta.1", Platform)));
+
+        // Another version than the known one: its integrity is only known on nuget.org.
+        e = await Assert.ThrowsAsync<DouzeException>(() => Installer().InstallAsync(NuGet(Sri("other"u8.ToArray())), "2.0.0", Ct, Platform));
+        Assert.Contains("only known for the default version", e.Message);
+    }
+
     [Fact]
     public void CurrentPlatform()
     {

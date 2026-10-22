@@ -1,5 +1,6 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Douze.Progress;
@@ -7,11 +8,11 @@ using Douze.Progress;
 namespace Douze.Tools;
 
 /// <summary>
-/// Installs native tools published as npm packages (<see cref="NpmTool"/>) into a tools folder, once:
-/// <c>&lt;tools&gt;/&lt;name&gt;/&lt;version&gt;/&lt;platform&gt;/</c> holds the content of the package's tarball. The
-/// tarball is downloaded from the registry, verified against its integrity (the one Douze knows for the default version,
-/// the registry's otherwise) and extracted; later builds reuse the folder without any request, so a build that has its
-/// tools works offline. Concurrent installs of the same tool, from threads or processes, download it once (a lock file
+/// Installs tools published as npm packages (<see cref="NpmTool"/>) or NuGet packages (<see cref="NuGetTool"/>) into a
+/// tools folder, once: <c>&lt;tools&gt;/&lt;name&gt;/&lt;version&gt;/&lt;platform&gt;/</c> holds the content of the
+/// package (an npm tarball, a <c>.nupkg</c> zip). The package is downloaded from the registry, verified against its
+/// integrity (the one Douze knows for the default version, the registry's otherwise) and extracted; later builds reuse
+/// the folder without any request, so a build that has its tools works offline. Concurrent installs of the same tool, from threads or processes, download it once (a lock file
 /// next to the folder).
 /// </summary>
 internal sealed class ToolInstaller
@@ -21,23 +22,35 @@ internal sealed class ToolInstaller
     /// </summary>
     public static readonly Uri DefaultRegistry = new("https://registry.npmjs.org/");
 
+    /// <summary>
+    /// The package content (flat container) url of nuget.org.
+    /// </summary>
+    public static readonly Uri DefaultNuGetRegistry = new("https://api.nuget.org/v3-flatcontainer/");
+
+    // Where the integrity of the versions of nuget.org packages that Douze does not know is read: the catalog entry of
+    // a version, from its registration leaf, has its packageHash.
+    private static readonly Uri NuGetRegistrations = new("https://api.nuget.org/v3/registration5-gz-semver2/");
+
     private const string Marker = ".douze-tool";
 
-    private static readonly HttpClient SharedClient = new() { Timeout = TimeSpan.FromMinutes(10) };
+    private static readonly HttpClient SharedClient = new(new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All }) { Timeout = TimeSpan.FromMinutes(10) };
 
     private readonly string _root;
     private readonly Uri _registry;
+    private readonly bool _customRegistry;
     private readonly HttpClient _http;
     private readonly Action<LogLevel, string> _log;
 
     /// <param name="root">The tools folder.</param>
-    /// <param name="registry">The npm registry (a mirror, a test server); <see cref="DefaultRegistry"/> when null.</param>
+    /// <param name="registry">The registry (a mirror, a test server): of npm, <see cref="DefaultRegistry"/> when null,
+    /// or the package content url of a NuGet feed, <see cref="DefaultNuGetRegistry"/> when null.</param>
     /// <param name="log">Where the downloads are reported.</param>
     /// <param name="http">The HTTP client; a shared one when null.</param>
     public ToolInstaller(string root, Uri? registry, Action<LogLevel, string> log, HttpClient? http = null)
     {
         _root = root;
         _registry = registry ?? DefaultRegistry;
+        _customRegistry = registry != null;
         _http = http ?? SharedClient;
         _log = log;
 
@@ -77,45 +90,98 @@ internal sealed class ToolInstaller
             throw new DouzeException($"'{version}' is not a version of {tool.Name}");
         }
 
-        var folder = GetFolder(tool, version, platform);
-        var executable = Path.Combine(folder, tool.Executable + (platform.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : ""));
+        var executable = tool.Executable + (platform.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : "");
+        var folder = await InstallPackageAsync(tool.Name, version, platform, package, executable, isZip: false, async () =>
+            tool.DefaultVersion == version && tool.KnownIntegrity.TryGetValue(platform, out var known)
+                ? (TarballUrl(package, version), known)
+                : await ResolveAsync(package, version, ct), ct);
+        return Path.Combine(folder, executable);
+    }
+
+    /// <summary>
+    /// Returns the path of the entry point of <paramref name="tool"/> <paramref name="version"/> for the current
+    /// platform (or <paramref name="platform"/>), installing it first when needed.
+    /// </summary>
+    /// <exception cref="DouzeException">The tool has no package for the platform, or the download, the verification or
+    /// the extraction failed.</exception>
+    public async Task<string> InstallAsync(NuGetTool tool, string version, CancellationToken ct, string? platform = null)
+    {
+        platform ??= NpmTool.CurrentPlatform;
+
+        if (!tool.Packages.TryGetValue(platform, out var package))
+        {
+            throw new DouzeException($"{tool.Name} has no package for the platform '{platform}' (it has {string.Join(", ", tool.Packages.Keys)}): set the path of {tool.Name}");
+        }
+
+        if (version.Length == 0 || version.Contains('/', StringComparison.Ordinal) || version.Contains('\\', StringComparison.Ordinal) || version.Contains("..", StringComparison.Ordinal))
+        {
+            throw new DouzeException($"'{version}' is not a version of {tool.Name}");
+        }
+
+        var registry = _customRegistry ? _registry : DefaultNuGetRegistry;
+        var id = package.ToLowerInvariant();
+        var lower = version.ToLowerInvariant();
+        var url = new Uri(registry, $"{id}/{lower}/{id}.{lower}.nupkg").AbsoluteUri;
+
+        var executable = tool.Executable.Replace("{platform}", platform, StringComparison.Ordinal);
+        var folder = await InstallPackageAsync(tool.Name, version, platform, package, executable, isZip: true, async () =>
+            tool.DefaultVersion == version && tool.KnownIntegrity.TryGetValue(platform, out var known)
+                ? (url, known)
+                : (url, await ResolveNuGetIntegrityAsync(package, version, ct)), ct);
+        return Path.Combine(folder, executable);
+    }
+
+    /// <summary>
+    /// Installs a package into <c>&lt;tools&gt;/&lt;name&gt;/&lt;version&gt;/&lt;platform&gt;/</c> unless it is there,
+    /// and returns that folder. The package must have <c>executable</c> (relative to its folder), which is made
+    /// executable on Unix for an npm package.
+    /// </summary>
+    private async Task<string> InstallPackageAsync(string name, string version, string platform, string package, string executable, bool isZip, Func<Task<(string Url, string Integrity)>> resolve, CancellationToken ct)
+    {
+        var folder = Path.Combine(_root, name, version, platform);
 
         if (File.Exists(Path.Combine(folder, Marker)))
         {
-            return executable;
+            return folder;
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(folder)!);
-        using var lockFile = await LockAsync(folder + ".lock", tool, ct);
+        using var lockFile = await LockAsync(folder + ".lock", name, ct);
 
         // Installed by another build while this one waited.
         if (File.Exists(Path.Combine(folder, Marker)))
         {
-            return executable;
+            return folder;
         }
 
-        var (url, integrity) = tool.DefaultVersion == version && tool.KnownIntegrity.TryGetValue(platform, out var known)
-            ? (TarballUrl(package, version), known)
-            : await ResolveAsync(package, version, ct);
+        var (url, integrity) = await resolve();
 
-        _log(LogLevel.Info, $"downloading {tool.Name} {version} ({package}) from {url}");
+        _log(LogLevel.Info, $"downloading {name} {version} ({package}) from {url}");
 
         var temporary = Path.Combine(Path.GetDirectoryName(folder)!, $".{platform}.{Guid.NewGuid():N}");
-        var archive = temporary + ".tgz";
+        var archive = temporary + (isZip ? ".zip" : ".tgz");
 
         try
         {
             await DownloadAsync(url, archive, integrity, ct);
-            Extract(archive, temporary);
 
-            if (!File.Exists(Path.Combine(temporary, Path.GetRelativePath(folder, executable))))
+            if (isZip)
             {
-                throw new DouzeException($"the package {package}@{version} has no '{tool.Executable}'");
+                ExtractZip(archive, temporary);
+            }
+            else
+            {
+                Extract(archive, temporary);
             }
 
-            if (!OperatingSystem.IsWindows())
+            if (!File.Exists(Path.Combine(temporary, executable)))
             {
-                File.SetUnixFileMode(Path.Combine(temporary, Path.GetRelativePath(folder, executable)),
+                throw new DouzeException($"the package {package}@{version} has no '{executable}'");
+            }
+
+            if (!isZip && !OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(Path.Combine(temporary, executable),
                     UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
             }
 
@@ -145,8 +211,45 @@ internal sealed class ToolInstaller
             }
         }
 
-        _log(LogLevel.Info, $"installed {tool.Name} {version} in {folder}");
-        return executable;
+        _log(LogLevel.Info, $"installed {name} {version} in {folder}");
+        return folder;
+    }
+
+    /// <summary>
+    /// The integrity of a version of a nuget.org package that Douze does not know: the SHA-512 of the catalog entry of
+    /// the version.
+    /// </summary>
+    private async Task<string> ResolveNuGetIntegrityAsync(string package, string version, CancellationToken ct)
+    {
+        if (_customRegistry)
+        {
+            throw new DouzeException($"the integrity of {package} {version} is only known for the default version on a registry other than nuget.org: use the default version, or set the path of the tool");
+        }
+
+        var leaf = new Uri(NuGetRegistrations, $"{package.ToLowerInvariant()}/{version.ToLowerInvariant()}.json");
+
+        try
+        {
+            using var response = await _http.GetAsync(leaf, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new DouzeException($"cannot find {package} {version} on nuget.org: {(int)response.StatusCode} {response.ReasonPhrase}");
+            }
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(ct));
+            var catalog = document.RootElement.GetProperty("catalogEntry").GetString() ?? throw new DouzeException($"{package} {version} has no catalog entry");
+
+            using var entry = JsonDocument.Parse(await _http.GetStreamAsync(catalog, ct));
+            var algorithm = entry.RootElement.GetProperty("packageHashAlgorithm").GetString();
+            var hash = entry.RootElement.GetProperty("packageHash").GetString();
+
+            return algorithm == "SHA512" && hash != null ? "sha512-" + hash : throw new DouzeException($"{package} {version} has no SHA-512 hash on nuget.org");
+        }
+        catch (Exception e) when (e is HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            throw new DouzeException($"cannot read {package} {version} from nuget.org: {e.Message}");
+        }
     }
 
     /// <summary>
@@ -270,7 +373,23 @@ internal sealed class ToolInstaller
         }
     }
 
-    private async Task<FileStream> LockAsync(string path, NpmTool tool, CancellationToken ct)
+    /// <summary>
+    /// Extracts a zip (a <c>.nupkg</c>) into <paramref name="folder"/>: none of its entries outside it.
+    /// </summary>
+    private static void ExtractZip(string archive, string folder)
+    {
+        try
+        {
+            // Throws for an entry outside the folder.
+            ZipFile.ExtractToDirectory(archive, folder);
+        }
+        catch (Exception e) when (e is InvalidDataException or IOException)
+        {
+            throw new DouzeException($"cannot extract the package: {e.Message}");
+        }
+    }
+
+    private async Task<FileStream> LockAsync(string path, string name, CancellationToken ct)
     {
         var deadline = DateTime.UtcNow + LockTimeout;
         var waiting = false;
@@ -286,14 +405,14 @@ internal sealed class ToolInstaller
                 if (!waiting)
                 {
                     waiting = true;
-                    _log(LogLevel.Info, $"waiting for another install of {tool.Name}");
+                    _log(LogLevel.Info, $"waiting for another install of {name}");
                 }
 
                 await Task.Delay(100, ct);
             }
             catch (IOException)
             {
-                throw new DouzeException($"another install of {tool.Name} did not finish within {LockTimeout.TotalMinutes:0} minutes ('{path}')");
+                throw new DouzeException($"another install of {name} did not finish within {LockTimeout.TotalMinutes:0} minutes ('{path}')");
             }
         }
     }

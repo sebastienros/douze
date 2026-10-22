@@ -219,7 +219,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write` |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `twoslash`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `twoslash`, `csharp`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -625,6 +625,37 @@ Rust with the same protocol, for macOS on Apple silicon and Linux; it gives the 
 The hover texts are TypeScript 7's, which prints some types differently from TypeScript 5: no `(+1 overload)` after
 a signature resolved at a call, no `import x` line under an alias, union members in another order
 (`bench/twoslash.md` has a comparison).
+
+# csharp
+
+The `csharp` step does the same for C# fences with the Roslyn language server: every fence of `languages` (`csharp`,
+`cs`, `c#`; only those whose meta has the `trigger` word when it is set) gets a `data-twoslash` attribute with the hovers
+of its symbols (signature and documentation) and its errors, in the shape of the `twoslash` step's results, so that the
+same renderer shows them.
+
+````yaml
+  csharp: { needs: markdown, uses: csharp,
+            with: { errors: warn, projects: { web: { sdk: Microsoft.NET.Sdk.Web, titles: [Program.cs],
+                                                     packages: { Some.Package: "1.2.3" }, usings: [Some.Namespace] } } } }
+````
+
+- Snippets compile in generated projects: `projects` maps names to their `sdk` (`Microsoft.NET.Sdk`), `framework`
+  (`net10.0`), `packages` (ids to versions), `usings` (global usings), `properties` (MSBuild properties), `files`
+  (shared files of the source folder, such as stubs), `context` (a class of a shared file whose fields are the variables
+  that fragments use without declaring them), `titles` and `patterns`. A fence uses the project of its meta's
+  `project=name`, else the first whose `titles` end its `title`, else the first whose `patterns` match its code, else
+  `default`.
+- A snippet can be top-level statements, type declarations or class members: each is wrapped in a namespace of its own,
+  so that the snippets of a project don't see each other.
+- A snippet with errors fails the build, naming its page, the fence's number and its first line; with `errors: warn` it
+  is a warning and the errors are rendered. `ignore` lists diagnostic codes that are neither reported nor rendered.
+- The server (`roslyn-language-server.<rid>` from nuget.org, `registry`; `version`, or `path` to its
+  `Microsoft.CodeAnalysis.LanguageServer.dll`) is downloaded on first use into `<cache>/tools/roslyn/<version>/<rid>/`.
+  It needs the .NET SDK (10 or later), which also restores the projects: `dotnet`, or `DOTNET_HOST_PATH`, or the
+  `PATH`'s.
+
+Outcomes, errors included, are kept in the cache like the `twoslash` step's. `docs/code-hover-steps.md` has the design,
+the costs and the plan for other languages.
 
 # commands
 

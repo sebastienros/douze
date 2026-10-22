@@ -301,7 +301,22 @@ internal sealed record LspDiagnostic((int Line, int Character) Start, (int Line,
 /// <summary>
 /// A semantic token: where it is and its type (<c>variable</c>, <c>method</c>, <c>keyword</c>...).
 /// </summary>
-internal readonly record struct SemanticToken(int Line, int Character, int Length, string Type);
+internal readonly record struct SemanticToken(int Line, int Character, int Length, string Type)
+{
+    // The token types of symbols, which have a hover: the protocol's, and those of Roslyn and gopls. Keywords,
+    // literals, comments, operators and punctuation have none worth showing.
+    private static readonly HashSet<string> Symbols = new(StringComparer.Ordinal)
+    {
+        "namespace", "type", "class", "enum", "interface", "struct", "typeParameter", "parameter", "variable", "property",
+        "enumMember", "event", "function", "method", "label", "delegate", "extensionMethod", "field", "constant",
+        "recordClass", "recordStruct", "module",
+    };
+
+    /// <summary>
+    /// Whether a token of this type names a symbol.
+    /// </summary>
+    public static bool IsSymbol(string type) => Symbols.Contains(type);
+}
 
 /// <summary>
 /// What checking a snippet gave: a result, why the snippet is rejected, or both (a result with errors, which a step
