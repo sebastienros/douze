@@ -19,7 +19,7 @@ internal enum ShortcodeDisplay { Block, Inline }
 /// <param name="Template">The parsed template, without the front matter.</param>
 /// <param name="ContentHash">The hash of the file, recorded as a template dependency by every render.</param>
 /// <param name="LineOffset">The lines of the front matter: added to the positions in the template.</param>
-internal sealed record ShortcodeDefinition(string Name, FPath Path, bool Block, ShortcodeDisplay Display, ImmutableArray<string> ArgNames, ParsedTemplate Template, Hash128 ContentHash, int LineOffset);
+internal sealed record ShortcodeDefinition(string Name, FPath Path, bool Block, ShortcodeDisplay Display, ImmutableArray<string> ArgNames, ImmutableArray<string> Params, ParsedTemplate Template, Hash128 ContentHash, int LineOffset);
 
 /// <summary>
 /// The shortcodes of a site (<c>site.shortcodes</c>, default <c>&lt;includes&gt;/shortcodes/</c>). <see cref="ScanAsync"/>
@@ -28,7 +28,7 @@ internal sealed record ShortcodeDefinition(string Name, FPath Path, bool Block, 
 /// </summary>
 internal sealed class ShortcodeRegistry
 {
-    public static readonly ImmutableArray<string> FrontMatterKeys = ["block", "display", "args"];
+    public static readonly ImmutableArray<string> FrontMatterKeys = ["block", "display", "args", "params"];
 
     // Names that are part of other tags' syntax.
     private static readonly FrozenSet<string> ReservedNames = FrozenSet.Create(StringComparer.Ordinal, "else", "elsif", "when", "empty", "blank", "nil", "true", "false");
@@ -83,7 +83,7 @@ internal sealed class ShortcodeRegistry
 
         var errors = new List<WorkflowValidationError>();
         var builtIns = parser.RegisteredTags.Keys.ToFrozenSet(StringComparer.Ordinal);
-        var pending = new List<(string Name, FPath Path, bool Block, ShortcodeDisplay Display, ImmutableArray<string> ArgNames, string Body, int LineOffset, Hash128 Hash)>();
+        var pending = new List<(string Name, FPath Path, bool Block, ShortcodeDisplay Display, ImmutableArray<string> ArgNames, ImmutableArray<string> Params, string Body, int LineOffset, Hash128 Hash)>();
 
         foreach (var path in files)
         {
@@ -134,13 +134,13 @@ internal sealed class ShortcodeRegistry
                 continue;
             }
 
-            if (!TryReadFrontMatter(name, values, location, errors, out var block, out var display, out var argNames))
+            if (!TryReadFrontMatter(name, values, location, errors, out var block, out var display, out var argNames, out var parameters))
             {
                 continue;
             }
 
             var lineOffset = text.AsSpan(0, text.Length - body.Length).Count('\n');
-            pending.Add((name, path, block, display, argNames, body, lineOffset, Hash128.Of(bytes)));
+            pending.Add((name, path, block, display, argNames, parameters, body, lineOffset, Hash128.Of(bytes)));
         }
 
         // Every name is a tag before any template is parsed: a shortcode can use another one. Paired names first, so
@@ -169,7 +169,7 @@ internal sealed class ShortcodeRegistry
             try
             {
                 var template = loader.GetOrParse(Hash128.OfText(shortcode.Body), shortcode.Body, shortcode.Path.FullName);
-                definitions.Add(new ShortcodeDefinition(shortcode.Name, shortcode.Path, shortcode.Block, shortcode.Display, shortcode.ArgNames, template, shortcode.Hash, shortcode.LineOffset));
+                definitions.Add(new ShortcodeDefinition(shortcode.Name, shortcode.Path, shortcode.Block, shortcode.Display, shortcode.ArgNames, shortcode.Params, template, shortcode.Hash, shortcode.LineOffset));
             }
             catch (TemplateParseException e)
             {
@@ -206,12 +206,13 @@ internal sealed class ShortcodeRegistry
         return WorkflowValidationException.Suggest(reason[prefix.Length..end], names);
     }
 
-    private static bool TryReadFrontMatter(string name, NodeObject values, SourceLocation location, List<WorkflowValidationError> errors, out bool block, out ShortcodeDisplay display, out ImmutableArray<string> argNames)
+    private static bool TryReadFrontMatter(string name, NodeObject values, SourceLocation location, List<WorkflowValidationError> errors, out bool block, out ShortcodeDisplay display, out ImmutableArray<string> argNames, out ImmutableArray<string> parameters)
     {
         var valid = true;
         block = false;
         display = ShortcodeDisplay.Inline;
         argNames = [];
+        parameters = [];
         string? displayText = null;
 
         foreach (var property in values.OrderBy(x => x.Key, StringComparer.Ordinal))
@@ -242,6 +243,16 @@ internal sealed class ShortcodeRegistry
 
                 case "args":
                     errors.Add(new($"'args' of shortcode '{name}' must be a list of names (lowercase letters, digits and underscores)", location));
+                    valid = false;
+                    break;
+
+                // Named arguments the template reads: one that the call does not pass is nil rather than the page's value of that name.
+                case "params" when property.Value is NodeArray array && array.All(x => x is NodeValue<string> { Value: var v } && IsTagName(v)):
+                    parameters = [.. array.Select(x => ((NodeValue<string>)x!).Value)];
+                    break;
+
+                case "params":
+                    errors.Add(new($"'params' of shortcode '{name}' must be a list of names (lowercase letters, digits and underscores)", location));
                     valid = false;
                     break;
 

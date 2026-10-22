@@ -56,6 +56,17 @@ internal static class ShortcodeTag
             }
         }
 
+        // A declared parameter the call does not pass is nil, not the page's value of the same name.
+        foreach (var parameter in shortcode.Params)
+        {
+            values[parameter] = NilValue.Instance;
+        }
+
+        foreach (var parameter in shortcode.ArgNames)
+        {
+            values[parameter] = NilValue.Instance;
+        }
+
         for (var i = 0; i < positional.Count && i < shortcode.ArgNames.Length; i++)
         {
             values[shortcode.ArgNames[i]] = positional[i];

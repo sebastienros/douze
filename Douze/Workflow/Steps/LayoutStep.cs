@@ -62,8 +62,19 @@ internal sealed class LayoutStep : Step, IMapStep
                 throw new DouzeException($"layout chain is longer than {MaxDepth}: {string.Join(" -> ", chain)}");
             }
 
-            var loaded = await _loader!.LoadAsync(new FPath(layout), context.Dependencies, ct)
-                ?? throw new DouzeException($"layout '{layout}' not found in '{_includes ?? context.Build.Site.IncludesFolder}'{(file.SourcePath is { } source ? $" (used by '{source}')" : "")}");
+            // A name without an extension is tried as is, then as .liquid, then as .html, like an include.
+            var loaded = await _loader!.LoadAsync(new FPath(layout), context.Dependencies, ct);
+
+            if (loaded == null && string.IsNullOrEmpty(Path.GetExtension(layout)))
+            {
+                loaded = await _loader.LoadAsync(new FPath(layout + ".liquid"), context.Dependencies, ct)
+                    ?? await _loader.LoadAsync(new FPath(layout + ".html"), context.Dependencies, ct);
+            }
+
+            if (loaded == null)
+            {
+                throw new DouzeException($"layout '{layout}' not found in '{_includes ?? context.Build.Site.IncludesFolder}'{(file.SourcePath is { } source ? $" (used by '{source}')" : "")}");
+            }
 
             // The front matter of an inner layout wins over the one of its own layout.
             fallback = Layer(loaded.FrontMatter, fallback);

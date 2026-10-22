@@ -68,15 +68,22 @@ internal static class HeadingScanner
     /// one (<c>null</c>: none), <paramref name="append"/> the HTML to write at the end of a heading's content
     /// (<c>null</c>: none).
     /// </summary>
-    public static string Rewrite(string html, IReadOnlyList<Heading> headings, Func<Heading, string?> id, Func<Heading, string?> append)
+    public static string Rewrite(string html, IReadOnlyList<Heading> headings, Func<Heading, string?> id, Func<Heading, string?> append, Func<Heading, string?>? before = null, Func<Heading, string?>? after = null)
     {
         using var builder = ZString.CreateStringBuilder();
         var position = 0;
 
         foreach (var heading in headings)
         {
+            builder.Append(html.AsSpan(position, heading.Start - position));
+
+            if (before?.Invoke(heading) is { } opening)
+            {
+                builder.Append(opening);
+            }
+
             // "<hN"
-            builder.Append(html.AsSpan(position, heading.Start + 3 - position));
+            builder.Append(html.AsSpan(heading.Start, 3));
 
             if (heading.Id == null && id(heading) is { } value)
             {
@@ -92,7 +99,15 @@ internal static class HeadingScanner
                 builder.Append(extra);
             }
 
-            position = heading.CloseStart;
+            // "</hN>"
+            builder.Append(html.AsSpan(heading.CloseStart, heading.End - heading.CloseStart));
+
+            if (after?.Invoke(heading) is { } closing)
+            {
+                builder.Append(closing);
+            }
+
+            position = heading.End;
         }
 
         builder.Append(html.AsSpan(position));

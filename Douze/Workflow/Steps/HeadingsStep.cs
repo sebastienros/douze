@@ -10,8 +10,9 @@ namespace Douze.Workflow.Steps;
 /// are GitHub style slugs of their text (<see cref="Slugger"/>), <c>-1</c>, <c>-2</c>... for duplicates. Sets
 /// <c>headings</c> (every heading: <c>depth</c>, <c>text</c>, <c>id</c>), <c>toc</c> (the headings of
 /// <c>with.levels</c>, default <c>[2, 3]</c>, nested in <c>children</c>) and <c>page.heading</c> (the text of the first
-/// <c>h1</c>). <c>with.anchors: true</c> appends <c>&lt;a class="heading-anchor" href="#id" aria-label="..."&gt;#&lt;/a&gt;</c>
-/// to each heading (<c>with.anchor-class</c>, <c>with.anchor-label</c>).
+/// <c>h1</c>). <c>with.anchors: true</c> appends an anchor link to each heading (<c>with.anchor-class</c>,
+/// <c>with.anchor-label</c>, <c>with.anchor-html</c>: the visible content); with <c>with.wrapper-class</c> the heading
+/// and its anchor are wrapped in <c>&lt;div class="&lt;wrapper&gt; level-hN"&gt;</c> instead, the anchor after the heading.
 /// </summary>
 internal sealed class HeadingsStep : Step, IMapStep
 {
@@ -20,15 +21,19 @@ internal sealed class HeadingsStep : Step, IMapStep
     private readonly bool _anchors;
     private readonly string _anchorClass;
     private readonly string _anchorLabel;
+    private readonly string _anchorHtml;
+    private readonly string? _wrapperClass;
     private readonly ImmutableArray<int> _levels;
 
     public HeadingsStep(StepDefinition definition) : base(definition)
     {
-        var options = new WithOptions(definition, "anchors", "anchor-class", "anchor-label", "levels");
+        var options = new WithOptions(definition, "anchors", "anchor-class", "anchor-label", "anchor-html", "wrapper-class", "levels");
 
         _anchors = options.GetBool("anchors");
         _anchorClass = options.GetString("anchor-class", "heading-anchor")!;
         _anchorLabel = options.GetString("anchor-label", "Link to this heading")!;
+        _anchorHtml = options.GetString("anchor-html", "#")!;
+        _wrapperClass = options.GetString("wrapper-class");
         _levels = ReadLevels(definition);
     }
 
@@ -63,11 +68,19 @@ internal sealed class HeadingsStep : Step, IMapStep
         var label = HeadingScanner.EncodeAttribute(_anchorLabel);
         var anchorClass = HeadingScanner.EncodeAttribute(_anchorClass);
 
+        // Without a wrapper class the anchor is appended inside the heading; with one, the heading and the anchor are
+        // wrapped in <div class="<wrapper> level-hN">, the anchor after the heading (the markup of documentation themes).
+        var wrapper = _wrapperClass is { } w ? HeadingScanner.EncodeAttribute(w) : null;
+
         var rewritten = HeadingScanner.Rewrite(
             html,
             headings,
             x => ids[index[x.Start]],
-            x => _anchors ? $"<a class=\"{anchorClass}\" href=\"#{HeadingScanner.EncodeAttribute(ids[index[x.Start]])}\" aria-label=\"{label}\">#</a>" : null);
+            x => _anchors && wrapper == null ? Anchor(x) : null,
+            x => wrapper != null ? $"<div class=\"{wrapper} level-h{x.Depth}\">" : null,
+            x => wrapper != null ? $"{(_anchors ? Anchor(x) : "")}</div>" : null);
+
+        string Anchor(Heading x) => $"<a class=\"{anchorClass}\" href=\"#{HeadingScanner.EncodeAttribute(ids[index[x.Start]])}\"><span aria-hidden=\"true\">{_anchorHtml}</span><span class=\"sr-only\">{label}</span></a>";
 
         var all = new NodeArray();
 

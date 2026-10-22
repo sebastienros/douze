@@ -64,7 +64,7 @@ public class HeadingsStepTests : StepTestBase
     {
         var file = await BuildPageAsync("## Setup\n", With(("anchors", NodeValue.Create(true)), ("anchor-class", NodeValue.Create("anchor")), ("anchor-label", NodeValue.Create("Link to \"section\""))));
 
-        Assert.Equal("<h2 id=\"setup\">Setup<a class=\"anchor\" href=\"#setup\" aria-label=\"Link to &quot;section&quot;\">#</a></h2>\n", await TextAsync(file));
+        Assert.Equal("<h2 id=\"setup\">Setup<a class=\"anchor\" href=\"#setup\"><span aria-hidden=\"true\">#</span><span class=\"sr-only\">Link to &quot;section&quot;</span></a></h2>\n", await TextAsync(file));
     }
 
     [Fact]

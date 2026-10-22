@@ -206,7 +206,7 @@ public class ShortcodeTests : SiteTestBase
 
         Assert.Equal([
             "/_includes/shortcodes/bad.liquid(1,1): error: 'block' of shortcode 'bad' must be true or false",
-            "/_includes/shortcodes/bad.liquid(1,1): error: unknown key 'displya' in the front matter of shortcode 'bad'; expected 'block', 'display' or 'args'",
+            "/_includes/shortcodes/bad.liquid(1,1): error: unknown key 'displya' in the front matter of shortcode 'bad'; expected 'block', 'display', 'args' or 'params'",
             "/_includes/shortcodes/endslot.liquid(1,1): error: shortcode 'endslot' hides a built-in tag; rename the file",
             "/_includes/shortcodes/include.liquid(1,1): error: shortcode 'include' hides a built-in tag; rename the file",
             "/_includes/shortcodes/link-card.liquid(1,1): error: 'link-card.liquid' is not a shortcode name: use lowercase letters, digits and underscores",
