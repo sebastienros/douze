@@ -29,11 +29,19 @@ internal sealed partial class CodeTokenizer
     /// </summary>
     internal static readonly TimeSpan DefaultLineTimeLimit = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// The most registries of a language at once. Each compiles the regexes of its grammars in Oniguruma's native heap,
+    /// tens of MB for the large grammars, which the GC does not see: one per parallel unit was 800 MB at 14 units on a
+    /// large site. A unit waits for a registry of its language when they are all in use; tokenizing is a small part of a
+    /// unit.
+    /// </summary>
+    internal const int MaxRegistriesPerLanguage = 4;
+
     private static readonly HashSet<string> PlainLanguages = new(["", "plaintext", "txt", "text", "plain", "ansi"], StringComparer.Ordinal);
 
     private readonly Dictionary<string, GrammarInfo> _byName = new(StringComparer.Ordinal);
     private readonly Dictionary<string, GrammarInfo> _byScope = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, ConcurrentBag<Registry>> _pools = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, RegistryPool> _pools = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<CodeTheme> _themes;
     private readonly TimeSpan _lineTimeLimit;
 
@@ -102,17 +110,19 @@ internal sealed partial class CodeTokenizer
             return result;
         }
 
-        var pool = _pools.GetOrAdd(grammar.Name, _ => []);
+        var pool = _pools.GetOrAdd(grammar.Name, _ => new RegistryPool());
+        pool.Slots.Wait();
 
-        if (!pool.TryTake(out var registry))
-        {
-            registry = new Registry(new Locator(this, grammar));
-        }
-
+        Registry? registry = null;
         var reusable = false;
 
         try
         {
+            if (!pool.Registries.TryTake(out registry))
+            {
+                registry = new Registry(new Locator(this, grammar));
+            }
+
             var tmGrammar = registry.LoadGrammar(grammar.ScopeName)
                 ?? throw new DouzeException($"the grammar of '{language}' ({grammar.ScopeName}) could not be loaded");
             IStateStack? state = null;
@@ -175,11 +185,23 @@ internal sealed partial class CodeTokenizer
             // A registry that failed may be left half compiled.
             if (reusable)
             {
-                pool.Add(registry);
+                pool.Registries.Add(registry!);
             }
+
+            pool.Slots.Release();
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The registries of a language: at most <see cref="MaxRegistriesPerLanguage"/>, each used by one thread at a time.
+    /// </summary>
+    private sealed class RegistryPool
+    {
+        public SemaphoreSlim Slots { get; } = new(MaxRegistriesPerLanguage, MaxRegistriesPerLanguage);
+
+        public ConcurrentBag<Registry> Registries { get; } = [];
     }
 
     /// <summary>

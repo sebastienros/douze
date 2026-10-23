@@ -27,6 +27,8 @@ internal sealed class WriteStep : Step, IMapStep, IReplayObserver
 
     public override StepShape NativeShape => StepShape.Map;
 
+    public override bool ReadsScopes => false;
+
     public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
     {
         _written.Clear();

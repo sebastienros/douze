@@ -331,7 +331,7 @@ internal static class ImageSources
     /// the unit again.
     /// </summary>
     /// <exception cref="DouzeException">The file does not exist.</exception>
-    public static async ValueTask<ReadOnlyMemory<byte>> ReadAsync(IFileSystem source, FPath path, string src, DependencyTracker? deps)
+    public static async ValueTask<byte[]> ReadAsync(IFileSystem source, FPath path, string src, DependencyTracker? deps)
     {
         if (!(await source.GetFileEntryAsync(path)).Exists)
         {
@@ -339,9 +339,20 @@ internal static class ImageSources
         }
 
         await using var stream = await source.OpenFileAsync(path);
-        using var memory = new MemoryStream();
-        await stream.CopyToAsync(memory);
-        var bytes = memory.ToArray();
+        byte[] bytes;
+
+        // Read once into an array of the file's length: a source is read on every render that uses it.
+        if (stream.CanSeek)
+        {
+            bytes = new byte[stream.Length];
+            await stream.ReadExactlyAsync(bytes);
+        }
+        else
+        {
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            bytes = memory.ToArray();
+        }
 
         deps?.RecordTemplate(path, Hash128.Of(bytes));
         return bytes;

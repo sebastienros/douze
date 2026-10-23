@@ -209,6 +209,43 @@ public class BackpressureTests : CacheTestBase
     }
 
     [Fact]
+    public async Task AStepThatReadsNoScopesDoesNotWaitForABarrier()
+    {
+        // 'sink' (like write) reads no scopes: it reads the files of 'api' while 'collect', upstream of it through
+        // 'render', is still running, so the channel from 'api' is bounded instead of holding every page until 'collect'
+        // is done. 'collect' completes only once 'sink' consumed every file of 'api': waiting for its contribution
+        // would never end.
+        var site = await new FakeSite().WithFilesAsync([.. Files(20, "md"), .. Files(100, "json")]);
+        var consumed = 0;
+        var allConsumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var graph = new FakeWorkflow()
+            .Add("pages", Identity, inputs: ["**/*.md"])
+            .Add("collect", d => new FakeReduceStep(d) { Before = ct => allConsumed.Task.WaitAsync(ct) }, needs: ["pages"])
+            .Add("render", d => new FakeMapStep(d), needs: ["pages", "collect"])
+            .Add("api", Identity, inputs: ["**/*.json"])
+            .Add("sink", d => new FakeMapStep(d)
+            {
+                Scopes = false,
+                Before = (f, _) =>
+                {
+                    if (f.Path.GetExtensionWithDot() == ".json" && Interlocked.Increment(ref consumed) == 100)
+                    {
+                        allConsumed.SetResult();
+                    }
+
+                    return Task.CompletedTask;
+                },
+            }, needs: ["render", "api"])
+            .Build();
+
+        var result = await WithinTimeout(site.BuildAsync(graph, parallelism: 2));
+
+        Assert.True(result.Succeeded, string.Join("\n", result.Errors));
+        Assert.Equal(120, result["sink"].FilesConsumed);
+    }
+
+    [Fact]
     public async Task CancellationReleasesBlockedProducers()
     {
         var site = await new FakeSite().WithFilesAsync(Files(100));

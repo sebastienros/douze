@@ -37,6 +37,75 @@ public class FileContentTests
         }
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task ACompactedTextReadsTheSame(int shift)
+    {
+        // Multi-byte characters (2, 3 and 4 bytes in UTF-8, the last a surrogate pair) on both sides of every block
+        // boundary, shifted so that each falls across one.
+        var ct = TestContext.Current.CancellationToken;
+        var builder = new StringBuilder("\ufeff").Append('x', shift);
+
+        while (builder.Length < 3 * FileContent.Utf8Blocks.BlockSize)
+        {
+            builder.Append("é<pre>€😀");
+        }
+
+        var text = builder.ToString();
+        var expected = text[1..];
+        var content = FileContent.FromText(text);
+        var hash = content.Hash;
+        var length = content.Length;
+
+        content.Compact();
+        content.Compact();
+
+        Assert.Equal(hash, content.Hash);
+        Assert.Equal(length, content.Length);
+        Assert.Equal(expected, await content.ReadTextAsync(ct));
+        Assert.Equal(Encoding.UTF8.GetBytes(expected), (await content.ReadBytesAsync(ct)).ToArray());
+
+        using var rented = await content.RentBytesAsync(ct);
+        Assert.Equal(Encoding.UTF8.GetBytes(expected), rented.Memory.ToArray());
+
+        await using var stream = await content.OpenReadAsync(ct);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        Assert.Equal(expected, await reader.ReadToEndAsync(ct));
+    }
+
+    [Fact]
+    public async Task ATextCompactedWhileItIsReadReadsTheSame()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var text = string.Concat(Enumerable.Repeat("€ 100 000 ", 20_000));
+
+        for (var round = 0; round < 20; round++)
+        {
+            var content = FileContent.FromText(text);
+
+            await Task.WhenAll(Enumerable.Range(0, 8).Select(reader => Task.Run(async () =>
+            {
+                if (reader == 0)
+                {
+                    content.Compact();
+                }
+                else if (reader % 2 == 0)
+                {
+                    using var rented = await content.RentBytesAsync(ct);
+                    Assert.Equal(Encoding.UTF8.GetByteCount(text), rented.Memory.Length);
+                }
+                else
+                {
+                    Assert.Equal(text, await content.ReadTextAsync(ct));
+                    Assert.Equal(Hash128.OfText(text), content.Hash);
+                }
+            }, ct)));
+        }
+    }
+
     [Fact]
     public async Task LazyFileIsReadOnce()
     {

@@ -44,6 +44,11 @@ internal sealed class FakeMapStep : Step, IMapStep
 
     public override bool ReadsContent => Contents;
 
+    /// <summary>Whether the step reads the scopes (<see cref="Step.ReadsScopes"/>).</summary>
+    public bool Scopes { get; init; } = true;
+
+    public override bool ReadsScopes => Scopes;
+
     /// <summary>Whether the step claims to record the own keys it reads.</summary>
     public bool OwnReads { get; init; }
 

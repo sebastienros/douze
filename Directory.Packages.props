@@ -24,6 +24,10 @@
     <PackageVersion Include="ZString" Version="2.6.0" />
     <!-- Scripts (scripts/*.cs) -->
     <PackageVersion Include="NuGet.Versioning" Version="7.9.0" />
+    <!-- Image benchmark (bench/Douze.ImageBench), compared with NetVips -->
+    <PackageVersion Include="SkiaSharp" Version="4.153.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.macOS" Version="4.153.1" />
+    <PackageVersion Include="Svg.Skia" Version="5.2.3" />
     <!-- Testing -->
     <PackageVersion Include="Spectre.Console.Testing" Version="0.57.2" />
     <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.2" />
