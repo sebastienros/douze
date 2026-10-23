@@ -1149,9 +1149,12 @@ internal sealed class Scheduler
             var provenance = new Provenance(Name, inputs);
             var outputs = new VirtualFile[cached.Outputs.Length];
 
+            // Each output is matched against the inputs: indexed when both are many, scanned otherwise.
+            var index = inputFiles.Count > 16 && outputs.Length > 16 ? new BuildCache.RestoreIndex(inputFiles) : null;
+
             for (var i = 0; i < outputs.Length; i++)
             {
-                outputs[i] = replay.Cache.Restore(cached.Outputs[i], inputFiles, provenance);
+                outputs[i] = index != null ? replay.Cache.Restore(cached.Outputs[i], index, provenance) : replay.Cache.Restore(cached.Outputs[i], inputFiles, provenance);
             }
 
             try

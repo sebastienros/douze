@@ -107,6 +107,48 @@ public sealed class BuildCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task RestoreWithAnIndexMatchesTheScan()
+    {
+        // A unit with many inputs and outputs (a batch step) restores its outputs from an index of its inputs.
+        var inputs = Enumerable.Range(0, 40).Select(i => new VirtualFile(new FPath($"/{i}.md"), FileContent.FromText($"content {i % 20}"), new Metadata(new NodeObject { ["n"] = NodeValue.Create(i % 10) }, "/"), null, Provenance.Source)).ToArray();
+        var files = new[]
+        {
+            inputs[25],
+            inputs[3].With("step", path: "/3.html"),
+            inputs[4].With("step", path: "/4.html", metadata: new Metadata(new NodeObject { ["n"] = NodeValue.Create(99) }, "/")),
+            inputs[5].With("step", path: "/5.html", content: FileContent.FromText("new")),
+        };
+
+        using var cache = Open();
+        var outputs = new List<CachedOutput>();
+
+        foreach (var file in files)
+        {
+            outputs.Add(await cache.StoreOutputAsync(file, inputs, Ct));
+        }
+
+        var provenance = new Provenance("step", [.. inputs.Select(x => x.Ref)]);
+        var index = new BuildCache.RestoreIndex(inputs);
+
+        foreach (var (output, file) in outputs.Zip(files))
+        {
+            var scanned = cache.Restore(output, inputs, provenance);
+            var indexed = cache.Restore(output, index, provenance);
+
+            Assert.Equal(file.Ref, indexed.Ref);
+            Assert.Equal(scanned.Ref, indexed.Ref);
+            Assert.Equal(await scanned.Content.ReadTextAsync(Ct), await indexed.Content.ReadTextAsync(Ct));
+        }
+
+        // An output equal to an input is that input; equal content or metadata are the first input's that has them.
+        Assert.Same(inputs[25], cache.Restore(outputs[0], index, provenance));
+        Assert.Same(inputs[3].Content, cache.Restore(outputs[1], index, provenance).Content);
+        Assert.Same(inputs[4].Content, cache.Restore(outputs[2], index, provenance).Content);
+        Assert.DoesNotContain(cache.Restore(outputs[2], index, provenance).Metadata, inputs.Select(x => x.Metadata));
+        Assert.Same(inputs[5].Metadata, cache.Restore(outputs[3], index, provenance).Metadata);
+    }
+
+    [Fact]
     public async Task ReadsAfterDisposeLeaveNoPackOpen()
     {
         var input = Input("/a.md");

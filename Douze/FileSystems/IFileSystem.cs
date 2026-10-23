@@ -25,6 +25,10 @@ public interface IFileSystem
 
     ValueTask CreateDirectoryAsync(FPath path);
 
+    /// <summary>
+    /// Returns the length and dates of a file.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">The file does not exist.</exception>
     ValueTask<FileMetadata> GetFileMetadataAsync(FPath path);
 
     /// <summary>
