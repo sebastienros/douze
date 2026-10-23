@@ -30,8 +30,8 @@ internal static partial class Compare
             bytesA += new FileInfo(pathA).Length;
             bytesB += new FileInfo(pathB).Length;
 
-            using var imageA = SKBitmap.Decode(pathA);
-            using var imageB = SKBitmap.Decode(pathB);
+            using var imageA = Decode(pathA);
+            using var imageB = Decode(pathB);
 
             if (imageA.Width != imageB.Width || imageA.Height != imageB.Height)
             {
@@ -58,31 +58,41 @@ internal static partial class Compare
             .ToDictionary(x => HashPart().Replace(Path.GetRelativePath(folder, x), "."), x => x, StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// The pixels of an image as unpremultiplied RGBA, 8 bits per channel, whatever its format.
+    /// </summary>
+    private static SKBitmap Decode(string path)
+    {
+        using var codec = SKCodec.Create(path) ?? throw new InvalidOperationException($"cannot read '{path}'");
+        var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        var bitmap = new SKBitmap(info);
+        codec.GetPixels(info, bitmap.GetPixels());
+        return bitmap;
+    }
+
+    // Over the raw pixels: GetPixel per pixel took minutes over a site's variants.
     private static double Psnr(SKBitmap a, SKBitmap b)
     {
+        var pixelsA = a.GetPixelSpan();
+        var pixelsB = b.GetPixelSpan();
         double sum = 0;
-        long count = 0;
 
-        for (var y = 0; y < a.Height; y++)
+        for (var i = 0; i < pixelsA.Length; i += 4)
         {
-            for (var x = 0; x < a.Width; x++)
+            double alphaA = pixelsA[i + 3] / 255.0, alphaB = pixelsB[i + 3] / 255.0;
+
+            for (var c = 0; c < 3; c++)
             {
-                var (ra, ga, ba) = OnWhite(a.GetPixel(x, y));
-                var (rb, gb, bb) = OnWhite(b.GetPixel(x, y));
-                sum += (ra - rb) * (ra - rb) + (ga - gb) * (ga - gb) + (ba - bb) * (ba - bb);
-                count += 3;
+                var difference = OnWhite(pixelsA[i + c], alphaA) - OnWhite(pixelsB[i + c], alphaB);
+                sum += difference * difference;
             }
         }
 
-        var mse = sum / count;
+        var mse = sum / (pixelsA.Length / 4 * 3);
         return mse == 0 ? 99 : 10 * Math.Log10(255 * 255 / mse);
     }
 
-    private static (double R, double G, double B) OnWhite(SKColor color)
-    {
-        var alpha = color.Alpha / 255.0;
-        return (color.Red * alpha + 255 * (1 - alpha), color.Green * alpha + 255 * (1 - alpha), color.Blue * alpha + 255 * (1 - alpha));
-    }
+    private static double OnWhite(byte channel, double alpha) => channel * alpha + 255 * (1 - alpha);
 
     [GeneratedRegex(@"\.[0-9a-f]{8}\.")]
     private static partial Regex HashPart();

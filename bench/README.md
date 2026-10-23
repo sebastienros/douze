@@ -495,7 +495,9 @@ per build:
   over the 573 sources, 26 MB of footprint on the 10 MB JPEG, 1 to 14 MB on the batch), but the target site's image
   work is a few hundred MB of allocations in a build that peaks at about 5 GB: the cost is elsewhere. In Douze it would
   also mean variants bypassing `FileContent` and `write` (an output written by the image step, outside the cache's
-  blobs), which the engine is not built for.
+  blobs), which the engine is not built for. What is cheap is done: `ImageSources.ReadAsync` reads a source once into
+  an array of its length (it went through a `MemoryStream` and `ToArray`, two copies on every render that uses an
+  image, and a third in `social-image`).
 - **Keep the memo as it is.** 20 MB is 0.4% of the peak, and the memo without bytes needs a second encode whenever a
   page that did not take the bytes reaches `write` first; the prototype is not merged. If the memo ever matters (a
   site with thousands of large variants), the better fix is a `FileContent` that reads the written output file instead

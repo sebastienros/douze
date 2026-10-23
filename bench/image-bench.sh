@@ -30,6 +30,18 @@ run() {
   echo "$line | time -l footprint $footprint"
 }
 
+# Every mode once on one file before the measured runs, so that a broken mode fails in seconds, not after them.
+first=$(ls "$singles"/* | head -1)
+for lib in vips skia; do
+  for io in buffer stream; do
+    rm -rf "$scratch/smoke"
+    "$bin" variants --lib "$lib" --io "$io" --inputs "$first" --out "$scratch/smoke" --parallel 1 --formats webp,jpeg >/dev/null
+    [[ -n $(ls "$scratch/smoke") ]] || { echo "smoke: $lib $io wrote nothing" >&2; exit 1; }
+  done
+  "$bin" svg --lib "$lib" --svg "$svg" --out "$scratch/smoke-svg" --count 2 --parallel 1 >/dev/null
+done
+rm -rf "$scratch/smoke" "$scratch/smoke-svg"
+
 echo "## Per operation (-p 1, 5 repeats)"
 for file in "$singles"/*; do
   for variant in "webp 640" "webp 1280" "jpeg 1280"; do

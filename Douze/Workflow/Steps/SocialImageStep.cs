@@ -301,7 +301,7 @@ internal sealed partial class SocialImageStep : Step, IMapStep
     {
         var file = await _sources.GetOrAdd(path, static (path, state) => new Lazy<Task<SourceFile>>(async () =>
         {
-            var bytes = (await ImageSources.ReadAsync(state.Source, path, state.Src, null)).ToArray();
+            var bytes = await ImageSources.ReadAsync(state.Source, path, state.Src, null);
             return new SourceFile(bytes, Hash128.Of(bytes));
         }, LazyThreadSafetyMode.ExecutionAndPublication), (Source: context.Build.Source, Src: src)).Value;
 
