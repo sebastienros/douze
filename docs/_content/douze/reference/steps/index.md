@@ -42,6 +42,7 @@ steps:
 | [hover-typescript](hover-typescript.md) | reduce | `**/*.html` | | Adds TypeScript type information (twoslash) to fences. |
 | [hover-csharp](hover-csharp.md) | reduce | `**/*.html` | | Adds C# hovers and errors to fences, with Roslyn. |
 | [hover-go](hover-go.md) | reduce | `**/*.html` | | Adds Go hovers and errors to fences, with gopls. |
+| [check-code](check-code.md) | map | `**/*.html` | | Checks that code samples and generated files are well formed (YAML, JSON, XML, Liquid, `douze.yml`). |
 | [images](images.md) | map | `**/*.{png,jpg,jpeg,webp,avif,gif,svg}` | | Makes the variants of images and sets `image`. |
 | [image-map](image-map.md) | reduce | every file | | Publishes `images`, the images by source url. |
 | [pictures](pictures.md) | map | `**/*.html` | | Rewrites the `<img>` of known images into responsive markup. |

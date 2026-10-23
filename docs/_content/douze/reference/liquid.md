@@ -261,7 +261,8 @@ The key of the locale whose prefix starts the url (`/ja/x/` is `ja`), the defaul
 ### locale_pages
 
 ```liquid
-{% for p in collections.all | locale_pages %}
+{% assign pages = collections.all | locale_pages %}
+{% for p in pages %}
 <url><loc>{{ p.url | absolute_url }}</loc></url>
 {% endfor %}
 ```
@@ -299,7 +300,8 @@ the url is not in the sidebar.
 ### nav_breadcrumbs
 
 ```liquid
-{% for item in sidebar | nav_breadcrumbs: page.url %}{{ item | nav_label }} / {% endfor %}
+{% assign trail = sidebar | nav_breadcrumbs: page.url %}
+{% for item in trail %}{{ item | nav_label }} / {% endfor %}
 ```
 
 The items from the top of the sidebar to the url's item. Empty when the url is not in the sidebar.
@@ -445,7 +447,7 @@ Errors: `include_markdown: '<path>' not found in '<folder>'`, `include_markdown:
 
 ### slot
 
-```liquid
+```liquid nocheck
 {% card %}
 {% slot "title" %}Get started{% endslot %}
 Body text.

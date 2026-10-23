@@ -225,7 +225,7 @@ The protocol version is 1.
    `concurrency` the build's parallelism. The worker answers with how many requests it takes at once (1 when omitted);
    Douze sends at most the smaller of both.
 
-   ```json
+   ```jsonl
    {"type":"hello","protocol":1,"step":"upper","concurrency":8,"options":{"greeting":"hi"},"site":"/abs/_site","source":"/abs/src"}
    {"type":"ready","protocol":1,"concurrency":4,"name":"upper"}
    ```
@@ -233,7 +233,7 @@ The protocol version is 1.
 2. Requests. One `file` per consumed file, answered in any order with a `result` or an `error` of the same `id`.
    `encoding` is `utf8` for text and `base64` for binary content.
 
-   ```json
+   ```jsonl
    {"type":"file","id":"42","path":"/docs/a.html","contentType":"text/html","encoding":"utf8","content":"<h1>A</h1>","metadata":{"title":"A"}}
    {"type":"result","id":"42","files":[{"path":"/docs/a.html","encoding":"utf8","content":"<H1>A</H1>","metadata":{"upper":true}}]}
    {"type":"error","id":"42","message":"TS2304: Cannot find name 'foo'","file":"/docs/a.md","line":12,"column":3}
@@ -246,14 +246,14 @@ The protocol version is 1.
 
 3. Logs, at any time, shown with the step name. `level` is `debug`, `info`, `warn` or `error` (default `info`):
 
-   ```json
+   ```jsonl
    {"type":"log","level":"info","message":"loaded api.d.ts in 1.2 s"}
    ```
 
 4. Shutdown. After the last answer, Douze sends `shutdown` and closes stdin. The worker exits with code 0 within 10
    seconds, or it is killed.
 
-   ```json
+   ```jsonl
    {"type":"shutdown"}
    ```
 
