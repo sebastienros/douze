@@ -323,7 +323,16 @@ public sealed class DevServerTests : IAsyncDisposable
             if (_socket.State == WebSocketState.Open)
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, timeout.Token);
+
+                try
+                {
+                    await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, timeout.Token);
+                }
+                catch (WebSocketException)
+                {
+                    // The server answers the close and drops the connection: a page that leaves does not wait for
+                    // the end of the handshake, and the connection can end before the server's close frame is read.
+                }
             }
 
             _socket.Dispose();
