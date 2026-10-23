@@ -588,6 +588,37 @@ Measured and not adopted:
 - **Fewer folders.** Writing 4000 files to one folder takes 25 ms against 170 ms with a folder per page (Docker): the
   `mkdir` is most of the cost. The folder per page is what pretty urls need, so it stays.
 
+### Docs-heavy pages: highlighted fences, headings, sidebar, 2026-10-23
+
+The docs-heavy scenario of the SSG comparison (on the docs-site branch: `run-docs-heavy.sh`, `scenarios/docs-heavy/`):
+pages of 6 to 10 KB with 3 to 6 fences in 7 languages (bash, ts, html, json, yaml, js, csharp; every fence unique),
+heading ids, a 50-page sidebar and a TOC, highlighted with one theme. Its runs: Douze 1.08, 3.09 and 12.4 s for 1000,
+4000 and 16,000 pages, Hugo 0.41, 1.31 and 5.7 s, Eleventy and Astro (Shiki) 6.9 and 16.8 s at 4000.
+
+At 4000 pages (17,892 fences, 266,941 code lines), the Time Profiler gives highlight 87% of the CPU, and Oniguruma's
+`onig_search` alone 75%: TextMateSharp's line tokenizer searching each pattern of the current rule from the current
+position. That is 1.5 ms of CPU per fence, 100 µs per code line. Onigwrap converts offsets with
+`Encoding.Unicode.GetByteCount` on every search (5% of the build's CPU, where `2 * chars` would do). Next: write 3.5%,
+the GC 3%, `CodeBlockBuilder` 3%, Markdown, Liquid and layout under 2% each, `headings` 50 µs per page. Units use 9 to 10
+cores out of 14 in Docker, as Hugo does.
+
+- **More registries per language does not help**: `MaxRegistriesPerLanguage` at 8 or 14 instead of 4 gives the same
+  time (3.4 to 4.2 s on macOS under load, either way) for 1.1 to 1.3 GB of peak RSS instead of 0.76 GB.
+- **The write and read changes of findings 16 and 17 are neutral here** (Docker, interleaved runs at 4000 pages: 2.98
+  to 3.12 s with and without the read change, the same as the scenario's own run).
+- **Memory at 16,000 pages**: peak RSS 1.6 GB on Linux (sampled `VmRSS`), 1.45 to 1.5 GB on macOS, 12.6 to 13.8 s on
+  macOS, linear from 4000 pages. The 12.4 to 21.3 s spread of the scenario's runs is not memory (the VM has 7.7 GB);
+  the host was loaded by other builds (load average 9 to 40 during these measurements).
+
+Speculative, not done:
+
+- **Onigwrap's offsets** (`2 * chars` instead of `GetByteCount`, a reused region instead of a `Region` per search):
+  about 5%, a change to a third party package (TextMateSharp's Onigwrap).
+- **A memo of tokenized fences per build**, keyed by grammar and code: nothing here (every fence is unique), but real
+  documentation repeats its install and setup snippets; tokens of every fence would stay in memory until the build ends.
+- **A faster tokenizer than TextMate grammars** (Hugo's Chroma lexers are hand-written regex tables): the 2.3x gap to
+  Hugo is the regex engine, not Douze's pipeline. Shiki-compatible output is the reason for TextMate.
+
 ## Findings
 
 Measured on the engine of phase 1b. None of these are fixed here (phase B owns only `bench/`); they feed phase 5.
