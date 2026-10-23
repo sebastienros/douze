@@ -142,6 +142,96 @@ public class LiquidStepTests : StepTestBase
         Assert.Equal("application/xml", Outputs(result["render"]).Single(x => x.Path == "/sitemap.xml").EffectiveContentType);
     }
 
+    // Output encoding.
+
+    [Fact]
+    public async Task FeedIsEncodedAsXmlOnce()
+    {
+        await Source.WriteTextFileAsync("/_content/post.md", "---\ntitle: Tom & \"Jerry\" <3\ndate: 2020-01-02T03:04:05+02:00\n---\nbody");
+        await Source.WriteTextFileAsync("/_content/feed.xml.liquid", """
+            <feed>{% for p in collections.all %}<entry><title>{{ p.data.title | xml_escape }}</title><summary>{{ p.data.title }}</summary><updated>{{ p.data.date | date_to_xmlschema }}</updated><published>{{ p.data.date | date_to_rfc822 }}</published></entry>{% endfor %}</feed>
+            """);
+
+        await BuildSuccessfullyAsync();
+
+        // xml_escape is not encoded again, a plain output is encoded once, and the + of a date stays.
+        Assert.Equal(
+            "<feed><entry><title>Tom &amp; &quot;Jerry&quot; &lt;3</title><summary>Tom &amp; &quot;Jerry&quot; &lt;3</summary><updated>2020-01-02T03:04:05+02:00</updated><published>Thu, 02 Jan 2020 03:04:05 +0200</published></entry></feed>",
+            await Output.ReadAllTextAsync("/feed.xml"));
+    }
+
+    [Fact]
+    public async Task SitemapKeepsUrlsAndDates()
+    {
+        await Source.WriteTextFileAsync("/_content/a.md", "---\ndate: 2020-01-01T00:00:00+01:00\npermalink: /search/?q=a&b/\n---\na");
+        await Source.WriteTextFileAsync("/_content/sitemap.xml.liquid", """
+            <urlset>{% for p in collections.all %}<url><loc>{{ p.data.url | replace: 'index.html', '' | absolute_url }}</loc><lastmod>{{ p.data.date | date_to_xmlschema }}</lastmod></url>{% endfor %}</urlset>
+            """);
+        Site = await SiteOptions.DetectAsync(Source, Output, null, null, new Douze.Workflow.Yaml.SiteSettings { Url = "https://example.com" });
+
+        await BuildSuccessfullyAsync();
+
+        Assert.Equal(
+            "<urlset><url><loc>https://example.com/search/?q=a&amp;b/</loc><lastmod>2020-01-01T00:00:00+01:00</lastmod></url></urlset>",
+            await Output.ReadAllTextAsync("/sitemap.xml"));
+    }
+
+    [Fact]
+    public async Task JsonEscapesStringsAndKeepsTheJsonFilter()
+    {
+        // The json filter escapes what is unsafe in HTML (a script), which is valid JSON.
+        await Source.WriteTextFileAsync("/_data/tags.json", """["a&b", "<c>"]""");
+        await Source.WriteTextFileAsync("/_content/index.json.liquid", """
+            {"title": "{{ title }}", "tags": {{ tags | json }}, "name": {{ title | json }}}
+            """);
+        await Source.WriteTextFileAsync("/_data/title.yml", "Tom & \"Jerry\" <3 + é");
+
+        await BuildSuccessfullyAsync();
+
+        var json = await Output.ReadAllTextAsync("/index.json");
+        Assert.StartsWith("""{"title": "Tom & \"Jerry\" <3 + é", "tags": ["a\u0026b","\u003Cc\u003E"], "name": """, json);
+
+        var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
+        Assert.Equal("Tom & \"Jerry\" <3 + é", root.GetProperty("title").GetString());
+        Assert.Equal("Tom & \"Jerry\" <3 + é", root.GetProperty("name").GetString());
+        Assert.Equal(["a&b", "<c>"], root.GetProperty("tags").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    [Fact]
+    public async Task TextAndHtmlEncoding()
+    {
+        await Source.WriteTextFileAsync("/a.html", "---\nx: \"Tom & <Jerry>\"\n---\n{{ x }}|{{ x | xml_escape }}|{{ x | escape }}");
+        await Source.WriteTextFileAsync("/a.txt", "{{ 'Tom & <Jerry>' }}");
+
+        var result = await BuildSuccessfullyAsync(Render());
+
+        var files = Outputs(result["render"]).ToDictionary(x => x.Path.FullName);
+        Assert.Equal("Tom &amp; &lt;Jerry&gt;|Tom &amp; &lt;Jerry&gt;|Tom &amp; &lt;Jerry&gt;", await TextAsync(files["/a.html"]));
+        Assert.Equal("Tom & <Jerry>", await TextAsync(files["/a.txt"]));
+    }
+
+    [Fact]
+    public async Task EncodeForcesAnEncoder()
+    {
+        await Source.WriteTextFileAsync("/a.txt", "{{ 'a & \"b\" + c' }}");
+
+        string[] expected = ["a &amp; &quot;b&quot; &#x2B; c", "a &amp; &quot;b&quot; + c", "a & \\\"b\\\" + c", "a & \"b\" + c"];
+        string[] encoders = ["html", "xml", "json", "none"];
+
+        for (var i = 0; i < encoders.Length; i++)
+        {
+            var result = await BuildSuccessfullyAsync(Workflow(
+                Step("pages", "frontmatter", inputs: ["**"]),
+                Step("render", "liquid", needs: ["pages"], with: With(("encode", NodeValue.Create(encoders[i]))))));
+
+            Assert.Equal(expected[i], await TextAsync(Outputs(result["render"]).Single()));
+        }
+
+        var invalid = Assert.Throws<WorkflowValidationException>(() => WorkflowGraph.Build(Workflow(
+            Step("render", "liquid", inputs: ["**"], with: With(("encode", NodeValue.Create("url")))))));
+        Assert.Equal("option 'encode' of step 'render' must be 'auto', 'html', 'xml', 'json' or 'none', not 'url'", invalid.Errors.Single().Message);
+    }
+
     // Fence protection.
 
     [Fact]

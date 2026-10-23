@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Douze.Markdown;
 using Douze.FileSystems;
+using Douze.Nodes;
 using Douze.Workflow.Steps;
 using SharpYaml.Model;
 
@@ -16,20 +17,23 @@ internal static partial class WorkflowLoader
 {
     /// <param name="path">The path of the file on disk.</param>
     /// <param name="fileName">The name used in error locations, such as <c>douze.yml</c> or <c>site/douze.yml</c>.</param>
+    /// <param name="environment">What the <c>enabled</c> expressions see (default: this process, not watching).</param>
     /// <param name="ct">Cancels the read.</param>
     /// <exception cref="WorkflowValidationException">Every error of the file.</exception>
-    public static async Task<WorkflowFile> LoadAsync(string path, string fileName, CancellationToken ct = default)
+    public static async Task<WorkflowFile> LoadAsync(string path, string fileName, WorkflowEnvironment? environment = null, CancellationToken ct = default)
     {
         var text = await File.ReadAllTextAsync(path, ct);
-        return Load(text, fileName, System.IO.Path.GetFullPath(path));
+        return Load(text, fileName, System.IO.Path.GetFullPath(path), environment);
     }
 
     /// <param name="text">The YAML text.</param>
     /// <param name="fileName">The name used in error locations.</param>
     /// <param name="sourceFile">The <see cref="WorkflowDefinition.SourceFile"/> (default: <paramref name="fileName"/>).</param>
+    /// <param name="environment">What the <c>enabled</c> expressions see (default: this process, not watching).</param>
     /// <exception cref="WorkflowValidationException">Every error of the file.</exception>
-    public static WorkflowFile Load(string text, string fileName, string? sourceFile = null)
+    public static WorkflowFile Load(string text, string fileName, string? sourceFile = null, WorkflowEnvironment? environment = null)
     {
+        environment ??= WorkflowEnvironment.Current(watch: false);
         var yaml = YamlSource.Parse(text, fileName);
         var errors = new List<WorkflowValidationError>();
         var site = SiteSettings.None;
@@ -38,18 +42,34 @@ internal static partial class WorkflowLoader
 
         if (YamlSource.IsNull(yaml.Root))
         {
-            return new WorkflowFile(site, null, null);
+            return new WorkflowFile(site, null, null, ResolveVars(environment, new NodeObject()));
         }
 
         if (yaml.Root is not YamlMapping root)
         {
-            throw new WorkflowValidationException("a workflow file must be a mapping with 'site', 'markdown' and 'steps'", yaml.Location(yaml.Root!));
+            throw new WorkflowValidationException("a workflow file must be a mapping with 'site', 'vars', 'markdown' and 'steps'", yaml.Location(yaml.Root!));
         }
 
-        foreach (var (key, keyNode, value) in yaml.Entries(root, errors))
+        var entries = yaml.Entries(root, errors).ToList();
+
+        // The variables first: the 'enabled' expressions of the steps see them, wherever the section is.
+        var declared = new NodeObject();
+
+        foreach (var (key, _, value) in entries.Where(x => x.Key == "vars"))
+        {
+            declared = ReadVars(yaml, value, errors);
+        }
+
+        var vars = environment.ResolveVars(declared, errors);
+        environment = environment.WithVars(vars);
+
+        foreach (var (key, keyNode, value) in entries)
         {
             switch (key)
             {
+                case "vars":
+                    break;
+
                 case "site":
                     site = ReadSite(yaml, value, errors);
                     break;
@@ -59,7 +79,7 @@ internal static partial class WorkflowLoader
                     break;
 
                 case "steps":
-                    workflow = ReadSteps(yaml, value, errors) is { } steps ? new WorkflowDefinition(steps, sourceFile ?? fileName) : null;
+                    workflow = ReadSteps(yaml, value, environment, errors) is { } steps ? new WorkflowDefinition(steps, sourceFile ?? fileName) : null;
                     break;
 
                 default:
@@ -74,7 +94,35 @@ internal static partial class WorkflowLoader
             throw new WorkflowValidationException([.. errors.OrderBy(x => x.Location?.Line).ThenBy(x => x.Location?.Column)]);
         }
 
-        return new WorkflowFile(site, markdown, workflow);
+        return new WorkflowFile(site, markdown, workflow, vars);
+    }
+
+    /// <summary>
+    /// The variables of a site without a <c>vars</c> section, or without a workflow file: none, so that a
+    /// <c>--var</c>, <c>--env</c> or <c>DOUZE_VARS__</c> is an error.
+    /// </summary>
+    /// <exception cref="WorkflowValidationException">A variable is set.</exception>
+    public static NodeObject ResolveVars(WorkflowEnvironment environment, NodeObject declared)
+    {
+        var errors = new List<WorkflowValidationError>();
+        var vars = environment.ResolveVars(declared, errors);
+        return errors.Count == 0 ? vars : throw new WorkflowValidationException(errors);
+    }
+
+    private static NodeObject ReadVars(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)
+    {
+        if (YamlSource.IsNull(node))
+        {
+            return new NodeObject();
+        }
+
+        if (node is not YamlMapping)
+        {
+            errors.Add(new("'vars' must be a mapping of names to values", yaml.Location(node!)));
+            return new NodeObject();
+        }
+
+        return (NodeObject)yaml.ToNode(node, errors)!;
     }
 
     private static SiteSettings ReadSite(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)
@@ -677,7 +725,7 @@ internal static partial class WorkflowLoader
         public Locale ToLocale(string prefix) => new(Key, Label ?? Key, Lang ?? Key, Dir ?? "ltr", prefix);
     }
 
-    private static ImmutableArray<StepDefinition>? ReadSteps(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)
+    private static ImmutableArray<StepDefinition>? ReadSteps(YamlSource yaml, YamlElement? node, WorkflowEnvironment environment, List<WorkflowValidationError> errors)
     {
         // 'steps:' with no value is the same as no 'steps': the default workflow.
         if (YamlSource.IsNull(node))
@@ -708,14 +756,14 @@ internal static partial class WorkflowLoader
                 errors.Add(new($"'{name}' is a reserved step name", yaml.Location(nameNode)));
             }
 
-            steps.Add(ReadStep(yaml, name, nameNode, value, errors));
+            steps.Add(ReadStep(yaml, name, nameNode, value, environment, errors));
         }
 
         return WithoutDisabledSteps(steps.ToImmutable());
     }
 
     /// <summary>
-    /// The steps without those of <c>enabled: false</c>: a step that needs a disabled step needs what that step needs
+    /// The steps without those whose <c>enabled</c> is false: a step that needs a disabled step needs what that step needs
     /// instead, so that the files pass it by.
     /// </summary>
     internal static ImmutableArray<StepDefinition> WithoutDisabledSteps(ImmutableArray<StepDefinition> steps)
@@ -743,7 +791,7 @@ internal static partial class WorkflowLoader
         return [.. steps.Where(x => x.Enabled).Select(x => x with { Needs = [.. x.Needs.SelectMany(n => Resolve(n, [])).Distinct(StringComparer.Ordinal)] })];
     }
 
-    private static StepDefinition ReadStep(YamlSource yaml, string name, YamlElement nameNode, YamlElement? node, List<WorkflowValidationError> errors)
+    private static StepDefinition ReadStep(YamlSource yaml, string name, YamlElement nameNode, YamlElement? node, WorkflowEnvironment environment, List<WorkflowValidationError> errors)
     {
         var location = yaml.Location(nameNode);
         var step = new StepDefinition { Name = name, Location = location };
@@ -776,8 +824,13 @@ internal static partial class WorkflowLoader
                 continue;
             }
 
-            step = field.Read(yaml, value!, step, errors);
+            step = field.Read(yaml, value!, step, environment, errors);
             present.Add((field, keyNode));
+
+            if (field.Name == "tool" && step.Tool is { } tool && Tools.NpmTool.Parse(tool) == null)
+            {
+                errors.Add(new($"unknown tool '{tool}' on step '{name}'; Douze knows {WorkflowSchema.Expected([.. Tools.NpmTool.Known.Keys.Order(StringComparer.Ordinal)])}", yaml.Location(value!)));
+            }
         }
 
         var hasUses = present.Any(x => x.Field.Name == "uses");

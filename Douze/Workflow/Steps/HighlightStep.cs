@@ -387,7 +387,7 @@ internal sealed partial class HighlightStep : Step, IMapStep
             templateContext.SetValue("code", ToValue(model));
 
             // A template file's last line break is not the block's.
-            return (await block.RenderAsync(templateContext, HtmlEncoders.Html)).TrimEnd('\r', '\n');
+            return (await block.RenderAsync(templateContext, OutputEncoders.Html)).TrimEnd('\r', '\n');
         }
 
         private ValueTask<string> RenderTypeAsync(string code, string language) => RenderFenceAsync(language, "", code, null, popup: true);
@@ -449,7 +449,7 @@ internal sealed partial class HighlightStep : Step, IMapStep
             // A popup renders inside a line of a block: the block's value is restored after it.
             var code = templateContext.GetValue("code");
             templateContext.SetValue("node", Object(values));
-            var html = (await popup.RenderAsync(templateContext, HtmlEncoders.Html)).TrimEnd('\r', '\n');
+            var html = (await popup.RenderAsync(templateContext, OutputEncoders.Html)).TrimEnd('\r', '\n');
             templateContext.SetValue("code", code);
             return html;
         }

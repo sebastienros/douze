@@ -50,7 +50,7 @@ public class WorkflowLoaderTests
             steps:
               write: { inputs: "**", uses: write }
             jobs: {}
-            """, "unknown key 'jobs'; expected 'site', 'markdown' or 'steps'", 3, 1);
+            """, "unknown key 'jobs'; expected 'site', 'vars', 'markdown' or 'steps'", 3, 1);
     }
 
     [Fact]
@@ -72,9 +72,105 @@ public class WorkflowLoaderTests
     }
 
     [Fact]
+    public void EnabledExpressionsSeeTheEnvironment()
+    {
+        var environment = new WorkflowEnvironment("windows", "arm64", new Dictionary<string, string> { ["Douze_OG"] = "1" }, watch: true);
+
+        var steps = WorkflowLoader.Load("""
+            steps:
+              pages: { inputs: "**", uses: frontmatter }
+              og: { needs: pages, uses: social-image, with: { template: og.svg, output: og.png }, enabled: "os != 'windows'" }
+              arm: { needs: og, uses: markdown, enabled: "arch == 'arm64' and watch" }
+              env: { needs: arm, uses: layout, enabled: "env.DOUZE_OG == '1'" }
+              missing: { needs: env, uses: liquid, enabled: "env.MISSING" }
+              write: { needs: missing, uses: write }
+            """, "douze.yml", environment: environment).Workflow!.Steps;
+
+        // Variable names are case insensitive on Windows; a missing variable is nil.
+        Assert.Equal(["pages", "arm", "env", "write"], steps.Select(x => x.Name));
+        Assert.Equal(["env"], steps[^1].Needs);
+        Assert.Equal(["pages"], steps[1].Needs);
+    }
+
+    [Fact]
+    public void VarsAreSetByTheEnvironmentThenTheCommandLine()
+    {
+        var env = new Dictionary<string, string> { ["DOUZE_VARS__OG"] = "false", ["DOUZE_VARS__label"] = "env", ["SECRET"] = "s3cret" };
+        var environment = new WorkflowEnvironment("linux", "x64", env, watch: false,
+            [VarOverride.FromValue("label", "cli"), VarOverride.FromVariable("token", "SECRET"), VarOverride.FromVariable("count", "UNSET")]);
+
+        var file = WorkflowLoader.Load("""
+            steps:
+              pages: { inputs: "**", uses: frontmatter }
+              og: { needs: pages, uses: markdown, enabled: "vars.og" }
+              write: { needs: og, uses: write }
+            vars:
+              og: true
+              label: default
+              token: ~
+              count: 1
+            """, "douze.yml", environment: environment);
+
+        // The section can follow the steps; an unset variable of --env leaves the value as it is.
+        Assert.Equal(["pages", "write"], file.Workflow!.Steps.Select(x => x.Name));
+        Assert.Equal(new NodeObject { ["og"] = false, ["label"] = "cli", ["token"] = "s3cret", ["count"] = 1 }, file.Vars);
+    }
+
+    [Fact]
+    public void VarsErrors()
+    {
+        var env = new Dictionary<string, string> { ["NUM"] = "abc" };
+        var environment = new WorkflowEnvironment("linux", "x64", env, watch: false,
+            [VarOverride.FromValue("ogg", "1"), VarOverride.FromVariable("count", "NUM"), VarOverride.FromValue("og", "nope"), VarOverride.FromValue("list", "x")]);
+
+        var error = Assert.Throws<WorkflowValidationException>(() => WorkflowLoader.Load("""
+            vars: { og: true, count: 1, list: [a, b] }
+            """, "douze.yml", environment: environment));
+
+        // The value of an environment variable mapped by --env is not shown.
+        Assert.Equal(
+        [
+            "error: unknown variable 'ogg' in '--var ogg'; declare it in 'vars'; did you mean 'og'?",
+            "error: variable 'count' must be an integer; the value of '--env count=NUM' is not",
+            "error: variable 'og' must be true or false, not 'nope' ('--var og')",
+            "error: variable 'list' is a list and cannot be set by '--var list'",
+        ], error.Errors.Select(x => x.ToString()));
+    }
+
+    [Fact]
+    public void InvalidEnabledExpression()
+    {
+        var error = Assert.Single(Errors("""
+            steps:
+              write: { inputs: "**", uses: write, enabled: "os ==" }
+            """));
+
+        Assert.StartsWith("'enabled': invalid expression 'os =='", error.Message);
+        Assert.Equal(new SourceLocation("douze.yml", 2, 48), error.Location);
+    }
+
+    [Fact]
+    public void UnknownTool()
+    {
+        AssertError("""
+            steps:
+              search:
+                inputs: "**"
+                run: "{{ tool }} --site {{ inputs }}"
+                mode: batch
+                tool: pagefnd@1.0
+            """, "unknown tool 'pagefnd@1.0' on step 'search'; Douze knows 'lightningcss' or 'pagefind'", 6, 11);
+
+        Assert.Equal("pagefind@1.4.0", Load("""
+            steps:
+              search: { inputs: "**", run: "{{ tool }}", mode: batch, tool: pagefind@1.4.0 }
+            """).Workflow!.Steps.Single().Tool);
+    }
+
+    [Fact]
     public void RootMustBeAMapping()
     {
-        AssertError("- a\n- b\n", "a workflow file must be a mapping with 'site', 'markdown' and 'steps'", 1, 1);
+        AssertError("- a\n- b\n", "a workflow file must be a mapping with 'site', 'vars', 'markdown' and 'steps'", 1, 1);
     }
 
     [Fact]
@@ -381,7 +477,7 @@ public class WorkflowLoaderTests
 
         Assert.Equal(
             [
-                "douze.yml(1,1): error: unknown key 'jobs'; expected 'site', 'markdown' or 'steps'",
+                "douze.yml(1,1): error: unknown key 'jobs'; expected 'site', 'vars', 'markdown' or 'steps'",
                 "douze.yml(3,22): error: 'mode' is only valid with 'run'",
                 "douze.yml(4,3): error: invalid step name 'B': use lowercase letters, digits and dashes",
             ],
@@ -586,7 +682,7 @@ public class WorkflowLoaderTests
     {
         var path = Path.Combine(Fixtures, "api-reference.yml");
 
-        var file = await WorkflowLoader.LoadAsync(path, "api-reference.yml", TestContext.Current.CancellationToken);
+        var file = await WorkflowLoader.LoadAsync(path, "api-reference.yml", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(Path.GetFullPath(path), file.Workflow!.SourceFile);
         Assert.Equal("api-reference.yml", file.Workflow.Steps[0].Location!.Value.File);

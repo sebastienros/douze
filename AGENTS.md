@@ -40,7 +40,7 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 - `Douze/Workflow/Watch/`: watch mode and the dev server. `FileWatcher` batches the changes of the source folder into a
   `ChangeSet`; `IncrementalBuilder` runs the builds of a session, keeping the cache, the template loader (invalidating
   changed files) and the source snapshot; `DevServer` serves the output folder (`HttpListener`) and `LiveReload` sends
-  the changed URLs to `livereload.js` over Server-Sent Events.
+  the changed URLs to `livereload.js` over a WebSocket (`/__douze/socket`; an event stream would hold one of the browser's 6 connections per host for each open page).
 - `Douze/Workflow/Yaml/`: `douze.yml` loading. `YamlSource` keeps the position of every node, `WorkflowLoader` reads `site` (`SiteSettings`) and `steps` and reports every error with its line and column, `WorkflowSchema` is the field table shared by the loader and `--print-workflow`.
 - `Douze/Workflow/Commands/`: `run:` steps in the modes `filter` (a process per file), `batch` (a process per input or group) and `worker` (one process, JSON lines over stdin and stdout, `WorkerProtocol`). `ProcessRunner` starts processes and kills their tree on timeout (`ProcessTree`, which avoids `Process.Kill(entireProcessTree: true)` on Unix: it can hang forever on macOS); `douze-worker.mjs` is the Node helper printed by `douze worker-helper`.
 - `Douze/Twoslash/`: the `hover-typescript` step's engine (`Workflow/Steps/TwoslashStep.cs`): twoslash's notations

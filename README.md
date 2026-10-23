@@ -54,6 +54,8 @@ Options:
   -s, --source <dir>             source folder (default: .)
   -o, --output <dir>             output folder (default: _site)
   -w, --workflow <file>          workflow file (default: <source>/douze.yml when it exists)
+      --var <name>=<value>       set a variable of the workflow file's 'vars' section
+      --env <name>=<variable>    set a variable from an environment variable, when it is set
   -p, --parallelism <n>          max parallel units (default: processor count)
       --keep-going               report every error instead of stopping the failing step
       --fail-fast                stop everything on the first error
@@ -264,6 +266,9 @@ site:
   url: https://example.com  # site.url in templates
   parallelism: 8         # -p wins
 
+vars:                    # see "vars"
+  og: true
+
 markdown:                # see "markdown"
   extensions: [pipetables, footnotes, alerts, customcontainers, attributes]
 
@@ -287,6 +292,34 @@ steps:
 Paths are relative to the source folder. Without `steps`, the default workflow runs with the folders of `site`.
 `douze --print-workflow` prints the steps that a build runs, the default ones included, in the same format.
 
+## vars
+
+The `vars` section declares the variables of the site, with their default values. Templates read them as
+`vars.<name>`, and so do the `enabled` expressions of the steps. Each of these sets them, over the previous one:
+
+1. the `vars` section,
+2. the environment variables `DOUZE_VARS__<name>`,
+3. the `--var <name>=<value>` and `--env <name>=<variable>` options, in order. `--env` reads the value of an
+   environment variable, so that it stays out of the command line (and of the errors); it does nothing when the
+   variable is not set.
+
+```yaml
+vars:
+  og: true
+  label: Preview
+steps:
+  og: { needs: pages, uses: social-image, enabled: "vars.og", with: { ... } }
+```
+
+```bash
+douze --var og=false --env label=RELEASE_NAME
+```
+
+Only declared variables can be set, and their names match case insensitively. A value takes the type of the default:
+`--var og=false` is the boolean `false` when `og` is `true` or `false` (the string `"false"` would be true in Liquid),
+`1.5` a number when the default is a number; a default that is a string or `~` gives a string. Objects and lists can
+only be set in the section.
+
 ## steps
 
 `steps` maps step names (lowercase letters, digits and dashes) to steps. Source files enter the steps whose
@@ -298,14 +331,24 @@ entering files that its `match` selects, and the others pass through it unchange
 | `needs` | none | a step name or a list: the steps whose files, and data, enter this step |
 | `inputs` | none | a glob or a list: the source files that enter this step |
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write` |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
-| `enabled` | `true` | `false` leaves the step out: the steps that need it need what it needs (a switch between two steps) |
+| `enabled` | `true` | `true`, `false` or a Liquid expression (see below): a step that is not enabled is left out, and the steps that need it need what it needs (a switch between two steps) |
 | `run`, `tool`, `mode`, `outputs`, `sources`, `version`, `env`, `cwd`, `timeout`, `stderr`, `shell` | | command steps, see "commands" |
+
+`enabled` can be a Liquid expression, as in `{% if %}`, evaluated once when the workflow file is loaded. It sees
+`os` (`windows`, `linux`, `macos` or `other`), `arch` (`x64`, `arm64`, ...), `env`, the environment variables (a
+missing one is `nil`; names are case insensitive on Windows), `watch`, true for `douze watch` and `douze serve`, and
+`vars` (see "vars"):
+
+```yaml
+steps:
+  og: { needs: pages, uses: social-image, enabled: "env.CI", with: { ... } }       # only in CI
+  check: { needs: pages, uses: hover-typescript, enabled: "watch == false" }     # not while editing
+  sample-og: { needs: paginate, uses: social-image, enabled: "os != 'windows'", with: { ... } }
+```
 
 A step has either `uses` or `run`. Steps run as soon as their files are available, in parallel; their order in the
 file does not matter.
@@ -396,9 +439,15 @@ permalink: /sitemap.xml
 </urlset>
 ```
 
+The `liquid` step encodes the values of `{{ }}` for the content type of the output path (`encode: auto`): HTML in
+`.html` and `.md` pages, XML entities (`&`, `<`, `>`, `"`, `'`) in `.xml` files, JSON string escapes in `.json`
+files (`"title": "{{ title }}"`), and nothing in other files (`.txt`). Filters whose result is already encoded,
+`xml_escape`, `json`, `escape` and the ones that return markup, are not encoded again, and a date keeps its `+`.
+`encode: html`, `xml`, `json` or `none` forces one encoder for every file of the step.
+
 | Filter | Result |
 |---|---|
-| `xml_escape` | `&`, `<`, `>`, `"` and `'` as entities |
+| `xml_escape` | `&`, `<`, `>`, `"` and `'` as entities, not encoded again |
 | `absolute_url` | `site.url` followed by the url |
 | `relative_url` | the url after the path of `site.url` (`/blog/x/` for `https://example.com/blog`) |
 | `strip_html` | the text without tags, comments, scripts and styles |
@@ -407,7 +456,7 @@ permalink: /sitemap.xml
 | `group_by_exp: "item", "item.data.date \| date: '%Y'"` | `{ name, items, size }` per value, in order of appearance |
 | `sort_by: "data.title"`, `sort_by: "data.date", "desc"` | the items sorted by the value at a path, missing values last |
 | `index_by: "data.url"` | an object of the items by the value at a path |
-| `jsonify` | `json` |
+| `json`, `jsonify` | the value as JSON, not encoded again: `{{ tags \| json }}` in a `.json` file or a script |
 
 The `collect` step options:
 

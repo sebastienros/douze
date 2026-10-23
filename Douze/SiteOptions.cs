@@ -1,4 +1,5 @@
 using Douze.FileSystems;
+using Douze.Nodes;
 using Douze.Markdown;
 using Douze.Workflow;
 using Douze.Workflow.Yaml;
@@ -26,6 +27,7 @@ internal sealed class SiteOptions
     public int? Parallelism { get; init; }              // site.parallelism, used when -p is not given
     public MarkdownOptions Markdown { get; init; } = MarkdownOptions.None;   // the markdown section of douze.yml
     public LocaleSet Locales { get; init; } = LocaleSet.None;  // site.locales, its root resolved in the content folder
+    public NodeObject Vars { get; init; } = new();      // the vars section of douze.yml, with the values of the environment and the command line
 
     /// <summary>
     /// Uses the folders of <paramref name="settings"/> (the <c>site</c> section of the workflow file), and for the ones
@@ -33,7 +35,7 @@ internal sealed class SiteOptions
     /// the root otherwise, and <c>shortcodes/</c> in the includes folder. <paramref name="markdown"/> is the
     /// <c>markdown</c> section, <see cref="MarkdownOptions.None"/> when it is absent.
     /// </summary>
-    public static async Task<SiteOptions> DetectAsync(IFileSystem source, IFileSystem output, string? sourceDir, string? outputDir, SiteSettings? settings = null, MarkdownOptions? markdown = null)
+    public static async Task<SiteOptions> DetectAsync(IFileSystem source, IFileSystem output, string? sourceDir, string? outputDir, SiteSettings? settings = null, MarkdownOptions? markdown = null, NodeObject? vars = null)
     {
         settings ??= SiteSettings.None;
         var includes = settings.IncludesFolder ?? await DetectAsync(source, DefaultIncludesFolder);
@@ -54,6 +56,7 @@ internal sealed class SiteOptions
             Parallelism = settings.Parallelism,
             Markdown = markdown ?? MarkdownOptions.None,
             Locales = settings.Locales?.WithContentFolder(contentFolder) ?? LocaleSet.None,
+            Vars = vars ?? new NodeObject(),
         };
 
         static async Task<FPath> DetectAsync(IFileSystem source, FPath folder)

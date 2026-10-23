@@ -1449,7 +1449,7 @@ The steps follow the engine's `Step` pattern (constructor validates `with` throu
 ```csharp
 // Douze/Workflow/Steps/LocalizeStep.cs       uses: localize    map     options: none (settings from BuildContext.Locales); CacheVersion = LocaleSet.Hash
 // Douze/Workflow/Steps/ReplaceStep.cs        uses: replace     map     with.tokens (mapping), with.skip (globs)
-// Douze/Workflow/Steps/ForkStep.cs           uses: fork        map     with.permalink, with.data, with.content, with.strip-regions
+// Douze/Workflow/Steps/ForkStep.cs           uses: fork        map     with.permalink, with.data, with.content, with.strip-regions, with.skip, with.strict
 // Douze/Workflow/Steps/HeadingsStep.cs       uses: headings    map     with.anchors, with.anchor-class, with.anchor-label, with.levels
 // Douze/Workflow/Steps/AssetsStep.cs         uses: assets      reduce  with.root, with.output, with.manifest, with.rewrite, with.strict
 // Douze/Workflow/Steps/ImagesStep.cs         uses: images      map     with.widths, with.formats, with.quality, with.output

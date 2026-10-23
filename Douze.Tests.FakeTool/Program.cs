@@ -195,6 +195,19 @@ static async Task<int> Worker(int concurrency, bool slowShutdown)
     async Task HandleAsync(JsonObject request)
     {
         var current = Interlocked.Increment(ref inflight);
+        var done = 0;
+
+        // The request is no longer in flight once it is answered: Douze sends the next one as soon as it reads the
+        // answer, which may come before this method returns.
+        void Reply(JsonObject message)
+        {
+            if (Interlocked.Exchange(ref done, 1) == 0)
+            {
+                Interlocked.Decrement(ref inflight);
+            }
+
+            Send(message);
+        }
 
         lock (writeLock)
         {
@@ -235,7 +248,7 @@ static async Task<int> Worker(int concurrency, bool slowShutdown)
                         files = [File(hello)];
                         break;
                     case "ERROR":
-                        Send(new JsonObject { ["type"] = "error", ["id"] = id, ["message"] = "TS2304: Cannot find name 'foo'", ["file"] = path, ["line"] = 12, ["column"] = 3 });
+                        Reply(new JsonObject { ["type"] = "error", ["id"] = id, ["message"] = "TS2304: Cannot find name 'foo'", ["file"] = path, ["line"] = 12, ["column"] = 3 });
                         return;
                     case "LOG":
                         Send(new JsonObject { ["type"] = "log", ["level"] = "info", ["message"] = $"log from {path}" });
@@ -273,11 +286,14 @@ static async Task<int> Worker(int concurrency, bool slowShutdown)
                 }
             }
 
-            Send(new JsonObject { ["type"] = "result", ["id"] = id, ["files"] = files });
+            Reply(new JsonObject { ["type"] = "result", ["id"] = id, ["files"] = files });
         }
         finally
         {
-            Interlocked.Decrement(ref inflight);
+            if (Interlocked.Exchange(ref done, 1) == 0)
+            {
+                Interlocked.Decrement(ref inflight);
+            }
         }
     }
 }

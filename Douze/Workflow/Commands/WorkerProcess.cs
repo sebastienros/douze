@@ -28,6 +28,10 @@ internal sealed class WorkerProcess
     // How long stderr lines are collected before 'stderr: fail' fails the worker, so the message has all of them.
     private static readonly TimeSpan StderrSettleDelay = TimeSpan.FromMilliseconds(100);
 
+    // How long a worker that wrote to stderr has to exit before it fails with stderr rather than with its exit code: a
+    // worker that writes its error and exits is not seen exited at once (a process takes a while to exit on Windows).
+    private static readonly TimeSpan StderrExitDelay = TimeSpan.FromSeconds(1);
+
     private readonly Process _process;
     private readonly StderrPolicy _stderrPolicy;
     private readonly Action<LogLevel, string> _log;
@@ -379,7 +383,7 @@ internal sealed class WorkerProcess
 
                     case StderrPolicy.Fail when !_stderrPending:
                         _stderrPending = true;
-                        _ = Task.Delay(StderrSettleDelay).ContinueWith(_ => FailWithStderr(), TaskScheduler.Default);
+                        _ = FailWithStderrAsync();
                         break;
                 }
             }
@@ -392,8 +396,18 @@ internal sealed class WorkerProcess
         // reports stderr.
     }
 
-    private void FailWithStderr()
+    private async Task FailWithStderrAsync()
     {
+        await Task.Delay(StderrSettleDelay);
+
+        try
+        {
+            await _process.WaitForExitAsync().WaitAsync(StderrExitDelay);
+        }
+        catch (Exception e) when (e is TimeoutException or InvalidOperationException or ObjectDisposedException)
+        {
+        }
+
         // A shutdown, or an exit (reported by the output loop), says it with stderr.
         if (_shuttingDown || _process.HasExited)
         {
