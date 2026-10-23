@@ -100,6 +100,26 @@ public class SocialImageStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task StepsShareAFontFile()
+    {
+        // Each step copies the font to its own folder: on Windows, the copy of the first step is mapped by Pango and
+        // cannot be written again.
+        var with = await WriteSiteAsync();
+        var second = (NodeObject)with.Clone();
+        second["output"] = NodeValue.Create("og/second/{{ slug }}.png");
+
+        var result = await BuildSuccessfullyAsync(Workflow(
+            Step("pages", "frontmatter", inputs: ["docs/**/*.md"]),
+            Step("og", "social-image", needs: ["pages"], with: with),
+            Step("second", "social-image", needs: ["og"], with: second),
+            Step("markdown", "markdown", needs: ["second"]),
+            Step("layout", "layout", needs: ["markdown"]),
+            Step("write", "write", needs: ["layout"])));
+
+        Assert.Equal(["/docs/a.html", "/docs/b.html", "/og/a.png", "/og/second/a.png"], result.Outputs.Select(x => x.Path.FullName));
+    }
+
+    [Fact]
     public async Task SkippedPagesGetNoImage()
     {
         var result = await BuildSuccessfullyAsync(Og(await WriteSiteAsync(withFont: false)));
