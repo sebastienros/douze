@@ -220,16 +220,18 @@ internal static class DataFilters
     /// <summary>
     /// <c>json</c> and <c>jsonify</c>: a data object or array (site data, a collection) as JSON, in its own order;
     /// other values through Fluid's <c>json</c> filter. Fluid's filter alone writes <c>null</c> for nodes, which its
-    /// source generated serializer does not know.
+    /// source generated serializer does not know. The result is JSON already, which the output does not encode again
+    /// (<c>{{ data | json }}</c> in a JSON file or a script).
     /// </summary>
-    public static ValueTask<FluidValue> Json(FluidValue input, FilterArguments arguments, TemplateContext context)
+    public static async ValueTask<FluidValue> Json(FluidValue input, FilterArguments arguments, TemplateContext context)
     {
         // ToObjectValue records the whole value as read (the page depends on all of it).
         Node? node = input is NodeObjectValue or NodeArrayValue ? input.ToObjectValue(context) as Node : null;
 
         if (node == null)
         {
-            return MiscFilters.Json(input, arguments, context);
+            var json = await MiscFilters.Json(input, arguments, context);
+            return json is StringValue { Encode: true } ? StringValue.Create(json.ToStringValue(context), encode: false) : json;
         }
 
         var buffer = new System.Buffers.ArrayBufferWriter<byte>();
@@ -239,6 +241,6 @@ internal static class DataFilters
             NodeJson.Write(writer, node);
         }
 
-        return new ValueTask<FluidValue>(StringValue.Create(System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan), encode: false));
+        return StringValue.Create(System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan), encode: false);
     }
 }

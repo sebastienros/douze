@@ -24,6 +24,7 @@ internal static class OutputFilters
 
     /// <summary>
     /// <c>{{ title | xml_escape }}</c>: <c>&amp;</c>, <c>&lt;</c>, <c>&gt;</c>, <c>"</c> and <c>'</c> as entities.
+    /// The result is escaped already, which the output does not encode again.
     /// </summary>
     public static ValueTask<FluidValue> XmlEscape(FluidValue input, FilterArguments arguments, TemplateContext context)
     {
@@ -31,7 +32,7 @@ internal static class OutputFilters
 
         if (text.AsSpan().IndexOfAny("&<>\"'") < 0)
         {
-            return StringValue.Create(text);
+            return StringValue.Create(text, encode: false);
         }
 
         var builder = new StringBuilder(text.Length + 16);
@@ -49,7 +50,7 @@ internal static class OutputFilters
             } ?? c.ToString());
         }
 
-        return StringValue.Create(builder.ToString());
+        return StringValue.Create(builder.ToString(), encode: false);
     }
 
     /// <summary>

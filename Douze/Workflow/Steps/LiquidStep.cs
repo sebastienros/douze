@@ -18,7 +18,10 @@ namespace Douze.Workflow.Steps;
 /// <remarks>
 /// In a Markdown file, fenced code blocks are not Liquid (<c>with.protect: fences</c>, the default; <c>none</c> turns
 /// it off): they are replaced by placeholders before the content is parsed and restored in the output
-/// (<see cref="FenceTable"/>). <c>with.strict: true</c> makes an undefined variable an error.
+/// (<see cref="FenceTable"/>). <c>with.strict: true</c> makes an undefined variable an error. <c>{{ }}</c> outputs are
+/// encoded for the content type of the output (<c>with.encode: auto</c>, <see cref="OutputEncoders.ForContentType"/>):
+/// HTML in pages, XML in feeds and sitemaps, JSON strings in JSON files, nothing in text; <c>html</c>, <c>xml</c>,
+/// <c>json</c> and <c>none</c> force one.
 /// </remarks>
 internal sealed class LiquidStep : Step, IMapStep, IGroupStep
 {
@@ -33,7 +36,8 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
     private readonly FPath? _template;
     private readonly string? _permalink;
     private readonly NodeObject? _data;
-    private readonly TextEncoder _encoder;
+    // Null for 'auto': the encoder of each output's content type.
+    private readonly TextEncoder? _encoder;
     private readonly bool _protectFences;
     private readonly bool _strict;
 
@@ -44,11 +48,14 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
         _template = options.GetString("template") is { } template ? new FPath(template).ToRelative() : (FPath?)null;
         _permalink = options.GetString("permalink");
 
-        _encoder = options.GetString("encode", "html") switch
+        _encoder = options.GetString("encode", "auto") switch
         {
-            "html" => HtmlEncoders.Html,
+            "auto" => null,
+            "html" => OutputEncoders.Html,
+            "xml" => OutputEncoders.Xml,
+            "json" => OutputEncoders.Json,
             "none" => NullEncoder.Default,
-            var other => throw new WorkflowValidationException($"option 'encode' of step '{Name}' must be 'html' or 'none', not '{other}'", definition.Location),
+            var other => throw new WorkflowValidationException($"option 'encode' of step '{Name}' must be 'auto', 'html', 'xml', 'json' or 'none', not '{other}'", definition.Location),
         };
 
         _protectFences = options.GetString("protect", "fences") switch
@@ -159,7 +166,7 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
         };
 
         await ImageTag.PrefetchAsync(template.Template, templateContext);
-        var html = await template.Template.RenderAsync(templateContext, _encoder);
+        var html = await template.Template.RenderAsync(templateContext, _encoder ?? OutputEncoders.ForContentType(file.EffectiveContentType));
 
         if (fences != null)
         {
@@ -220,7 +227,7 @@ internal sealed class LiquidStep : Step, IMapStep, IGroupStep
         }
 
         await ImageTag.PrefetchAsync(loaded.Template.Template, templateContext);
-        var content = await loaded.Template.Template.RenderAsync(templateContext, _encoder);
+        var content = await loaded.Template.Template.RenderAsync(templateContext, _encoder ?? OutputEncoders.ForContentType(ContentTypes.FromPath(path)));
 
         var own = new NodeObject { ["url"] = NodeValue.Create(path.FullName) };
 
