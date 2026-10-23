@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Douze.ImageBench</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NetVips" />
+    <PackageReference Include="NetVips.Native.osx-arm64" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.macOS" />
+    <PackageReference Include="Svg.Skia" />
+    <PackageReference Include="System.IO.Hashing" />
+  </ItemGroup>
+
+</Project>
