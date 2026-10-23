@@ -92,7 +92,7 @@ its cache (`.douze/`); the "rebuild, cache warm" rows are `douze -q` run again w
 
 ## Douze before and after the 2026-10-23 optimizations
 
-`run.sh douze`, 5 runs, base 21f00b2 (the loop, asynchronous streams) and the branch's head (`previous_item` and
+`run.sh douze`, 5 runs, base da30df9 with this benchmark (the loop, asynchronous streams) and the branch's head (`previous_item` and
 `next_item`, outputs written 4 at a time, sources read whole), run back to back twice on an Apple M4 Pro (14 cores,
 Docker VM with 14 CPUs and 8 GB) while other work loaded the host (load average 9): absolute times are higher than on a
 quiet machine, the comparison holds. Fastest of the runs, seconds:
