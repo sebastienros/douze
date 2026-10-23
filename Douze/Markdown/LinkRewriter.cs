@@ -152,12 +152,7 @@ internal sealed class LinkRewriter
                     segments.RemoveAt(segments.Count - 1);
                     break;
                 default:
-                    // A path cannot contain '..' in a name ('a..b.md').
-                    if (segment.Contains(".."))
-                    {
-                        return null;
-                    }
-
+                    // Only a '..' segment climbs: a name can contain two dots ('v1..v2.md').
                     segments.Add(segment);
                     break;
             }

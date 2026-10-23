@@ -108,4 +108,20 @@ public class MarkdownStepTests : StepTestBase
         Assert.Equal("<p><a href=\"/docs/b/\">b</a> <a href=\"c.md\">c</a></p>\n", await TextAsync(unit.Files.Single()));
         Assert.Contains((new FPath("/_content/docs/c.md"), DependencySet.Absent), unit.Dependencies.Templates);
     }
+
+    [Fact]
+    public async Task LinksToNamesWithTwoDotsAreRewritten()
+    {
+        await Source.WriteTextFileAsync("/_content/docs/a.md", "[b](v1..v2.md) [up](../c.md)");
+        await Source.WriteTextFileAsync("/_content/docs/v1..v2.md", "B");
+        await Source.WriteTextFileAsync("/_content/c.md", "C");
+
+        var result = await BuildSuccessfullyAsync(Workflow(
+            Step("pages", "frontmatter", inputs: ["_content/**"]),
+            Step("permalink", "permalink", needs: ["pages"], with: With(("root", NodeValue.Create("_content")))),
+            Step("markdown", "markdown", needs: ["permalink"], match: ["docs/a/**"])));
+
+        var unit = result["markdown"].Results.Single(x => x.Files.Any(f => f.Path.FullName == "/docs/a/index.html"));
+        Assert.Equal("<p><a href=\"/docs/v1..v2/\">b</a> <a href=\"/c/\">up</a></p>\n", await TextAsync(unit.Files.Single()));
+    }
 }
