@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -8,18 +9,27 @@ using Douze.FileSystems;
 namespace Douze.Workflow.Watch;
 
 /// <summary>
-/// The live reload of <c>douze serve</c>: pages connect to <c>/__douze/events</c> (Server-Sent Events), and after each
-/// build every page receives <c>{"changed":["/blog/a/","/styles.css"]}</c>, the URLs of the output files the build
-/// wrote or deleted (<c>/blog/a/index.html</c> is <c>/blog/a/</c>). <c>livereload.js</c> decides what to reload. A
-/// page first receives a <c>hello</c> event with the session id, so that it reloads when it reconnects to a restarted
+/// The live reload of <c>douze serve</c>: pages connect a WebSocket to <c>/__douze/socket</c>, and after each build
+/// every page receives <c>{"type":"changed","changed":["/blog/a/","/styles.css"]}</c>, the URLs of the output files the
+/// build wrote or deleted (<c>/blog/a/index.html</c> is <c>/blog/a/</c>). <c>livereload.js</c> decides what to reload.
+/// A page first receives <c>{"type":"hello","session":"..."}</c>, so that it reloads when it reconnects to a restarted
 /// server.
 /// </summary>
+/// <remarks>
+/// A WebSocket rather than Server-Sent Events: an event stream is an HTTP/1.1 response that never ends, and browsers
+/// open at most 6 connections per host, so 6 open pages (or pages being left whose stream is not closed yet) stalled
+/// every other request to the server. WebSockets don't count against that limit, and a page that goes away closes its
+/// socket, which ends its session at once.
+/// </remarks>
 internal sealed class LiveReload
 {
     public const string ScriptPath = "/__douze/livereload.js";
-    public const string EventsPath = "/__douze/events";
+    public const string SocketPath = "/__douze/socket";
 
-    private static readonly TimeSpan Heartbeat = TimeSpan.FromSeconds(20);
+    /// <summary>
+    /// The interval of the pings that find connections dropped without a close (a sleeping laptop).
+    /// </summary>
+    public static readonly TimeSpan KeepAlive = TimeSpan.FromSeconds(10);
 
     private readonly ConcurrentDictionary<long, Channel<byte[]>> _clients = new();
     private long _nextClient;
@@ -74,6 +84,7 @@ internal sealed class LiveReload
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
+            writer.WriteString("type", "changed");
             writer.WriteStartArray("changed");
 
             foreach (var url in changed.Select(ToUrl).Distinct())
@@ -85,7 +96,7 @@ internal sealed class LiveReload
             writer.WriteEndObject();
         }
 
-        var message = Encoding.UTF8.GetBytes($"data: {Encoding.UTF8.GetString(buffer.ToArray())}\n\n");
+        var message = buffer.ToArray();
 
         foreach (var client in _clients.Values)
         {
@@ -94,65 +105,75 @@ internal sealed class LiveReload
     }
 
     /// <summary>
-    /// Serves the events of one page until it disconnects or <paramref name="ct"/> is cancelled.
+    /// Serves one page over its WebSocket until it disconnects or <paramref name="ct"/> is cancelled.
     /// </summary>
-    public async Task ServeAsync(HttpListenerResponse response, CancellationToken ct)
+    public async Task ServeAsync(WebSocket socket, CancellationToken ct)
     {
-        response.StatusCode = 200;
-        response.ContentType = "text/event-stream";
-        response.Headers["Cache-Control"] = "no-cache";
-        response.SendChunked = true;
-
         var id = Interlocked.Increment(ref _nextClient);
         var messages = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions { SingleReader = true });
         _clients[id] = messages;
 
+        // A page that goes away closes its socket: the receive loop sees it at once and ends the session.
+        using var closed = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var receiving = ReceiveUntilClosedAsync(socket, closed);
+
         try
         {
-            var stream = response.OutputStream;
-            await WriteAsync(stream, Encoding.UTF8.GetBytes($"retry: 1000\nevent: hello\ndata: {{\"session\":\"{Session}\"}}\n\n"), ct);
+            await SendAsync(socket, Encoding.UTF8.GetBytes($"{{\"type\":\"hello\",\"session\":\"{Session}\"}}"), closed.Token);
 
-            while (!ct.IsCancellationRequested)
+            await foreach (var message in messages.Reader.ReadAllAsync(closed.Token))
             {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeout.CancelAfter(Heartbeat);
-
-                byte[] message;
-
-                try
-                {
-                    message = await messages.Reader.ReadAsync(timeout.Token);
-                }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                {
-                    // A comment, so that a page that went away is noticed.
-                    message = ": ping\n\n"u8.ToArray();
-                }
-
-                await WriteAsync(stream, message, ct);
+                await SendAsync(socket, message, closed.Token);
             }
         }
-        catch (Exception e) when (e is IOException or HttpListenerException or ObjectDisposedException or OperationCanceledException or InvalidOperationException)
+        catch (Exception e) when (e is WebSocketException or IOException or HttpListenerException or ObjectDisposedException or OperationCanceledException or InvalidOperationException)
         {
             // The page went away, or the server stops.
         }
         finally
         {
             _clients.TryRemove(id, out _);
+            await closed.CancelAsync();
+            await receiving;
 
-            try
+            if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
-                response.Close();
-            }
-            catch (Exception e) when (e is IOException or HttpListenerException or ObjectDisposedException or InvalidOperationException)
-            {
+                try
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                    await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, timeout.Token);
+                }
+                catch (Exception e) when (e is WebSocketException or IOException or ObjectDisposedException or OperationCanceledException)
+                {
+                }
             }
         }
     }
 
-    private static async Task WriteAsync(Stream stream, byte[] message, CancellationToken ct)
+    private static async Task ReceiveUntilClosedAsync(WebSocket socket, CancellationTokenSource closed)
     {
-        await stream.WriteAsync(message, ct);
-        await stream.FlushAsync(ct);
+        var buffer = new byte[256];
+
+        try
+        {
+            while (!closed.IsCancellationRequested)
+            {
+                // Pages send nothing: anything but a close is ignored.
+                var result = await socket.ReceiveAsync(buffer, closed.Token);
+
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    break;
+                }
+            }
+        }
+        catch (Exception e) when (e is WebSocketException or IOException or HttpListenerException or ObjectDisposedException or OperationCanceledException)
+        {
+        }
+
+        await closed.CancelAsync();
     }
+
+    private static Task SendAsync(WebSocket socket, byte[] message, CancellationToken ct)
+        => socket.SendAsync(message, WebSocketMessageType.Text, endOfMessage: true, ct);
 }

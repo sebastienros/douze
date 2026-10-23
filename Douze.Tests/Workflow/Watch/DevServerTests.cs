@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Text;
 using Douze.FileSystems;
 using Douze.Workflow.Watch;
@@ -100,7 +101,7 @@ public sealed class DevServerTests : IAsyncDisposable
 
         using var js = await _client.GetAsync("/__douze/livereload.js", Ct);
         Assert.Equal("text/javascript; charset=utf-8", js.Content.Headers.ContentType!.ToString());
-        Assert.Contains("/__douze/events", await js.Content.ReadAsStringAsync(Ct));
+        Assert.Contains("/__douze/socket", await js.Content.ReadAsStringAsync(Ct));
     }
 
     [Fact]
@@ -150,10 +151,10 @@ public sealed class DevServerTests : IAsyncDisposable
     [Fact]
     public async Task ConnectedPagesReceiveTheChangedUrls()
     {
-        await using var events = await EventStream.OpenAsync(_client, Ct);
+        await using var events = await PageSocket.OpenAsync(_server.Url, Ct);
 
         var hello = await events.ReadAsync(Ct);
-        Assert.Equal(("hello", $"{{\"session\":\"{_reload.Session}\"}}"), hello);
+        Assert.Equal($"{{\"type\":\"hello\",\"session\":\"{_reload.Session}\"}}", hello);
 
         await WaitForClientsAsync(1);
 
@@ -161,7 +162,64 @@ public sealed class DevServerTests : IAsyncDisposable
         _reload.Notify([]);
         _reload.Notify(["/blog/a/index.html", "/index.html", "/styles.css", "/a \"b\".html"]);
 
-        Assert.Equal(("message", "{\"changed\":[\"/blog/a/\",\"/\",\"/styles.css\",\"/a \\u0022b\\u0022.html\"]}"), await events.ReadAsync(Ct));
+        Assert.Equal("{\"type\":\"changed\",\"changed\":[\"/blog/a/\",\"/\",\"/styles.css\",\"/a \\u0022b\\u0022.html\"]}", await events.ReadAsync(Ct));
+    }
+
+    [Fact]
+    public async Task OpenPagesDoNotStallOtherRequests()
+    {
+        // Browsers open at most 6 HTTP/1.1 connections per host: pages that held one each (an event stream) stalled every
+        // other request once 6 were open. Sockets don't hold one, and files are served while 8 pages are connected.
+        Write("/index.html", "<html><body>Home</body></html>");
+
+        var pages = new List<PageSocket>();
+
+        try
+        {
+            for (var i = 0; i < 8; i++)
+            {
+                var socket = await PageSocket.OpenAsync(_server.Url, Ct);
+                pages.Add(socket);
+                await socket.ReadAsync(Ct);
+            }
+
+            await WaitForClientsAsync(8);
+
+            using var browser = new HttpClient(new SocketsHttpHandler { MaxConnectionsPerServer = 6 }) { BaseAddress = new Uri(_server.Url), Timeout = TimeSpan.FromSeconds(5) };
+            var requests = Enumerable.Range(0, 12).Select(_ => browser.GetStringAsync("/", Ct));
+            Assert.All(await Task.WhenAll(requests), body => Assert.Contains("Home", body));
+        }
+        finally
+        {
+            foreach (var page in pages)
+            {
+                await page.DisposeAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task APageThatGoesAwayIsForgottenAtOnce()
+    {
+        var page = await PageSocket.OpenAsync(_server.Url, Ct);
+        await page.ReadAsync(Ct);
+        await WaitForClientsAsync(1);
+
+        await page.DisposeAsync();
+
+        // Well before the keep-alive interval.
+        for (var i = 0; _reload.Clients > 0; i++)
+        {
+            Assert.True(i < 200, "the server did not notice that the page closed its socket");
+            await Task.Delay(10, Ct);
+        }
+    }
+
+    [Fact]
+    public async Task TheSocketPathRejectsPlainRequests()
+    {
+        using var response = await _client.GetAsync(LiveReload.SocketPath, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     private async Task WaitForClientsAsync(int count)
@@ -186,7 +244,7 @@ public sealed class DevServerTests : IAsyncDisposable
         using var session = new TestSession(source);
         await session.BuildSuccessfullyAsync();
 
-        await using var events = await EventStream.OpenAsync(_client, Ct);
+        await using var events = await PageSocket.OpenAsync(_server.Url, Ct);
         await events.ReadAsync(Ct);
         await WaitForClientsAsync(1);
 
@@ -194,7 +252,7 @@ public sealed class DevServerTests : IAsyncDisposable
         var result = await session.BuildSuccessfullyAsync(TestSession.Changes(("/_content/index.md", ChangeKind.Modified)));
         _reload.Notify(result.Changed);
 
-        Assert.Equal(("message", "{\"changed\":[\"/\"]}"), await events.ReadAsync(Ct));
+        Assert.Equal("{\"type\":\"changed\",\"changed\":[\"/\"]}", await events.ReadAsync(Ct));
     }
 
     public async ValueTask DisposeAsync()
@@ -212,74 +270,63 @@ public sealed class DevServerTests : IAsyncDisposable
     }
 
     /// <summary>
-    /// A Server-Sent Events client: reads the events of <c>/__douze/events</c>, skipping comments.
+    /// What <c>livereload.js</c> does: a WebSocket to <c>/__douze/socket</c>, reading the server's messages.
     /// </summary>
-    internal sealed class EventStream : IAsyncDisposable
+    internal sealed class PageSocket : IAsyncDisposable
     {
-        private readonly HttpResponseMessage _response;
-        private readonly StreamReader _reader;
+        private readonly ClientWebSocket _socket;
 
-        private EventStream(HttpResponseMessage response, StreamReader reader)
+        private PageSocket(ClientWebSocket socket)
         {
-            _response = response;
-            _reader = reader;
+            _socket = socket;
         }
 
-        public static async Task<EventStream> OpenAsync(HttpClient client, CancellationToken ct)
+        public static async Task<PageSocket> OpenAsync(string serverUrl, CancellationToken ct)
         {
-            var response = await client.GetAsync(LiveReload.EventsPath, HttpCompletionOption.ResponseHeadersRead, ct);
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            Assert.Equal("text/event-stream", response.Content.Headers.ContentType!.MediaType);
-
-            return new EventStream(response, new StreamReader(await response.Content.ReadAsStreamAsync(ct), Encoding.UTF8));
+            var socket = new ClientWebSocket();
+            var url = new Uri(new Uri(serverUrl.Replace("http://", "ws://", StringComparison.Ordinal)), LiveReload.SocketPath);
+            await socket.ConnectAsync(url, ct);
+            return new PageSocket(socket);
         }
 
         /// <summary>
-        /// The next event: its type (<c>message</c> when it has none) and its data.
+        /// The next message, as text.
         /// </summary>
-        public async Task<(string Event, string Data)> ReadAsync(CancellationToken ct)
+        public async Task<string> ReadAsync(CancellationToken ct)
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(30));
 
-            var type = "message";
-            var data = new StringBuilder();
+            var buffer = new byte[4096];
+            using var message = new MemoryStream();
 
-            while (await _reader.ReadLineAsync(timeout.Token) is { } line)
+            while (true)
             {
-                if (line.Length == 0)
-                {
-                    if (data.Length > 0)
-                    {
-                        return (type, data.ToString());
-                    }
+                var result = await _socket.ReceiveAsync(buffer, timeout.Token);
 
-                    continue;
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    throw new EndOfStreamException("the server closed the socket");
                 }
 
-                if (line.StartsWith(':'))
-                {
-                    continue;
-                }
+                message.Write(buffer, 0, result.Count);
 
-                var colon = line.IndexOf(':');
-                var (field, value) = colon < 0 ? (line, "") : (line[..colon], line[(colon + 1)..].TrimStart(' '));
-
-                switch (field)
+                if (result.EndOfMessage)
                 {
-                    case "event": type = value; break;
-                    case "data": data.Append(value); break;
+                    return Encoding.UTF8.GetString(message.ToArray());
                 }
             }
-
-            throw new EndOfStreamException("the event stream ended");
         }
 
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
-            _reader.Dispose();
-            _response.Dispose();
-            return default;
+            if (_socket.State == WebSocketState.Open)
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, timeout.Token);
+            }
+
+            _socket.Dispose();
         }
     }
 }
