@@ -150,6 +150,24 @@ public class WorkflowLoaderTests
     }
 
     [Fact]
+    public void UnknownTool()
+    {
+        AssertError("""
+            steps:
+              search:
+                inputs: "**"
+                run: "{{ tool }} --site {{ inputs }}"
+                mode: batch
+                tool: pagefnd@1.0
+            """, "unknown tool 'pagefnd@1.0' on step 'search'; Douze knows 'lightningcss' or 'pagefind'", 6, 11);
+
+        Assert.Equal("pagefind@1.4.0", Load("""
+            steps:
+              search: { inputs: "**", run: "{{ tool }}", mode: batch, tool: pagefind@1.4.0 }
+            """).Workflow!.Steps.Single().Tool);
+    }
+
+    [Fact]
     public void RootMustBeAMapping()
     {
         AssertError("- a\n- b\n", "a workflow file must be a mapping with 'site', 'vars', 'markdown' and 'steps'", 1, 1);

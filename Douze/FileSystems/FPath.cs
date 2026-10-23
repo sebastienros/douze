@@ -185,16 +185,7 @@ public readonly struct FPath : IEquatable<FPath>, IComparable<FPath>
 
         if (path.Contains('\\'))
         {
-            return string.Create(path.Length, path, (c, path) =>
-            {
-                var length = c.Length;
-
-                for (var i = 0; i < length; i++)
-                {
-                    var n = path[i];
-                    c[i] = n == '\\' ? '/' : n;
-                }
-            });
+            path = path.Replace('\\', '/');
         }
 
         while (path.Contains("//"))
@@ -202,7 +193,7 @@ public readonly struct FPath : IEquatable<FPath>, IComparable<FPath>
             path = path.Replace("//", "/");
         }
 
-        if (path.Contains(".."))
+        if (HasParentSegment(path))
         {
             ThrowInvalidPath();
         }
@@ -213,6 +204,29 @@ public readonly struct FPath : IEquatable<FPath>, IComparable<FPath>
         {
             throw new ArgumentException("Paths can't contain '..'");
         }
+    }
+
+    /// <summary>
+    /// Whether a path has a <c>..</c> segment. A name that only contains two dots is valid: <c>v1..v2.md</c>, or
+    /// <c>..gitignore.Xb3k9</c>, the temporary file rsync writes for <c>.gitignore</c>.
+    /// </summary>
+    internal static bool HasParentSegment(string path)
+    {
+        var index = path.IndexOf("..", StringComparison.Ordinal);
+
+        while (index >= 0)
+        {
+            var end = index + 2;
+
+            if ((index == 0 || path[index - 1] == '/') && (end == path.Length || path[end] == '/'))
+            {
+                return true;
+            }
+
+            index = path.IndexOf("..", index + 1, StringComparison.Ordinal);
+        }
+
+        return false;
     }
 
     public int CompareTo(FPath other)

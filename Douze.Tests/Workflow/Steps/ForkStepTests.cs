@@ -114,6 +114,48 @@ public class ForkStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task AnEmptyFileNameIsAnError()
+    {
+        await Source.WriteTextFileAsync("/a.md", "---\ntitle: A\n---\na");
+
+        // An undefined value renders nothing: '/.txt'.
+        var with = With(("permalink", NodeValue.Create("/{{ page.slug }}.txt")));
+        var result = await BuildAsync(Workflow(Step("pages", "frontmatter", inputs: ["**"]), Step("copy", "fork", needs: ["pages"], with: with)));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("the permalink of step 'copy' is '/.txt' for '/a.md': it has an empty file name", Assert.Single(result.Errors).ToString());
+    }
+
+    [Fact]
+    public async Task StrictMakesAnUndefinedVariableAnError()
+    {
+        await Source.WriteTextFileAsync("/a.md", "---\ntitle: A\n---\na");
+
+        var with = With(("permalink", NodeValue.Create("/copies/{{ slug }}/a.txt")), ("strict", NodeValue.Create(true)));
+        var result = await BuildAsync(Workflow(Step("pages", "frontmatter", inputs: ["**"]), Step("copy", "fork", needs: ["pages"], with: with)));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("undefined variable 'slug'", Assert.Single(result.Errors).ToString());
+
+        // Without strict, the empty segment is an error too.
+        with = With(("permalink", NodeValue.Create("/copies/{{ slug }}/a.txt")));
+        result = await BuildAsync(Workflow(Step("pages", "frontmatter", inputs: ["**"]), Step("copy", "fork", needs: ["pages"], with: with)));
+        Assert.Contains("it has an empty segment", Assert.Single(result.Errors).ToString());
+    }
+
+    [Theory]
+    [InlineData("/a/b.md", null)]
+    [InlineData("a/b/", null)]
+    [InlineData("/a/..b.md", null)]
+    [InlineData("/.well-known/a.json", null)]
+    [InlineData("/a/.md", "file name")]
+    [InlineData("/a//b.md", "segment")]
+    public void EmptyParts(string permalink, string? part)
+    {
+        Assert.Equal(part, Douze.Workflow.Steps.ForkStep.EmptyPart(permalink));
+    }
+
+    [Fact]
     public async Task FolderPermalinkGetsAnIndex()
     {
         await Source.WriteTextFileAsync("/a.html", "a");

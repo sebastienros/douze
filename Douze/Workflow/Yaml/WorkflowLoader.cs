@@ -826,6 +826,11 @@ internal static partial class WorkflowLoader
 
             step = field.Read(yaml, value!, step, environment, errors);
             present.Add((field, keyNode));
+
+            if (field.Name == "tool" && step.Tool is { } tool && Tools.NpmTool.Parse(tool) == null)
+            {
+                errors.Add(new($"unknown tool '{tool}' on step '{name}'; Douze knows {WorkflowSchema.Expected([.. Tools.NpmTool.Known.Keys.Order(StringComparer.Ordinal)])}", yaml.Location(value!)));
+            }
         }
 
         var hasUses = present.Any(x => x.Field.Name == "uses");
