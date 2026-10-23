@@ -32,7 +32,8 @@ internal sealed partial class SocialImageStep : Step, IMapStep
     private readonly string? _skip;
     private readonly ImmutableArray<TextOptions> _text;
 
-    // Font files copied to the temporary folder, where Pango reads them, by content hash.
+    // Font files copied to the temporary folder of the step, where Pango reads them, by content hash. Each step has its
+    // own folder: on Windows a font Pango has mapped cannot be written again, by another step using the same font.
     private readonly ConcurrentDictionary<Hash128, Lazy<Task<string>>> _fonts = new();
 
     // The files the cards read (font files, images inlined in the SVG), read once per build: every card reads the same.
@@ -284,13 +285,13 @@ internal sealed partial class SocialImageStep : Step, IMapStep
 
         return await _fonts.GetOrAdd(hash, static (hash, state) => new Lazy<Task<string>>(async () =>
         {
-            var folder = Path.Combine(state.Context.Build.TempRoot, "fonts");
+            var folder = Path.Combine(state.Context.Build.TempRoot, "fonts", state.Name);
             Directory.CreateDirectory(folder);
 
             var file = Path.Combine(folder, hash + state.Path.GetExtensionWithDot().ToLowerInvariant());
             await File.WriteAllBytesAsync(file, state.Bytes);
             return file;
-        }, LazyThreadSafetyMode.ExecutionAndPublication), (Context: context, Path: path, Bytes: bytes)).Value;
+        }, LazyThreadSafetyMode.ExecutionAndPublication), (Context: context, Name, Path: path, Bytes: bytes)).Value;
     }
 
     /// <summary>

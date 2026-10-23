@@ -72,6 +72,39 @@ public class WorkflowLoaderTests
     }
 
     [Fact]
+    public void EnabledExpressionsSeeTheEnvironment()
+    {
+        var environment = new WorkflowEnvironment("windows", "arm64", new Dictionary<string, string> { ["Douze_OG"] = "1" }, watch: true);
+
+        var steps = WorkflowLoader.Load("""
+            steps:
+              pages: { inputs: "**", uses: frontmatter }
+              og: { needs: pages, uses: social-image, with: { template: og.svg, output: og.png }, enabled: "os != 'windows'" }
+              arm: { needs: og, uses: markdown, enabled: "arch == 'arm64' and watch" }
+              env: { needs: arm, uses: layout, enabled: "env.DOUZE_OG == '1'" }
+              missing: { needs: env, uses: liquid, enabled: "env.MISSING" }
+              write: { needs: missing, uses: write }
+            """, "douze.yml", environment: environment).Workflow!.Steps;
+
+        // Variable names are case insensitive on Windows; a missing variable is nil.
+        Assert.Equal(["pages", "arm", "env", "write"], steps.Select(x => x.Name));
+        Assert.Equal(["env"], steps[^1].Needs);
+        Assert.Equal(["pages"], steps[1].Needs);
+    }
+
+    [Fact]
+    public void InvalidEnabledExpression()
+    {
+        var error = Assert.Single(Errors("""
+            steps:
+              write: { inputs: "**", uses: write, enabled: "os ==" }
+            """));
+
+        Assert.StartsWith("'enabled': invalid expression 'os =='", error.Message);
+        Assert.Equal(new SourceLocation("douze.yml", 2, 48), error.Location);
+    }
+
+    [Fact]
     public void RootMustBeAMapping()
     {
         AssertError("- a\n- b\n", "a workflow file must be a mapping with 'site', 'markdown' and 'steps'", 1, 1);
@@ -586,7 +619,7 @@ public class WorkflowLoaderTests
     {
         var path = Path.Combine(Fixtures, "api-reference.yml");
 
-        var file = await WorkflowLoader.LoadAsync(path, "api-reference.yml", TestContext.Current.CancellationToken);
+        var file = await WorkflowLoader.LoadAsync(path, "api-reference.yml", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(Path.GetFullPath(path), file.Workflow!.SourceFile);
         Assert.Equal("api-reference.yml", file.Workflow.Steps[0].Location!.Value.File);

@@ -33,7 +33,7 @@ internal sealed record StepDefinition
     public TimeSpan? Timeout { get; init; }
     public StderrPolicy Stderr { get; init; } = StderrPolicy.Fail;
     public bool Shell { get; init; } = true;
-    public bool Enabled { get; init; } = true;                     // false: the step is left out, its consumers need its needs
+    public bool Enabled { get; init; } = true;                     // the 'enabled' expression; false: the step is left out, its consumers need its needs
     public SourceLocation? Location { get; init; }                 // YAML file, line, column; null for the default workflow
 
     public bool IsCommand => Run is not null;

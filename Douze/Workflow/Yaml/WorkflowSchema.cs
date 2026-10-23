@@ -59,7 +59,7 @@ internal static partial class WorkflowSchema
         Duration("timeout", x => x.Timeout, (x, v) => x with { Timeout = v }, commandOnly: true),
         Enum("stderr", StderrPolicy.Fail, x => x.Stderr, (x, v) => x with { Stderr = v }, commandOnly: true),
         Bool("shell", true, x => x.Shell, (x, v) => x with { Shell = v }, commandOnly: true),
-        Bool("enabled", true, x => x.Enabled, (x, v) => x with { Enabled = v }),
+        Condition("enabled", x => x.Enabled, (x, v) => x with { Enabled = v }),
     ];
 
     public static readonly FrozenDictionary<string, WorkflowField> StepFieldsByName = StepFields.ToFrozenDictionary(x => x.Name, StringComparer.Ordinal);
@@ -185,7 +185,7 @@ internal static partial class WorkflowSchema
 
     private static WorkflowField Globs(string name, Func<StepDefinition, ImmutableArray<string>> get, Func<StepDefinition, ImmutableArray<string>, StepDefinition> set, bool commandOnly = false)
     {
-        return new WorkflowField(name, commandOnly, "a glob or a list of globs", (yaml, node, step, errors) =>
+        return new WorkflowField(name, commandOnly, "a glob or a list of globs", (yaml, node, step, _, errors) =>
         {
             if (!TryReadStrings(yaml, name, "a glob or a list of globs", node, errors, out var values, out var offending))
             {
@@ -214,22 +214,47 @@ internal static partial class WorkflowSchema
     private static WorkflowField Names(string name, Func<StepDefinition, ImmutableArray<string>> get, Func<StepDefinition, ImmutableArray<string>, StepDefinition> set)
     {
         return new WorkflowField(name, false, "a string or a list of strings",
-            (yaml, node, step, errors) => TryReadStrings(yaml, name, "a string or a list of strings", node, errors, out var values, out _) ? set(step, values) : step,
+            (yaml, node, step, _, errors) => TryReadStrings(yaml, name, "a string or a list of strings", node, errors, out var values, out var _) ? set(step, values) : step,
             step => List(get(step)));
     }
 
     private static WorkflowField String(string name, Func<StepDefinition, string?> get, Func<StepDefinition, string, StepDefinition> set, bool commandOnly = false)
     {
         return new WorkflowField(name, commandOnly, "a string",
-            (_, node, step, _) => YamlSource.Scalar(node) is { } value ? set(step, value) : null,
+            (_, node, step, _, _) => YamlSource.Scalar(node) is { } value ? set(step, value) : null,
             step => get(step) is { Length: > 0 } value ? Scalar(value) : null);
     }
 
     private static WorkflowField Bool(string name, bool defaultValue, Func<StepDefinition, bool> get, Func<StepDefinition, bool, StepDefinition> set, bool commandOnly = false)
     {
         return new WorkflowField(name, commandOnly, "true or false",
-            (_, node, step, _) => YamlSource.Scalar(node) is { } text && bool.TryParse(text, out var value) ? set(step, value) : null,
+            (_, node, step, _, _) => YamlSource.Scalar(node) is { } text && bool.TryParse(text, out var value) ? set(step, value) : null,
             step => get(step) == defaultValue ? null : get(step) ? "true" : "false");
+    }
+
+    /// <summary>
+    /// <c>true</c>, <c>false</c> or a Liquid expression over the <see cref="WorkflowEnvironment"/>, evaluated when the
+    /// file is loaded.
+    /// </summary>
+    private static WorkflowField Condition(string name, Func<StepDefinition, bool> get, Func<StepDefinition, bool, StepDefinition> set)
+    {
+        return new WorkflowField(name, false, "true, false or a Liquid expression", (yaml, node, step, environment, errors) =>
+        {
+            if (YamlSource.Scalar(node) is not { } text)
+            {
+                return null;
+            }
+
+            try
+            {
+                return set(step, environment.Evaluate(text));
+            }
+            catch (DouzeException e)
+            {
+                errors.Add(new($"'{name}': {e.Message}", yaml.Location(node)));
+                return step;
+            }
+        }, step => get(step) ? null : "false");
     }
 
     private static WorkflowField Enum<T>(string name, T defaultValue, Func<StepDefinition, T> get, Func<StepDefinition, T, StepDefinition> set, bool commandOnly = false)
@@ -239,7 +264,7 @@ internal static partial class WorkflowSchema
         var names = values.Select(x => x.ToString().ToLowerInvariant()).ToArray();
         var expected = string.Join(", ", names[..^1].Select(x => $"'{x}'")) + $" or '{names[^1]}'";
 
-        return new WorkflowField(name, commandOnly, expected, (_, node, step, _) =>
+        return new WorkflowField(name, commandOnly, expected, (_, node, step, _, _) =>
         {
             var index = Array.IndexOf(names, YamlSource.Scalar(node));
             return index < 0 ? null : set(step, values[index]);
@@ -249,13 +274,13 @@ internal static partial class WorkflowSchema
     private static WorkflowField Mapping(string name, Func<StepDefinition, NodeObject> get, Func<StepDefinition, NodeObject, StepDefinition> set)
     {
         return new WorkflowField(name, false, "a mapping",
-            (yaml, node, step, errors) => node is YamlMapping ? set(step, (NodeObject)yaml.ToNode(node, errors)!) : null,
+            (yaml, node, step, _, errors) => node is YamlMapping ? set(step, (NodeObject)yaml.ToNode(node, errors)!) : null,
             step => get(step).Count == 0 ? null : FlowNode(get(step)));
     }
 
     private static WorkflowField StringMap(string name, Func<StepDefinition, ImmutableDictionary<string, string>> get, Func<StepDefinition, ImmutableDictionary<string, string>, StepDefinition> set, bool commandOnly = false)
     {
-        return new WorkflowField(name, commandOnly, "a mapping of names to strings", (yaml, node, step, errors) =>
+        return new WorkflowField(name, commandOnly, "a mapping of names to strings", (yaml, node, step, _, errors) =>
         {
             if (node is not YamlMapping mapping)
             {
@@ -281,7 +306,7 @@ internal static partial class WorkflowSchema
 
     private static WorkflowField Duration(string name, Func<StepDefinition, TimeSpan?> get, Func<StepDefinition, TimeSpan, StepDefinition> set, bool commandOnly = false)
     {
-        return new WorkflowField(name, commandOnly, "a duration", (yaml, node, step, errors) =>
+        return new WorkflowField(name, commandOnly, "a duration", (yaml, node, step, _, errors) =>
         {
             if (YamlSource.Scalar(node) is not { } text || !TryParseDuration(text, out var duration))
             {
@@ -354,7 +379,7 @@ internal sealed class WorkflowField
     /// Returns the step with the field set, the step unchanged after adding specific errors, or <c>null</c> when the
     /// node has the wrong type.
     /// </summary>
-    public delegate StepDefinition? Reader(YamlSource yaml, YamlElement node, StepDefinition step, ICollection<WorkflowValidationError> errors);
+    public delegate StepDefinition? Reader(YamlSource yaml, YamlElement node, StepDefinition step, WorkflowEnvironment environment, ICollection<WorkflowValidationError> errors);
 
     private readonly Reader _read;
     private readonly Func<StepDefinition, string?> _write;
@@ -380,9 +405,9 @@ internal sealed class WorkflowField
     /// </summary>
     public string Expected { get; }
 
-    public StepDefinition Read(YamlSource yaml, YamlElement node, StepDefinition step, ICollection<WorkflowValidationError> errors)
+    public StepDefinition Read(YamlSource yaml, YamlElement node, StepDefinition step, WorkflowEnvironment environment, ICollection<WorkflowValidationError> errors)
     {
-        if (_read(yaml, node, step, errors) is { } result)
+        if (_read(yaml, node, step, environment, errors) is { } result)
         {
             return result;
         }
