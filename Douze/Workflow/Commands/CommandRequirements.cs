@@ -36,7 +36,20 @@ internal static partial class CommandRequirements
                 ValueTask.FromResult(Directory.Exists(directory) ? RequirementStatus.Found(path: directory) : RequirementStatus.Missing($"'{directory}' does not exist")));
         }
 
+        var tool = ToolRequirement(definition, context);
+
+        if (tool != null)
+        {
+            yield return tool;
+        }
+
         var executable = FirstWord(definition.Run ?? "", definition.Shell);
+
+        // A run line that starts with the tool's binary ({{ tool }}).
+        if (tool != null && executable == null)
+        {
+            yield break;
+        }
 
         if (executable == null)
         {
@@ -64,6 +77,23 @@ internal static partial class CommandRequirements
 
         yield return Requirement.Create(executable, $"install {executable} and add its folder to PATH, or change the 'run' line of step '{step}'", _ =>
             ValueTask.FromResult(FindOnPath(executable, directory) is { } found ? RequirementStatus.Found(path: found) : RequirementStatus.Missing("is not on PATH")));
+    }
+
+    /// <summary>
+    /// The tool of a step's <c>tool</c> option, which Douze downloads (<see cref="NpmTool.Known"/>), or null.
+    /// </summary>
+    /// <exception cref="WorkflowValidationException">Douze does not know the tool.</exception>
+    public static Tools.ToolRequirement? ToolRequirement(StepDefinition definition, BuildContext context)
+    {
+        if (definition.Tool is not { } option)
+        {
+            return null;
+        }
+
+        var (tool, version) = Tools.NpmTool.Parse(option)
+            ?? throw new WorkflowValidationException($"unknown tool '{option}' for step '{definition.Name}'; Douze knows {string.Join(", ", Tools.NpmTool.Known.Keys.Order(StringComparer.Ordinal))}", definition.Location);
+        var installer = new Tools.ToolInstaller(context.ToolsRoot, null, (level, message) => context.View.Message(level, definition.Name, message));
+        return new Tools.NpmToolRequirement(tool, version, installer, $"run 'douze tools install', or remove the option 'tool' of step '{definition.Name}' and run a {tool.Name} on PATH");
     }
 
     /// <summary>

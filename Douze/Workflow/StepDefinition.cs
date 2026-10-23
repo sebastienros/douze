@@ -21,6 +21,7 @@ internal sealed record StepDefinition
     public string? Uses { get; init; }                             // built-in id
     public NodeObject With { get; init; } = new();                 // options for `uses`
     public string? Run { get; init; }                              // command line
+    public string? Tool { get; init; }                             // a tool Douze downloads for the command (NpmTool.Known), `name` or `name@version`
     public CommandMode Mode { get; init; } = CommandMode.Batch;    // filter | batch | worker
     public string? GroupBy { get; init; }                          // "file" | "dir" | Liquid template
     public ImmutableArray<string> Outputs { get; init; } = [];    // globs read back after a batch command
@@ -56,6 +57,7 @@ internal sealed record StepDefinition
             writer.WritePropertyName("with");
             CanonicalJson.Write(writer, With);
             writer.WriteString("run", Run);
+            writer.WriteString("tool", Tool);
             writer.WriteString("mode", Mode.ToString());
             writer.WriteString("group-by", GroupBy);
             WriteArray(writer, "outputs", Outputs);

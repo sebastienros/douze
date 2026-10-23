@@ -98,6 +98,32 @@ public class CommandRequirementsTests : CommandTestBase
         Assert.Equal(RequirementStatus.Missing($"'{Path.Combine(site, "missing")}' does not exist"), folder.Status);
     }
 
+    [Fact]
+    public async Task ToolsAreDownloadedOnFirstUse()
+    {
+        Site = await SiteOptions.DetectAsync(Source, Output, TempFolder, null);
+
+        var results = await CheckAsync(
+            Command("search", "{{ tool }} --site {{ inputs }}", CommandMode.Batch, inputs: ["**"]) with { Tool = "pagefind" },
+            Command("other", "{{ tool }} --site {{ inputs }}", CommandMode.Batch, inputs: ["**"]) with { Tool = "pagefind@1.4.0" });
+
+        // The tool, and no requirement for the run line, which starts with its binary.
+        var search = Assert.Single(results, x => x.Step == "search");
+        Assert.Equal("pagefind 1.5.2", search.Requirement.Name);
+        Assert.Contains(search.Status.State, new[] { RequirementState.Installable, RequirementState.Found });
+        Assert.Equal("pagefind 1.4.0", Assert.Single(results, x => x.Step == "other").Requirement.Name);
+    }
+
+    [Fact]
+    public async Task UnknownTools()
+    {
+        Site = await SiteOptions.DetectAsync(Source, Output, TempFolder, null);
+
+        var e = await Assert.ThrowsAsync<WorkflowValidationException>(() => CheckAsync(Command("search", "{{ tool }}", CommandMode.Batch, inputs: ["**"]) with { Tool = "pagefnd" }));
+
+        Assert.Equal("unknown tool 'pagefnd' for step 'search'; Douze knows lightningcss, pagefind", e.Errors.Single().Message);
+    }
+
     private async Task<IReadOnlyList<RequirementResult>> CheckAsync(params StepDefinition[] steps)
     {
         var graph = WorkflowGraph.Build(Workflow(steps));

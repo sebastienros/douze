@@ -147,7 +147,7 @@ looked up on `PATH` (and `PATHEXT` on Windows), or, when it is a path (`./script
 needs a given version can check it itself.
 
 `douze tools install` downloads every tool the workflow downloads on first use (the `twoslash` engine, the Roslyn
-language server of `csharp`, gopls of `go`, built with `go install`) into the cache
+language server of `csharp`, gopls of `go`, built with `go install`, the `tool` of command steps) into the cache
 folder (`<cache>/tools/`, `--cache-dir`), so that a CI cache of that folder, or a machine that goes offline, has them:
 
 ```
@@ -293,7 +293,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
 | `enabled` | `true` | `false` leaves the step out: the steps that need it need what it needs (a switch between two steps) |
-| `run`, `mode`, `outputs`, `sources`, `version`, `env`, `cwd`, `timeout`, `stderr`, `shell` | | command steps, see "commands" |
+| `run`, `tool`, `mode`, `outputs`, `sources`, `version`, `env`, `cwd`, `timeout`, `stderr`, `shell` | | command steps, see "commands" |
 
 A step has either `uses` or `run`. Steps run as soon as their files are available, in parallel; their order in the
 file does not matter.
@@ -849,6 +849,7 @@ some warnings on stderr (`ExperimentalWarning`): set `NODE_NO_WARNINGS: "1"` in 
 | `{{ inputs }}` | batch | The folder holding the input files |
 | `{{ outputs }}` | batch | The folder the command writes its files to |
 | `{{ file.path }}`, `file.dir`, `file.name`, `file.ext` | filter | The file's virtual path (`/blog/a.md`), folder (`/blog/`), name (`a.md`), extension (`.md`) |
+| `{{ tool }}` | all | The binary of the step's `tool` |
 
 A value written directly in `run` is quoted for the shell when it needs it (`'/my site/_site'` with `/bin/sh`,
 `"C:\my site\_site"` with `cmd.exe`); the result of a filter (`{{ file.name | remove: '.md' }}`) is written as it is.
@@ -857,6 +858,16 @@ A value written directly in `run` is quoted for the shell when it needs it (`'/m
 
 Before the build, the program the line starts with is looked up on the PATH, or relative to `cwd` when it is a path:
 a missing one fails the build at once (see "doctor").
+
+`tool` runs a native tool that Douze downloads, as it does the language servers of the hover steps, so that a site
+needs no package manager for it: `pagefind` (Pagefind's extended binary, 1.5.2 by default) or `lightningcss` (the
+Lightning CSS command line, 1.33.0), from their npm packages for the platform, verified against the integrity Douze
+pins for the default version (`pagefind@<version>` for another), installed into the tools folder on first use (or by
+`douze tools install`). `{{ tool }}` is the path of its binary:
+
+````yaml
+  search: { needs: layout, tool: pagefind, run: "{{ tool }} --site {{ inputs }} --output-path {{ outputs }}/pagefind", mode: batch }
+````
 
 With `shell: false`, the line is split on whitespace, `'...'` is literal, and in `"..."` a `\"` is a quote. The
 program is looked up on the PATH; on Windows, use the shell for `npx` and other `.cmd` scripts.
