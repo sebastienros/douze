@@ -19,7 +19,10 @@ to its HTML, taken after Liquid ran and before Markdown renders it.
 For each consumed file, the step emits two files: the file itself, unchanged, and the copy.
 
 - The copy's path is `permalink`, a Liquid template rendered with the file's data (`{{ url }}`, `{{ title }}`...). A
-  result without an extension is a folder, and `index.html` is added. An empty result fails the unit.
+  result without an extension is a folder, and `index.html` is added. An empty result fails the unit, and so does a
+  result with an empty segment (`/a//b.md`) or an empty file name (`/.txt`): they come from a value of the template
+  that rendered nothing. So a fork cannot write a file whose name is a dot and an extension, such as `/.nojekyll`
+  or `/.htaccess`.
 - The copy's data is the file's, with `data` merged over it, and `url` set to the copy's path.
 - The copy's content is the file's, or `content` rendered with the file's data and the file's text as `content`.
 - With `strip-regions` (the default), the lines that are a single U+001E character, the markers of raw HTML regions
@@ -40,6 +43,7 @@ should not process it (a `markdown` step that must not render the Markdown twin,
 | `content` | string (Liquid) | the file's content | The copy's content, rendered with the file's data and `content`, the file's text |
 | `strip-regions` | boolean | `true` | Removes the lines that are a single U+001E character from the copy |
 | `skip` | string (Liquid condition) | none | A condition such as `draft` or `twin == false`; when it is true the file gets no copy |
+| `strict` | boolean | `false` | An undefined variable of `permalink` or `content` is an error instead of nothing |
 
 ## Errors
 
@@ -47,7 +51,12 @@ should not process it (a `markdown` step that must not render the Markdown twin,
 step 'twins' needs the option 'permalink'
 option 'data' of step 'twins' must be a mapping
 the permalink of step 'twins' is empty for '/docs/guide/a.md'
+the permalink of step 'twins' is '/docs/guide/.md' for '/docs/guide/a.md': it has an empty file name, a value of the template is probably undefined
+undefined variable 'slug'
 ```
+
+The last one is with `strict: true`, for a template that reads `slug` when the file does not define it. Errors
+about a file fail its unit, and are reported as `error: twins: /docs/guide/a.md: ...`.
 
 ## Example
 

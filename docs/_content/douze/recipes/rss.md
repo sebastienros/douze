@@ -61,14 +61,14 @@ section:
     <atom:link href="{{ '/feed.xml' | absolute_url }}" rel="self" type="application/rss+xml"/>
     {%- assign posts = collections.post | reverse %}
     {%- if posts.size > 0 %}
-    <lastBuildDate>{{ posts.first.data.date | date_to_rfc822 | raw }}</lastBuildDate>
+    <lastBuildDate>{{ posts.first.data.date | date_to_rfc822 }}</lastBuildDate>
     {%- endif %}
     {%- for post in posts limit: 20 %}
     <item>
       <title>{{ post.data.title }}</title>
       <link>{{ post.data.url | replace: 'index.html', '' | absolute_url }}</link>
       <guid>{{ post.data.url | replace: 'index.html', '' | absolute_url }}</guid>
-      <pubDate>{{ post.data.date | date_to_rfc822 | raw }}</pubDate>
+      <pubDate>{{ post.data.date | date_to_rfc822 }}</pubDate>
       {%- if post.data.description %}
       <description>{{ post.data.description }}</description>
       {%- endif %}
@@ -94,10 +94,8 @@ Notes on the template:
 
 - Collections are sorted by date ascending, so `reverse` puts the newest post first.
 - `url` is the output path (`/blog/first/index.html`): `replace: 'index.html', ''` turns it into the folder URL.
-- The `liquid` step encodes every output for HTML by default (`encode: html`), which also makes text safe in XML:
-  `{{ post.data.title }}` writes `Second &lt;post&gt;`. Do not add `xml_escape` to these values, or the entities
-  are escaped twice.
-- The same encoder writes `+` as `&#x2B;`. `| raw` writes the dates as they are, so the offset reads `+0000`.
+- The `liquid` step encodes the outputs of an XML file for XML: `{{ post.data.title }}` writes `Second &lt;post&gt;`,
+  and the dates keep their `+0000`. `xml_escape` is not needed, and not encoded again where it is used.
 
 Point to the feed from the layout of the pages:
 
@@ -180,7 +178,7 @@ Steps after `permalink` see output paths: the feed is `feed.xml`, and the posts 
 <item>
   <title>{{ post.data.title }}</title>
   <link>{{ post.data.url | replace: 'index.html', '' | absolute_url }}</link>
-  <pubDate>{{ post.data.date | date_to_rfc822 | raw }}</pubDate>
+  <pubDate>{{ post.data.date | date_to_rfc822 }}</pubDate>
   <description>{{ post.content }}</description>
 </item>
 {%- endfor %}

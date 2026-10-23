@@ -48,12 +48,11 @@ the includes folder, with `.liquid` as the default extension.
 | [`image_size`](#image_size) | Images | The width and height of an image. |
 | [`social_image_url`](#social_image_url) | Images | The url of the page's social image. |
 
-:::caution[Output encoding]
-The [liquid step](steps/liquid.md) HTML-encodes the values of output tags by default (`encode: html`), in every file
-it renders, XML included. Filters that return markup (`markdownify`, `excerpt`, `toc`, `json`) are not encoded again,
-but the others are: `xml_escape` then escapes twice (`&amp;amp;`), and the `+` of `date_to_xmlschema` and
-`date_to_rfc822` is written `&#x2B;`, which XML readers decode. Without `xml_escape`, a value is already escaped for
-XML. A step with `encode: none` writes values as they are.
+:::note[Output encoding]
+The [liquid step](steps/liquid.md#output-encoding) encodes the values of output tags for the file it renders: HTML in
+pages, XML in feeds and sitemaps, JSON strings in JSON files, and nothing in text files. Filters whose result is
+already encoded (`xml_escape`, `json`, `escape`, and the ones that return markup: `markdownify`, `excerpt`, `toc`) are
+not encoded again.
 :::
 
 ### slug
@@ -140,7 +139,7 @@ out. Without a path: `index_by needs the path of the key`.
 ```
 
 The value as JSON. `jsonify` is the same filter. Site data, collections and other data objects are written in their
-own key order; other values go through Fluid's `json` filter. The result is not HTML-encoded.
+own key order; other values go through Fluid's `json` filter. The result is not encoded again, in any output.
 
 ### where, find_index, slice
 
@@ -160,8 +159,9 @@ index.
 {{ title | xml_escape }}
 ```
 
-`&`, `<`, `>`, `"` and `'` as `&amp;`, `&lt;`, `&gt;`, `&quot;` and `&#39;`. See the caution about
-[output encoding](#filters).
+`&`, `<`, `>`, `"` and `'` as `&amp;`, `&lt;`, `&gt;`, `&quot;` and `&#39;`. The result is not encoded again. In an
+XML file the output is XML-encoded already, so the filter is only needed in a step with `encode: none` (see
+[output encoding](#filters)).
 
 ### absolute_url
 

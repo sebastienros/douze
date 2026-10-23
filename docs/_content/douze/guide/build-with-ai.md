@@ -20,15 +20,15 @@ In Douze it is a template in the content folder, `llms.txt.liquid`, rendered lik
 
 ## Pages
 {% for p in collections.all %}
-- [{{ p.data.title | raw }}]({{ p.data.url | replace: 'index.html', 'index.html.md' | absolute_url }}): {{ p.data.description | raw }}
+- [{{ p.data.title }}]({{ p.data.url | replace: 'index.html', 'index.html.md' | absolute_url }}): {{ p.data.description }}
 {%- endfor %}
 ```
 
 - `collections.all` holds every page, sorted by date then by path. Filter it with `where_exp`, or loop over a sidebar
   to follow the order of your navigation.
 - `absolute_url` prepends `site.url`, from `douze.yml`.
-- The `liquid` step encodes the output of `{{ }}` for HTML: `raw` keeps characters such as `&` as they are in a text
-  file.
+- The `liquid` step encodes the output of `{{ }}` for the content type of the file it writes, and a `.txt` file is
+  not encoded: characters such as `&` stay as they are.
 - Templates such as this one are not in the collections, and layouts only apply to HTML files.
 
 The links point at the Markdown twins of the pages, below. Link to the HTML pages instead

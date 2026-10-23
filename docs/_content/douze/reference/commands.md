@@ -320,7 +320,12 @@ path of its binary.
 `pagefind@<version>` picks another version. The package of the platform is downloaded from the npm registry on first use,
 verified against the integrity Douze pins for the default version (or the one the registry gives for another), into
 `<cache>/tools/`. `douze tools install` downloads it ahead, and `douze doctor` lists it as `download` until then. An
-unknown tool is an error: `unknown tool 'nope' for step 'x'; Douze knows lightningcss, pagefind`.
+unknown tool is an error of the workflow file, reported with its position when the file is loaded, so `douze doctor`,
+`douze tools install`, `--print-workflow` and builds exit with code 2:
+
+```text
+douze.yml(3,63): error: unknown tool 'pagefnd' on step 'search'; Douze knows 'lightningcss' or 'pagefind'
+```
 
 ## Caching
 

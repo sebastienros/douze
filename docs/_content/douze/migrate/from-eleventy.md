@@ -59,8 +59,8 @@ rewritten.
 
 ## Differences to watch for
 
-- **HTML encoding.** Eleventy's Liquid writes values as they are. Douze encodes what `{{ }}` writes as HTML: a value
-  that holds HTML needs the `raw` filter. See [Liquid output is HTML-encoded](index.md#liquid-output-is-html-encoded).
+- **HTML encoding.** Eleventy's Liquid writes values as they are. Douze encodes what `{{ }}` writes as HTML in
+  pages (XML in feeds): a value that holds HTML needs the `raw` filter. See [Liquid output is encoded](index.md#liquid-output-is-encoded).
 - **`.liquid` pages.** A page named `blog.liquid` is written by Eleventy to `/blog/`. Douze writes a `.liquid` file
   without a second extension under its own name: rename it `blog.html` (HTML pages are rendered as Liquid too), or
   give it a `permalink`. `feed.xml.liquid` is written as `feed.xml`, as expected.

@@ -20,11 +20,11 @@ A file named `name.ext.liquid` in the content folder:
 `.xml`, `.yml` and `.yaml` files are data files of their folder and are not published: write `api.json.liquid` or
 `feed.xml.liquid`, not `api.json` or `feed.xml`.
 
-:::caution[Output is encoded for HTML]
-The default `liquid` step encodes the output of `{{ }}` for HTML: `&`, `<`, `>`, `"` and `'` become entities, and so
-does `+`. That is valid in XML, so a feed's titles need no other filter (`xml_escape` would encode them twice). In
-JSON or text files, and for values such as dates, add `raw` to write the value as it is:
-`{{ post.data.title | json | raw }}`.
+:::note[Output encoding]
+The `liquid` step encodes the output of `{{ }}` for the file it writes: XML entities in `feed.xml` and `sitemap.xml`
+(`&`, `<`, `>`, `"` and `'`), JSON string escapes in `.json` files, and nothing in text files such as `robots.txt` and
+`llms.txt`. A feed's titles and a JSON file's strings need no filter, and `xml_escape` or `json` are not encoded
+again. See [output encoding](../reference/steps/liquid.md#output-encoding).
 :::
 
 ## RSS feed
@@ -42,7 +42,7 @@ JSON or text files, and for values such as dates, add `raw` to write the value a
     <title>{{ post.data.title }}</title>
     <link>{{ post.data.url | replace: 'index.html', '' | absolute_url }}</link>
     <guid>{{ post.data.url | replace: 'index.html', '' | absolute_url }}</guid>
-    <pubDate>{{ post.data.date | date_to_rfc822 | raw }}</pubDate>
+    <pubDate>{{ post.data.date | date_to_rfc822 }}</pubDate>
     <description>{{ post.data.description }}</description>
   </item>
   {%- endfor %}
@@ -67,7 +67,7 @@ The items of `collections` have the data of the pages, not their content. For fu
 <?xml version="1.0" encoding="utf-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 {%- for p in collections.all %}
-  <url><loc>{{ p.data.url | replace: 'index.html', '' | absolute_url }}</loc><lastmod>{{ p.data.page.date | date_to_xmlschema | raw }}</lastmod></url>
+  <url><loc>{{ p.data.url | replace: 'index.html', '' | absolute_url }}</loc><lastmod>{{ p.data.page.date | date_to_xmlschema }}</lastmod></url>
 {%- endfor %}
 </urlset>
 ```
@@ -91,7 +91,7 @@ Sitemap: {{ "/sitemap.xml" | absolute_url }}
 > Documentation of My product.
 
 {% for p in collections.all %}
-- [{{ p.data.title | raw }}]({{ p.data.url | replace: 'index.html', '' | absolute_url }}): {{ p.data.description | raw }}
+- [{{ p.data.title }}]({{ p.data.url | replace: 'index.html', '' | absolute_url }}): {{ p.data.description }}
 {%- endfor %}
 ```
 
@@ -105,16 +105,16 @@ permalink: /api/posts.json
 ---
 [
 {%- for post in collections.post %}
-  { "title": {{ post.data.title | json | raw }}, "url": {{ post.data.url | replace: 'index.html', '' | json | raw }} }{% unless forloop.last %},{% endunless %}
+  { "title": {{ post.data.title | json }}, "url": "{{ post.data.url | replace: 'index.html', '' }}" }{% unless forloop.last %},{% endunless %}
 {%- endfor %}
 ]
 ```
 
 `json` (or `jsonify`) writes a value as JSON, with its quotes and escapes. A whole object or list works too:
-`{{ site.authors | json | raw }}`.
+`{{ site.authors | json }}`. Inside quotes, `{{ }}` writes the content of a JSON string: `"{{ post.data.url }}"`.
 
 For many JSON files generated from data, rather than one template per file, use a `liquid` step with a `template`
-and `encode: none`, which turns the HTML encoding off for the whole step. See [Pages from data](pages.md#pages-from-data)
+whose `permalink` ends in `.json`: its outputs are encoded for JSON too. See [Pages from data](pages.md#pages-from-data)
 and the [liquid step](../reference/steps/liquid.md).
 
 ## Filters for outputs

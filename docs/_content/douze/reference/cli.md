@@ -69,6 +69,7 @@ step with `--verbose`, errors only with `--quiet`).
 `/blog/a` to `/blog/a/`, serves the site's `/404.html` for missing files when there is one, and tells browsers not to
 cache anything. It adds a live reload script before `</body>` in HTML pages: after each build a page reloads when it
 changed or was deleted, or when a script changed; when only stylesheets changed, they are swapped without a reload.
+The script connects a WebSocket to `/__douze/socket`, so a proxy in front of the server must pass WebSockets through.
 When the port is taken, `serve` exits with code 2:
 
 ```text
@@ -103,7 +104,8 @@ minify    esbuild           missing   is not on PATH: install esbuild and add it
 
 Without requirements it prints `No step of the workflow has requirements.` It runs nothing to check: the executable
 of a command is looked up on `PATH` (and `PATHEXT` on Windows), or relative to the step's `cwd` when it is a path. It
-does not open the cache, so it does not wait for a build that holds it. It exits with 1 when a requirement is missing.
+does not open the cache, so it does not wait for a build that holds it. It exits with 1 when a requirement is missing,
+and with 2 when the workflow file is invalid, such as a `tool` that Douze does not know.
 
 ### tools install
 
@@ -115,7 +117,8 @@ Downloads every tool that a step downloads on first use (the engine of `hover-ty
 of `hover-csharp`, gopls of `hover-go`, the `tool` of command steps) into `<cache>/tools/`, and prints one line per
 tool: `<tool>: installed at <path>` or `<tool>: already installed at <path>`. A CI cache of that folder, or a machine
 that goes offline, then has them. Without such tools it prints `No step of the workflow downloads tools.` It exits
-with 1 when a tool cannot be installed.
+with 1 when a tool cannot be installed, and with 2 when the workflow file is invalid, such as a `tool` that Douze does
+not know.
 
 ### worker-helper
 
@@ -132,6 +135,8 @@ Writes the helper to stdout. It reads no site and ignores the options.
 | `-s`, `--source` | folder | `.` | all but `worker-helper` | The source folder of the site. |
 | `-o`, `--output` | folder | `site.output`, else `_site` | `build`, `watch`, `serve` | The output folder. |
 | `-w`, `--workflow` | file | `<source>/douze.yml` when it exists | all but `worker-helper` | The workflow file. |
+| `--var` | `<name>=<value>` | | all but `worker-helper` | Sets a variable of the workflow file's `vars` section. Can be repeated. |
+| `--env` | `<name>=<variable>` | | all but `worker-helper` | Sets a variable to the value of an environment variable, when it is set. Can be repeated. |
 | `-p`, `--parallelism` | positive integer | `site.parallelism`, else the processor count | `build`, `watch`, `serve` | The maximum number of units that run at once. |
 | `--keep-going` | | | `build`, `watch`, `serve` | A failing step processes its other units and reports every error. |
 | `--fail-fast` | | | `build`, `watch`, `serve` | The whole build stops on the first error. |
@@ -166,6 +171,27 @@ douze -s site -w ci.yml                # another workflow file, relative to the 
   `error: the workflow file '<file>' does not exist` (exit code 2). Without `-w`, `douze.yml` at the root of the
   source folder is used when it exists, and the [default workflow](configuration.md#default-workflow) runs otherwise.
 - The output folder and the cache folder are never read as sources when they are inside the source folder.
+
+### Variables
+
+```bash
+douze --var og=false                       # a boolean, when the default of og is true or false
+douze --var label="Release 2" --var posts=5
+RELEASE_NAME="Fall release" douze --env label=RELEASE_NAME
+```
+
+`--var` and `--env` set the variables that the `vars` section of the workflow file declares, which templates read as
+`vars.<name>` and `enabled` expressions too. Each of these sets them, over the previous one:
+
+1. the `vars` section,
+2. the environment variables `DOUZE_VARS__<name>`,
+3. the `--var` and `--env` options, in the order of the command line: the last one of a name wins.
+
+`--env` reads the value of an environment variable, so that it stays out of the command line and of the errors, and
+does nothing when the variable is not set. Names match the declared ones case insensitively, and a value takes the
+type of the default: `true` or `false` for a boolean, a number for a number, the text for a string. Setting a
+variable that is not declared, or a list or a mapping, is an error (exit code 2). See
+[vars](configuration.md#vars).
 
 ### Parallelism
 
@@ -239,7 +265,9 @@ douze --print-workflow -s site
 ```
 
 Prints the steps a build runs, the default ones included, as `douze.yml` YAML, and exits without building. With
-`watch` or `serve` it does the same.
+`watch` or `serve` it does the same. The [`enabled`](configuration.md#enabled) expressions are evaluated, with the
+variables of `--var` and `--env`: a step that is not enabled is not printed. An invalid workflow file exits with code
+2.
 
 ## Validation errors
 
@@ -253,6 +281,8 @@ Usage errors print the message and `Run 'douze --help' for usage.`, and exit wit
 | `unknown option '<option>'` | An option that does not exist. |
 | `option '<option>' needs a value` | The option is last, or followed by another option. A value can't start with `-` (except `-` alone). |
 | `option '<option>' needs a positive number, not '<value>'` | `-p` or `--port` with something else than an integer of 1 or more. |
+| `option '--var' needs <name>=<value>, not '<value>'` | `--var` without `=`, or without a name. |
+| `option '--env' needs <name>=<environment variable>, not '<value>'` | `--env` without a name or a variable. |
 | `'--keep-going' and '--fail-fast' cannot be used together` | |
 | `'--quiet' and '--verbose' cannot be used together` | |
 
@@ -262,7 +292,7 @@ Usage errors print the message and `Run 'douze --help' for usage.`, and exit wit
 |---|---|
 | `0` | Success. Also the end of a `watch` or `serve` session with Ctrl+C. |
 | `1` | The build has errors, a requirement is missing (`doctor`, or before a build), a tool cannot be installed (`tools install`), or a trace file cannot be written. |
-| `2` | Invalid command line, missing source folder or workflow file, invalid `douze.yml` or shortcode, or a dev server port that is taken. |
+| `2` | Invalid command line, missing source folder or workflow file, invalid `douze.yml` (an unknown `tool` included) or shortcode, a variable that cannot be set, or a dev server port that is taken. Also for `doctor`, `tools install` and `--print-workflow`. |
 | `130` | The build was cancelled with Ctrl+C or SIGTERM. A second Ctrl+C ends the process. |
 
 ## Environment variables
@@ -274,5 +304,8 @@ Usage errors print the message and `Run 'douze --help' for usage.`, and exit wit
 | `NO_COLOR` | The live view without colors. |
 | `PATH`, `PATHEXT` | Where the executables of command steps are looked up. |
 | `DOTNET_HOST_PATH` | The `dotnet` of the `hover-csharp` step, when its `dotnet` option is not set. |
+| `DOUZE_VARS__<name>` | Sets the variable `<name>` of the `vars` section, see [Variables](#variables). |
+
+`enabled` expressions read any environment variable as `env.<name>`, see [enabled](configuration.md#enabled).
 
 Command steps get `DOUZE_STEP`, `DOUZE_SITE` and `DOUZE_SOURCE`, see [Command steps](commands.md#environment).

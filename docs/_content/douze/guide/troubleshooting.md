@@ -29,7 +29,7 @@ minify      esbuild           missing   is not on PATH: install esbuild and add 
 A requirement is `ok`, `download` (a tool Douze downloads on first use), `missing`, or `unchecked` when it is only known
 during the build (a `run` line that starts with a template). Douze runs nothing to check: a command's program is
 looked up on the `PATH`, or relative to the step's `cwd` when it is a path, and its version is not checked. `doctor`
-exits with 1 when a requirement is missing, so a CI job can run it first. It takes `-s`, `-w` and `--cache-dir`.
+exits with 1 when a requirement is missing, so a CI job can run it first, and with 2 when `douze.yml` is invalid. It takes `-s`, `-w` and `--cache-dir`.
 
 `douze tools install` downloads the tools that steps would download on first use (the TypeScript engine, the Roslyn
 language server, gopls, the `tool` of command steps) into `<cache>/tools/`, for an offline machine or a CI cache:
@@ -85,6 +85,25 @@ douze.yml(4,3): error: unknown built-in step 'writ'; did you mean 'write'?
 the fields of the [configuration reference](../reference/configuration.md). Option names under `with` are checked the
 same way.
 
+### Unknown tool
+
+```
+douze.yml(3,63): error: unknown tool 'pagefnd' on step 'search'; Douze knows 'lightningcss' or 'pagefind'
+```
+
+`tool` takes the name of a tool Douze downloads, optionally with a version (`pagefind@1.5.2`). Any other program goes
+in the `run` line, without `tool`. See [Command steps](../reference/commands.md#tool).
+
+### Unknown variable
+
+```
+error: unknown variable 'og' in environment variable 'DOUZE_VARS__og'; declare it in 'vars'
+```
+
+A `DOUZE_VARS__<name>` environment variable, `--var` or `--env` sets a variable that the `vars` section of
+`douze.yml` does not declare. Declare it, or unset the environment variable: one left in the shell applies to every
+site you build there. See [Environment variables](environment-variables.md#workflow-variables).
+
 ### A command is not on the PATH
 
 ```
@@ -94,6 +113,15 @@ error: minify: esbuild is not on PATH: install esbuild and add its folder to PAT
 Install the program, or start the `run` line with its path. On Windows, run `npx` and other `.cmd` scripts through
 the shell (the default, `shell: true`). A tool that Douze can download, such as Pagefind, can use `tool:` instead and
 needs nothing installed (see [Command steps](command-steps.md)).
+
+### A fork permalink has an empty file name
+
+```
+error: twins: /docs/a.md: the permalink of step 'twins' is '/docs/.md' for '/docs/a.md': it has an empty file name, a value of the template is probably undefined
+```
+
+The `permalink` of a [fork step](../reference/steps/fork.md) reads a value that the file does not define. Fix the
+name, or set `strict: true` on the step to get `undefined variable '<name>'` instead.
 
 ### Liquid in Markdown text
 

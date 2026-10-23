@@ -70,8 +70,8 @@ Douze has Fluid's standard Liquid filters (`date`, `where`, `sort`, `map`, `uniq
 
 ## Differences to watch for
 
-- **HTML encoding.** Jekyll writes Liquid values as they are. Douze encodes them as HTML: a value that holds HTML
-  needs the `raw` filter. See [Liquid output is HTML-encoded](index.md#liquid-output-is-html-encoded).
+- **HTML encoding.** Jekyll writes Liquid values as they are. Douze encodes them as HTML in pages: a value that
+  holds HTML needs the `raw` filter. See [Liquid output is encoded](index.md#liquid-output-is-encoded).
 - **Order.** `site.posts` is newest first; `collections.posts` is oldest first.
 - **Links rewritten from `.md` files** are root-relative and do not include the path of `site.url`: a site served
   under `/blog/` writes its internal links with `relative_url` in templates.

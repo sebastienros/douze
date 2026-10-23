@@ -6,7 +6,7 @@ liquid: false
 
 A template reads names: `title`, `page.date`, `collections.post`, `site.url`. A page's data is its front matter plus
 the values that steps set on it, and a name that the page does not define resolves through its folder data, the site
-data and the `site` section of `douze.yml`. This page lists every value Douze provides, and the step that provides it.
+data and the `site` and `vars` sections of `douze.yml`. This page lists every value Douze provides, and the step that provides it.
 
 ## Name resolution
 
@@ -18,7 +18,7 @@ A name in a page, its layouts and the includes and shortcodes they use resolves 
    `scope: folder`);
 3. the site data (the files of the data folder, from a `data` step with `scope: site`) and the values that reduce steps
    publish (`collections`, `images`);
-4. the `site` section of `douze.yml` (`site.url`, `site.locales`);
+4. the `site` and `vars` sections of `douze.yml` (`site.url`, `site.locales`, `vars.<name>`);
 5. in a layout, the front matter of the layouts, the innermost first.
 
 The first scope that defines a name wins, with one exception: when site data defines `site` as an object
@@ -112,6 +112,23 @@ The front matter keys `pagination.data`, `size`, `alias` and `resolve` configure
 
 Every other file of the data folder is a top-level name: `_data/colors.json` is `colors`,
 `_data/pkgs/Contoso.Hosting.json` is `pkgs["Contoso.Hosting"]`. See the [data step](steps/data.md).
+
+## vars
+
+`vars.<name>` is a variable of the `vars` section of `douze.yml`, with the value that the environment variables
+`DOUZE_VARS__<name>` and the `--var` and `--env` options set over its default. Without the section, `vars` is nil.
+
+```yaml title="douze.yml"
+vars:
+  banner: ~
+  og: true
+```
+
+```liquid
+{% if vars.banner %}<p class="banner">{{ vars.banner }}</p>{% endif %}
+```
+
+`douze build --var banner="Preview build"` shows the banner. See [vars](configuration.md#vars).
 
 ## headings and toc
 

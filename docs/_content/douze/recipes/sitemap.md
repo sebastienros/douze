@@ -25,7 +25,7 @@ site:
 {%- for p in pages %}
   <url>
     <loc>{{ p.data.url | replace: 'index.html', '' | absolute_url }}</loc>
-    <lastmod>{{ p.data.page.date | date_to_xmlschema | raw }}</lastmod>
+    <lastmod>{{ p.data.page.date | date_to_xmlschema }}</lastmod>
   </url>
 {%- endfor %}
 </urlset>
@@ -51,8 +51,8 @@ Save it as `_content/sitemap.xml.liquid`. The build writes `_site/sitemap.xml`:
 - `page.date` is the modification time of the source file. In a CI checkout every file has the time of the checkout:
   [Add last modified time](modified-time.md) sets it from Git instead. Use `p.data.date` to list the front matter
   date of the pages that have one.
-- The `liquid` step encodes its output for HTML, which writes the `+` of a time offset as `&#x2B;`. `| raw` writes
-  the date as it is.
+- The `liquid` step encodes the outputs of an XML file for XML: a `&` in a URL is written `&amp;`, and the `+` of a
+  time offset stays as it is.
 
 ## Leave pages out
 

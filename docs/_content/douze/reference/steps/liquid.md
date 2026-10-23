@@ -27,6 +27,8 @@ emits the result as a new file at the path rendered from `permalink`: a page per
   kept as written. Inline code is not protected; use `{% raw %}` or `liquid: false` for it.
 - Variables captured with `{% capture name %}` are added to the file's data, so its layout can read them. In a
   Markdown page they hold Markdown source, which no later step renders.
+- The values of output tags (`{{ }}`) are encoded for the file's content type, read from its path (after
+  `permalink`): see [output encoding](#output-encoding).
 - The path and the other data of the file do not change.
 
 ### Rendering a template (`template`)
@@ -50,9 +52,26 @@ With `group-by`, the template typically loops over `{% for f in group.files %}`,
 | `template` | string | none | A template path in the includes folder. Switches the step to template rendering; needs `permalink` |
 | `permalink` | string (Liquid) | none | With `template`: the output path, rendered with `file` or `group` |
 | `data` | mapping | none | With `template`: merged into the new file's data |
-| `encode` | `html` or `none` | `html` | How the values of output tags are encoded. `none` writes values as they are, for non-HTML outputs |
+| `encode` | `auto`, `html`, `xml`, `json` or `none` | `auto` | How the values of output tags are encoded. `auto` picks the encoder of each output's content type; the others force one for every file of the step (see [output encoding](#output-encoding)) |
 | `protect` | `fences` or `none` | `fences` | `none` renders the fenced code blocks of Markdown files as Liquid too |
 | `strict` | boolean | `false` | An undefined variable is an error instead of nothing. Shortcode templates are never strict |
+
+## Output encoding
+
+With `encode: auto`, the encoder depends on the extension of the output path (the rendered `permalink` with
+`template`):
+
+| Output | Encoder | `{{ 'Tom & "Jerry" + 1' }}` |
+|---|---|---|
+| `.html`, `.md`, `.liquid` | HTML: `&`, `<`, `>`, `"`, `'` and `+` as entities | `Tom &amp; &quot;Jerry&quot; &#x2B; 1` |
+| `.xml`, `.svg` and other XML types | XML: `&`, `<`, `>`, `"` and `'` as entities | `Tom &amp; &quot;Jerry&quot; + 1` |
+| `.json` | the content of a JSON string: `"`, `\` and control characters escaped | `Tom & \"Jerry\" + 1` |
+| anything else (`.txt`, `.css`, `.js`) | none | `Tom & "Jerry" + 1` |
+
+Non-ASCII characters are written as they are in every case. Filters whose result is already encoded are not encoded
+again: `xml_escape`, `json`, `escape`, and the filters that return markup (`markdownify`, `excerpt`, `toc`). So a feed
+can use `{{ title }}` or `{{ title | xml_escape }}` alike, a date keeps its `+`, and a JSON file writes
+`"title": "{{ title }}"` or `"title": {{ title | json }}`.
 
 ## Caching
 
@@ -65,7 +84,7 @@ step's version (tags read its image defaults), so changing it renders every page
 ```
 step 'render' uses 'liquid' with 'template' but 'permalink' is missing
 step 'render' uses 'liquid' with 'permalink' but 'template' is missing
-option 'encode' of step 'render' must be 'html' or 'none', not 'xml'
+option 'encode' of step 'render' must be 'auto', 'html', 'xml', 'json' or 'none', not 'url'
 option 'protect' of step 'render' must be 'fences' or 'none', not 'all'
 option 'data' of step 'render' must be a mapping
 step 'render' does not support 'group-by'

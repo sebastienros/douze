@@ -5,8 +5,8 @@ liquid: false
 ---
 
 A Douze site needs no configuration. When it needs some, it goes in `douze.yml`, at the root of the source folder.
-The file has three sections, all optional: `site` for the folders and site settings, `markdown` for how Markdown
-renders, and `steps` for the workflow. This page gives an overview of each; the
+The file has four sections, all optional: `site` for the folders and site settings, `vars` for the variables of the
+site, `markdown` for how Markdown renders, and `steps` for the workflow. This page gives an overview of each; the
 [douze.yml reference](../reference/configuration.md) lists every key.
 
 ## `site`
@@ -23,11 +23,31 @@ site:
 ```
 
 - The folders are relative to the source folder. A folder set here is used whether or not it exists.
-- `url` is the only setting templates see, as `site.url`. It is what `absolute_url` prepends. A site data file
+- `url` is the only setting of `site` that templates see, as `site.url`. It is what `absolute_url` prepends. A site data file
   `_data/site.json` can hold the other site values (`site.title`): its keys are layered over the settings, so
   `{{ site.title }}` comes from the data file and `{{ site.url }}` from `douze.yml`, unless the data file defines `url`
   too.
 - `locales` configures the languages of a multilingual site. See [Internationalization](internationalization.md).
+
+## `vars`
+
+```yaml title="douze.yml"
+vars:
+  og: true
+  label: Preview
+```
+
+`vars` declares the variables of the site with their default values. Templates read them as `vars.og`, and so do the
+`enabled` expressions of the steps. The environment variable `DOUZE_VARS__og`, or `--var og=false` on the command
+line, sets a variable for one build without editing the file:
+
+```sh
+douze --var og=false
+```
+
+Only declared variables can be set, and a value takes the type of the default: `false` is a boolean here, not a
+string. See [vars](../reference/configuration.md#vars) and
+[Environment variables](environment-variables.md#workflow-variables).
 
 ## `markdown`
 
@@ -92,9 +112,23 @@ Then edit it: add a step between two others by changing the `needs` of the next 
 dependents at what it needed. `enabled: false` leaves a step out without deleting it: the steps that need it then
 need what it needs.
 
+`enabled` can also be a Liquid expression, evaluated when the file is loaded, to run a step only in some builds:
+
+```yaml title="douze.yml"
+steps:
+  og:
+    needs: pages
+    uses: social-image
+    enabled: "vars.og and watch == false"
+```
+
+The expression sees `os`, `arch`, `env` (the environment variables), `watch` (true for `douze watch` and
+`douze serve`) and `vars`. See [enabled](../reference/configuration.md#enabled).
+
 ## Print the effective workflow
 
-`--print-workflow` prints the steps a build runs, the default ones included, and exits without building:
+`--print-workflow` prints the steps a build runs, the default ones included, and exits without building. A step that
+is not enabled is left out, with the steps that needed it pointed at what it needed:
 
 ```sh
 douze --print-workflow
@@ -156,8 +190,8 @@ douze -w douze.production.yml
 
 The file replaces `douze.yml`: the two are not merged, so it holds every section the build needs. Keep it outside
 the content folder, since data files of the content folder are folder data (with `_content`, the root of the source
-folder is fine). See [Environment variables](environment-variables.md#environment-specific-values) for a per
-environment `site.url`.
+folder is fine). When builds differ by a few values, [variables](#vars) and `enabled` expressions are simpler than
+a file per environment; see [Environment variables](environment-variables.md#environment-specific-values).
 
 ## Validation errors
 

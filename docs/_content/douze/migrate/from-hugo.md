@@ -72,8 +72,9 @@ aliases); in Douze some of them are templates or command steps, and some are mis
   of the collections.
 - **Lists are built from tags.** A section has no list of its pages: tag them with the folder's data file and loop over
   `collections.<tag>`.
-- **Encoding.** Hugo's `html/template` escapes values for their context. Douze encodes Liquid output as HTML
-  everywhere; a value that holds HTML needs `raw`.
+- **Encoding.** Hugo's `html/template` escapes values for their context. Douze encodes Liquid output for the type
+  of the file: HTML in pages, XML in feeds, JSON strings in `.json` files. In a page, a value that holds HTML needs
+  `raw`. See [Liquid output is encoded](index.md#liquid-output-is-encoded).
 
 ## Port a site, step by step
 

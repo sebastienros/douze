@@ -41,6 +41,10 @@ URLs of the files the build wrote or deleted, and each page decides:
 Pages also reload when they reconnect to a restarted server. The script is only added by the dev server: the files
 in the output folder are not changed.
 
+The pages connect to the server with a WebSocket, at `/__douze/socket`: any number of pages can stay open without
+slowing down the server's other requests. A proxy in front of `douze serve`, such as the one of a dev container or a
+tunnel, must pass WebSockets through for live reload to work.
+
 ### What a change rebuilds
 
 A rebuild runs only what the change affects, like a build from the cache:
@@ -53,10 +57,29 @@ A rebuild runs only what the change affects, like a build from the cache:
 
 Changes are collected until none came for 150 ms, so saving several files, or switching branches, is one rebuild. The
 output folder, the `.douze` folder and `.git` are not watched. A build that fails prints its errors, and the session
-goes on.
+goes on. When the system loses change events, or reports a path the watcher cannot map to the source folder, the
+next rebuild checks every source file instead of failing.
 
 The cache stays open during the session. Another `douze build` of the same site meanwhile builds without it, with a
 warning.
+
+### Skip slow steps while editing
+
+`enabled` can be a Liquid expression that sees `watch`, true for `douze watch` and `douze serve`. A step that only
+matters for the published site, such as a type check or a minifier, can stay out of the session:
+
+```yaml title="douze.yml"
+steps:
+  minify:
+    needs: layout
+    run: "npx html-minifier-terser --collapse-whitespace"
+    mode: filter
+    match: "**/*.html"
+    enabled: "watch == false"
+```
+
+The steps that need `minify` then need `layout` while you edit. See
+[enabled](../reference/configuration.md#enabled).
 
 ## Watch without a server
 

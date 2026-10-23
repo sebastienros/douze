@@ -5,13 +5,16 @@ liquid: false
 ---
 
 `douze.yml` at the root of the source folder, or the file given with `-w`, configures a site. It is a mapping with
-three optional sections: `site`, `markdown` and `steps`. A site without the file, or a file without `steps`, builds
+four optional sections: `site`, `vars`, `markdown` and `steps`. A site without the file, or a file without `steps`, builds
 with the [default workflow](#default-workflow). An empty file is the same as no file.
 
 ```yaml title="douze.yml"
 site:
   content: docs
   url: https://example.com
+
+vars:
+  og: true
 
 markdown:
   extensions: [pipetables, footnotes, alerts, customcontainers, attributes]
@@ -45,7 +48,7 @@ steps:
     uses: write
 ```
 
-Any other top-level key is an error: `unknown key 'foo'; expected 'site', 'markdown' or 'steps'`.
+Any other top-level key is an error: `unknown key 'foo'; expected 'site', 'vars', 'markdown' or 'steps'`.
 
 ## site
 
@@ -120,6 +123,46 @@ Each language takes:
 A page of `docs/ja/` is a page of `ja`, any other page under `docs` a page of `en`. Templates see the settings as
 `site.locales`: `default`, `fallback`, `strings` and `languages`, the list of every locale (`locale`, `label`, `lang`,
 `dir`, `prefix`), the default first. See [Internationalization](../guide/internationalization.md).
+
+## vars
+
+The variables of the site, with their default values. Templates read them as `vars.<name>`, and so do the
+[`enabled`](#enabled) expressions of the steps, wherever the section is in the file.
+
+```yaml title="douze.yml"
+vars:
+  og: true
+  label: Preview
+  posts: 10
+```
+
+Each of these sets the variables, over the previous one:
+
+1. The `vars` section.
+2. The environment variables `DOUZE_VARS__<name>`: `DOUZE_VARS__og=false`.
+3. The `--var <name>=<value>` and `--env <name>=<variable>` options of the [command line](cli.md#variables), in
+   order. `--env` reads the value of an environment variable, and does nothing when it is not set.
+
+Only declared variables can be set, and their names match case insensitively: `--var OG=false` sets `og`. A value
+takes the type of the default:
+
+| Default | A value set from outside is |
+|---|---|
+| `true` or `false` | a boolean: `true` or `false`, in any case |
+| an integer | an integer |
+| a number with decimals | a number |
+| a string, or `~` | the string as written |
+| a mapping or a list | an error: objects and lists can only be set in the section |
+
+So `--var og=false` is the boolean `false`, which a template or an `enabled` expression treats as false (the string
+`"false"` would be true in Liquid). `vars:` without a value declares no variable.
+
+| Error | Cause |
+|---|---|
+| `'vars' must be a mapping of names to values` | `vars` is a list or a scalar. |
+| `unknown variable '<name>' in '--var <name>'; declare it in 'vars'` | A variable that the section does not declare, also from `--env` or a `DOUZE_VARS__` environment variable. |
+| `variable 'og' must be true or false, not 'maybe' ('--var og')` | A value of the wrong type; `must be an integer`, `must be a number`. With `--env`, the value is not shown. |
+| `variable '<name>' is a list and cannot be set by '--var <name>'` | Also for a mapping (`is an object`). |
 
 ## markdown
 
@@ -228,7 +271,7 @@ A step has either `uses` (a [built-in step](steps/index.md)) or `run` (a [comman
 | `with` | mapping | none | The options of the built-in step, or for `mode: worker`, the options sent to the worker. |
 | `group-by` | `file`, `dir` or a Liquid template | none | Processes the files in groups, one unit per group. Only some steps support it (`liquid`, batch commands). |
 | `incremental` | `true` or `false` | `true` | `false` runs the step on every build instead of reusing cached results. |
-| `enabled` | `true` or `false` | `true` | `false` leaves the step out: the steps that need it need what it needs instead. |
+| `enabled` | `true`, `false` or a Liquid expression | `true` | A step that is not enabled is left out: the steps that need it need what it needs instead. |
 | `run` | string | | The command line of a command step. |
 | `tool` | `name` or `name@version` | | A tool Douze downloads for the command. |
 | `mode` | `filter`, `batch` or `worker` | `batch` | How files reach the command. |
@@ -284,6 +327,53 @@ steps:
 ```
 
 With `minify` disabled, `write` needs `pages`.
+
+`enabled` can also be a Liquid expression, written as in `{% if %}`. It is evaluated once, when the workflow file is
+loaded, and sees:
+
+| Name | Value |
+|---|---|
+| `os` | `windows`, `linux`, `macos` or `other` |
+| `arch` | The processor architecture: `x64`, `arm64`, ... |
+| `env` | The environment variables: `env.CI`. A missing one is `nil`; names are case insensitive on Windows. |
+| `watch` | `true` for `douze watch` and `douze serve`, `false` for a build |
+| `vars` | The [variables](#vars), once the environment variables and the command line have set them |
+
+```yaml title="douze.yml"
+vars:
+  og: true
+steps:
+  og:
+    needs: pages
+    uses: social-image
+    enabled: "vars.og and env.CI"
+    with:
+      template: og.svg.liquid
+      output: "og{{ page.url }}.png"
+  check:
+    needs: og
+    uses: hover-typescript
+    enabled: "watch == false"
+  minify:
+    needs: check
+    run: "npx html-minifier-terser"
+    mode: filter
+    match: "**/*.html"
+    enabled: "os != 'windows'"
+  write:
+    needs: minify
+    uses: write
+```
+
+`og` runs in CI builds unless `--var og=false` turns it off, `check` only in builds, not while editing, and `minify`
+everywhere but on Windows. `--print-workflow` prints the workflow with the expressions evaluated: a step that is not
+enabled is not in it. In `douze watch` and `douze serve`, the expressions are evaluated again when the workflow file
+changes.
+
+| Error | Cause |
+|---|---|
+| `'enabled': invalid expression '<expression>': ...` | The expression does not parse. Filters are not supported. |
+| `'enabled' must be true, false or a Liquid expression` | A list or a mapping. |
 
 ### Globs
 
@@ -412,7 +502,7 @@ the shape is valid.
 
 | Message | Cause |
 |---|---|
-| `a workflow file must be a mapping with 'site', 'markdown' and 'steps'` | The file is a list or a scalar. |
+| `a workflow file must be a mapping with 'site', 'vars', 'markdown' and 'steps'` | The file is a list or a scalar. |
 | `duplicate key '<key>'`, `keys must be strings` | Any mapping. |
 | `unknown key '<key>' in 'site'; expected ...` | Also for `markdown`, `markdown.aside`, `markdown.code`, `markdown.images`, `site.locales` and its languages. |
 | `'<key>' must be a folder inside the source folder` | A `site` folder with `..`. |
@@ -423,6 +513,7 @@ the shape is valid.
 | `unknown aside kind '<kind>'; expected ...` | A `titles` or `icons` key that is not in `kinds`. |
 | `'kinds' must list at least one kind` | |
 | `'quality' must be an integer from 1 to 100`, `'loading' must be 'lazy' or 'eager'`, `'widths' must be a list of positive integers` | `markdown.images`. |
+| `'vars' must be a mapping of names to values`, `unknown variable '<name>' ...` | See [vars](#vars). |
 | `'steps' must be a mapping of step names to steps` | |
 | `invalid step name '<name>': use lowercase letters, digits and dashes` | |
 | `step name '<name>' is longer than 64 characters` | |
@@ -432,6 +523,8 @@ the shape is valid.
 | `unknown field '<field>' on step '<name>'` | With a suggestion when a field is close. |
 | `'<field>' must be <type>` | A field of the wrong type, such as `'needs' must be a string or a list of strings`. |
 | `'<field>' is only valid with 'run'` | A command field on a `uses` step. |
+| `'enabled': invalid expression '<expression>': ...` | See [enabled](#enabled). |
+| `unknown tool 'pagefnd' on step 'search'; Douze knows 'lightningcss' or 'pagefind'` | A `tool` that Douze does not know. |
 | `'with' is only valid with 'uses' or with 'mode: worker'` | |
 | `'outputs' is only valid with 'mode: batch'` | |
 | `step '<name>' is defined twice` | |

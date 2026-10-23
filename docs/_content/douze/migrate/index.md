@@ -44,12 +44,14 @@ site should serve as a file needs another name: `manifest.json.liquid` is render
 Front matter is a YAML block between two `---` lines. TOML (`+++`) and JSON front matter are not recognized: the block
 stays in the page as text.
 
-### Liquid output is HTML-encoded
+### Liquid output is encoded
 
-The `liquid` step encodes what `{{ }}` writes as HTML (`encode: html`, its default), as Hugo's `html/template` does
-and unlike Jekyll and Eleventy. A value that holds HTML is written with the `raw` filter (`{{ item.html | raw }}`), or
-the whole step can be set to `encode: none`. The `content` of a layout and the output of includes and shortcodes are
-not encoded again.
+The `liquid` step encodes what `{{ }}` writes for the file it renders, as Hugo's `html/template` does and unlike
+Jekyll and Eleventy: as HTML in HTML and Markdown pages, as XML in feeds and sitemaps, as JSON strings in `.json`
+files, and not at all in other files such as `.txt`. In a page, a value that holds HTML is written with the `raw`
+filter (`{{ item.html | raw }}`), or the whole step can be set to `encode: none`. The `content` of a layout and the
+output of includes and shortcodes are not encoded again, and neither are `xml_escape` and `json`. See
+[output encoding](../reference/steps/liquid.md#output-encoding).
 
 ### Unknown filters do nothing
 
