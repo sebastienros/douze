@@ -7,7 +7,7 @@
     <!-- Global Package References -->
     <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="11.0.100-rc.2.26504.105" PrivateAssets="all" />
     <!-- Douze -->
-    <PackageVersion Include="Fluid.Core" Version="3.0.0-preview-786" />
+    <PackageVersion Include="Fluid.Core" Version="3.0.0-preview-789" />
     <PackageVersion Include="Markdig" Version="1.4.2" />
     <PackageVersion Include="NetVips" Version="3.2.0" />
     <!-- libvips, one package per runtime identifier of the tool packages (Douze.csproj) -->

@@ -568,8 +568,8 @@ time.
      and that one cached its arguments for every later render. On the target site `dirs | slice: 0, n` (the common
      source folder of a C# package page) and `s.name | slice: 3, s.name.size` (the setters of a TypeScript handle:
      `readonly`, `get · set`) took another page's values; the locale copies that differed were most likely the same
-     race in the templates they share (they did not differ again with the fix). Fixed in Fluid (sebastienros/fluid#1067); Douze builds deterministically once it takes a Fluid preview
-     with the fix.
+     race in the templates they share (they did not differ again with the fix). Fixed in Fluid
+     (sebastienros/fluid#1067, in 3.0.0-preview-789).
    - *A highlighted line stopped at 500 ms.* `CodeTokenizer` gave the rest of a line that took longer the style of
      where it stopped, and how long a line takes depends on the load of the machine: a new registry compiles its rules
      on its first lines while the other units run (`aspire add redis` came out as one token in some builds). The
