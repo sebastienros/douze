@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text;
-using System.Text.RegularExpressions;
 using Douze.CodeHover;
 using Douze.FileSystems;
 using Douze.Nodes;
@@ -38,7 +37,7 @@ internal sealed record CodeFence(int File, int Index, int TagEnd, string Languag
 /// </remarks>
 /// <typeparam name="TState">What a build's check needs besides the fences, from <see cref="PrepareAsync"/> (such as the
 /// shared files it read).</typeparam>
-internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
+internal abstract class CodeFenceStep<TState> : Step, IReduceStep
 {
     private static readonly GlobSet Pages = GlobSet.Parse(["**/*.html"]);
 
@@ -147,7 +146,7 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
 
             var index = 0;
 
-            foreach (var (tagEnd, language, meta, code) in FindFences(text))
+            foreach (var (tagEnd, language, meta, code) in CodeFenceScanner.FindFences(text, (language, meta) => _languages.Contains(language) && Selects(meta), TabWidth, Trim))
             {
                 fences.Add(new CodeFence(i, ++index, tagEnd, language, meta, code, Hash128.Combine(settingsKey, Hash128.OfStrings([.. FenceKeyParts(language, meta, code)]))));
             }
@@ -207,7 +206,7 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
 
             if (error != null)
             {
-                errors.Add($"{files[fence.File].SourcePath ?? files[fence.File].Path}: {FenceKind} fence {fence.Index} ('{FirstLine(fence.Code)}'): {error}");
+                errors.Add($"{files[fence.File].SourcePath ?? files[fence.File].Path}: {FenceKind} fence {fence.Index} ('{CodeFenceScanner.FirstLine(fence.Code)}'): {error}");
             }
 
             if (json != null && (error == null || Warn))
@@ -417,120 +416,5 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
         }
-    }
-
-    private static string FirstLine(string code)
-    {
-        var line = code.Split('\n').FirstOrDefault(x => x.Trim().Length > 0)?.Trim() ?? "";
-        return line.Length > 60 ? line[..57] + "..." : line;
-    }
-
-    [GeneratedRegex(@"\Gpre((?:\s+data-(?:lang|meta)=""[^""]*"")*)\s*>")]
-    private static partial Regex PreTag();
-
-    [GeneratedRegex(@"\G<code(?:\s[^>]*)?>")]
-    private static partial Regex CodeTag();
-
-    [GeneratedRegex(@"data-(lang|meta)=""([^""]*)""")]
-    private static partial Regex PreAttribute();
-
-    /// <summary>
-    /// The fences of a page that the step selects, as the <c>markdown</c> step writes fences: a <c>&lt;pre&gt;</c> with
-    /// only <c>data-lang</c> and <c>data-meta</c> attributes whose only child is a <c>&lt;code&gt;</c> holding escaped
-    /// text. Returns where the <c>&lt;pre</c> tag's attributes end, the language, the meta and the decoded code (without
-    /// the last line end, tabs replaced as <c>tab-width</c> says, trimmed as <c>trim</c> says).
-    /// </summary>
-    private IEnumerable<(int TagEnd, string Language, string Meta, string Code)> FindFences(string html)
-    {
-        var index = 0;
-
-        while ((index = html.IndexOf("<pre", index, StringComparison.Ordinal)) >= 0)
-        {
-            var pre = PreTag().Match(html, index + 1);
-
-            if (!pre.Success)
-            {
-                index += 4;
-                continue;
-            }
-
-            var code = CodeTag().Match(html, pre.Index + pre.Length);
-            var end = code.Success ? html.IndexOf("</code></pre>", code.Index + code.Length, StringComparison.Ordinal) : -1;
-
-            if (end < 0)
-            {
-                index = pre.Index + pre.Length;
-                continue;
-            }
-
-            var language = "";
-            var meta = "";
-
-            foreach (Match attribute in PreAttribute().Matches(pre.Groups[1].Value))
-            {
-                var value = WebUtility.HtmlDecode(attribute.Groups[2].Value);
-
-                if (attribute.Groups[1].Value == "lang")
-                {
-                    language = value;
-                }
-                else
-                {
-                    meta = value;
-                }
-            }
-
-            index = end;
-            var text = html.AsSpan(code.Index + code.Length, end - code.Index - code.Length);
-
-            if (!_languages.Contains(language) || !Selects(meta) || text.Contains('<'))
-            {
-                continue;
-            }
-
-            var decoded = WebUtility.HtmlDecode(text.ToString()).ReplaceLineEndings("\n");
-
-            if (decoded.EndsWith('\n'))
-            {
-                decoded = decoded[..^1];
-            }
-
-            if (TabWidth > 0)
-            {
-                decoded = decoded.Replace("\t", new string(' ', TabWidth), StringComparison.Ordinal);
-            }
-
-            if (Trim)
-            {
-                decoded = TrimCode(decoded);
-            }
-
-            // The end of the attributes: before the '>' of the tag, and its spaces.
-            var tagEnd = pre.Index + pre.Length - 1;
-
-            while (char.IsWhiteSpace(html[tagEnd - 1]))
-            {
-                tagEnd--;
-            }
-
-            yield return (tagEnd, language, meta, decoded);
-        }
-    }
-
-    /// <summary>
-    /// The code with the white space at the end of its lines and its leading and trailing blank lines removed.
-    /// </summary>
-    private static string TrimCode(string code)
-    {
-        var lines = code.Split('\n').Select(x => x.TrimEnd()).ToList();
-        var start = lines.FindIndex(x => x.Length > 0);
-
-        if (start < 0)
-        {
-            return "";
-        }
-
-        var end = lines.FindLastIndex(x => x.Length > 0);
-        return string.Join('\n', lines.Skip(start).Take(end - start + 1));
     }
 }

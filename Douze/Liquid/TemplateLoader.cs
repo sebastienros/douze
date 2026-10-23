@@ -115,7 +115,7 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     /// <summary>
     /// The first line of a Fluid parse error, without the position it repeats ("Invalid 'if' tag at (2:8)").
     /// </summary>
-    private static string Reason(ParseException error)
+    internal static string Reason(ParseException error)
     {
         var message = error.Message;
         var lineEnd = message.IndexOf('\n');

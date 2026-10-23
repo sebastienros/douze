@@ -1475,6 +1475,139 @@ internal static class CacheTag { public static void Register(FluidParser parser)
 // reading the LocaleSet, the StepContext and the model from context.AmbientValues (AmbientKeys.Locales, StepContext, Model).
 ```
 
+### 3.20 Validation of code samples and generated files
+
+**What the site needs.** The documentation of a tool shows its configuration: Douze's own site has about 140 YAML
+fences, 70 of them `douze.yml` excerpts, plus JSON, XML and Liquid samples. A sample that does not parse, or a
+`douze.yml` excerpt with an option that no longer exists, is a bug a reader copies. The build must catch it, and the
+generated files that have a syntax (a feed, a sitemap, a JSON export rendered by Liquid) must be well formed. Rules
+beyond syntax (a linter's) stay the site's choice.
+
+**Design.** One built-in step, `uses: check-code` (map, default match `**/*.html`, `ReadsScopes: false`), that checks
+code by language with in-process parsers and returns its files unchanged:
+
+```yaml
+markdown:   { needs: render, uses: markdown }
+check-code: { needs: markdown, uses: check-code }                          # the fences of the pages
+highlight:  { needs: check-code, uses: highlight }
+layout:     { needs: highlight, uses: layout }
+check-files: { needs: layout, uses: check-code, match: ["**/*.xml", "**/*.json"] }  # generated files, whole
+write:      { needs: check-files, uses: write }                            # the other files pass through
+```
+
+What it checks depends on the file:
+
+- **An HTML file**: its fences, found with the scan the hover steps share (`CodeFenceScanner`, extracted from
+  `CodeFenceStep`: a `<pre data-lang data-meta>` whose only child is a `<code>`, as `markdown` writes them). It runs
+  after `markdown` and before `highlight`, which replaces the fences with highlighted markup. The code is checked as
+  written: no tab replacement (tabs are a YAML error) and no trimming, so that lines in errors are lines of the
+  fence.
+- **Any other file**: its whole content, by the language of its extension (`feed.xml` is `xml`). This is part 2 of
+  the request (generated files): the same step with another `match`, not a second step, since the validators, the
+  options and the error format are the same, and only the unit of code differs (a fence or a file). A file whose
+  extension has no validator passes through unchecked.
+
+Validators (`Douze/Validation/`, one static `Check(string code)` each, returning the errors with a line and a column
+when the parser gives them):
+
+| Validator | Parser | Fence languages and extensions (built-in aliases) |
+| --- | --- | --- |
+| `yaml` | SharpYaml (`YamlStream.Load`: every document), plus duplicate keys of a mapping | `yaml`, `yml` |
+| `json` | `JsonDocument.Parse`, duplicate properties rejected (`AllowDuplicateProperties: false`) | `json`, `webmanifest` |
+| `jsonc` | the same with comments and trailing commas allowed | `jsonc` |
+| `jsonl` | a JSON value on every line that is not blank (JSON Lines: the messages of a protocol) | `jsonl`, `ndjson` |
+| `xml` | `XmlReader` (DTD ignored, no resolver: nothing is fetched) | `xml`, `svg`, `xsl`, `xslt`, `rss`, `atom` |
+| `liquid` | the build's Fluid parser (`TemplateLoader.Parser`: Douze's tags and the site's shortcodes) | `liquid` |
+
+A `yaml` fence whose `title` (the fence meta, `CodeMeta`) or a YAML file whose name is in `workflow` (default
+`[douze.yml]`) is also checked as a Douze workflow: `WorkflowLoader.Load` (unknown keys of `site`, `markdown`,
+`vars`, a step, invalid values) with a neutral environment (no environment variable, `os: other`), then
+`StepFactory.Create` on every step (unknown `uses`, unknown or invalid `with` options, unknown `tool`). The graph is
+not validated: excerpts name steps they do not show (`needs: render`). An excerpt of the `steps` mapping alone (every
+top-level value is a mapping with `uses`, `run`, `needs` or `inputs`) is checked as the content of `steps:`.
+
+Options (`WithOptions`):
+
+- `languages`: the validators that run (default all: `[yaml, json, jsonc, jsonl, xml, liquid]`).
+- `aliases`: more fence languages or extensions for a validator: `{ compose: yaml, plist: xml }`. Built-in aliases
+  cannot be redefined to another validator (an error), so that a fence label means the same on every site.
+- `workflow`: the fence titles and file names checked as `douze.yml` (`[]`: none).
+- `skip`: the meta word that leaves a fence out (default `nocheck`): ` ```yaml nocheck `. For a sample that is wrong on
+  purpose, or a template of a YAML file with placeholders.
+- `ignore`: globs of the paths left out (whole pages or files), like `skip` of `replace`; `match` does the same but
+  restates the default.
+- `errors`: `fail` (default) or `warn`, as in the hover steps.
+
+Errors name the page by its source, the fence by its language and number among the checked fences of the page, its
+first line, then the line and column in the fence, as the hover steps do:
+
+```
+/_content/guide/assets.md: yaml fence 3 ('steps:'): line 4, column 5: mapping values are not allowed in this context
+/_content/guide/images.md: yaml fence 2 ('markdown:'): line 3, column 5: unknown key 'widthz' in 'markdown.images'; expected 'widths', ...
+/feed.xml (/_content/feed.xml.liquid): xml: line 12, column 3: The 'item' start tag on line 9 position 4 does not match the end tag of 'channel'.
+```
+
+With `errors: fail` every error of the page is reported and the unit fails (the step stops there, as any step does;
+`--keep-going` reports every page). With `warn`, they are warnings.
+
+**Caching.** The unit is the page: the scheduler replays it while the page's content and the step's options are the
+same, so an unchanged page is never parsed again. A memo per fence by language and code, as the hover steps keep,
+is not worth it here: the parsers take microseconds per fence, less than a memo lookup and its blob in the cache, and
+a page whose text changed usually changed a fence anyway. `CacheVersion` is the hash of the site's shortcodes when the
+`liquid` validator runs (a new shortcode makes a fence valid). A failed unit is not stored, so its errors come back
+until the page is fixed. Warnings are logged when a unit runs; the step is an `IReplayObserver` and keeps the
+warnings of a page in a memo (`BuildCache.PutMemo`, keyed by the step's configuration, the page's path and content
+hash), which `Replayed` logs again, so a cached build reports the same warnings.
+
+**What is left out, and why.**
+
+- **CSS**: no parser in the dependencies (it would take AngleSharp.Css or ExCSS), and CSS has no invalid syntax in
+  the parser's sense: error recovery drops a broken declaration, so a "valid" parse catches almost nothing. Real CSS
+  rules (unknown properties, typos in values) are a linter's job: stylelint as a command step.
+- **Markdown**: every text is valid Markdown, so a parser finds nothing to report. What can be wrong in Markdown
+  samples (a broken link, a shortcode with an unknown argument) is checked where it is rendered, not in a fence.
+- **HTML**: HTML5 parsing never fails either, and well-formedness is not a rule of HTML. Checks of generated pages
+  (a duplicate `id`, an unclosed element, missing `alt`) are a validator's job: `html-validate` as a command step.
+  Broken links and anchors are `check-links` (3.11).
+
+**Relation to `check-links` (3.11).** Both validate output, but differently: `check-code` judges each file or fence
+alone (a map, cached per page, streaming), `check-links` judges every page against every other (a metadata-only
+reduce barrier after a `links` extraction step). They share nothing but the error and `warn` conventions, so they stay
+two steps. `check-links` is not implemented with this change: it needs the `links` extraction step, the resolution
+rules and their tests (3.11), a change of its own; nothing in `check-code` blocks it or would be reworked by it.
+Follow-up: implement 3.11 as designed, naming its `warn: true` option `errors: warn` like `check-code` and the hover
+steps.
+
+**Custom rules: command steps.** Any linter that reads files and exits non-zero (or writes to stderr) on a problem is
+a command step, which already fails the build with its output (`stderr: fail` is the default):
+
+```yaml
+lint-css:
+  needs: permalink
+  match: "css/**/*.css"
+  mode: batch                     # one run for all the files
+  run: "npx stylelint {{ inputs }}/css/**/*.css"
+```
+
+A linter that checks single files can run per file with `mode: filter` (the file on stdin, the same file on stdout).
+The docs page of the step shows the pattern; fences cannot be linted this way, since a fence is not a file (the site
+can extract them with a `fork` or a `run:` that reads HTML, but that is the site's tool, not Douze's).
+
+**Files.** `Douze/Workflow/Steps/CheckCodeStep.cs`, `Douze/Workflow/Steps/CodeFenceScanner.cs` (the scan moved out of
+`CodeFenceStep`), `Douze/Validation/CodeValidators.cs` (the validators), `Douze/Validation/WorkflowSnippet.cs` (the
+`douze.yml` check). Registered in `BuiltInSteps` and `WorkflowSchema`.
+
+**Tests** (`Steps/CheckCodeStepTests.cs`, `Validation/CodeValidatorsTests.cs`): each validator accepts a valid sample
+and reports an invalid one with its line and column; JSON Lines; YAML duplicate keys and multi-document streams; `jsonc` comments
+and trailing commas, rejected by `json`; XML with a DOCTYPE and no network; Liquid with a shortcode; `douze.yml`
+fences: unknown top-level key, unknown step option, unknown `uses`, a `steps` excerpt, `needs` to a step not shown is
+not an error; options `languages`, `aliases`, `skip`, `ignore`, `errors: warn`, `workflow: []`; whole files by
+extension after `layout`; error format and order; a warning is reported again when the page is replayed from the
+cache; a page without fences passes through as the same instance.
+
+**Acceptance.** `dotnet test`; the native AOT smoke test; Douze's documentation site builds with `check-code` after
+`markdown` and reports no error.
+
 ---
 
 ## 4. `douze.yml` additions
@@ -1529,7 +1662,7 @@ their `CacheVersion` (2.2): a Markdown option change re-renders everything that 
 ### 4.3 New built-in steps
 
 `WorkflowSchema` and `BuiltInSteps.Registry` list: `headings`, `localize`, `assets`, `images`, `image-map`,
-`pictures`, `social-image`, `git`, `links`, `check-links`, `fork`, `redirects`, `replace`. `--print-workflow` prints them like
+`pictures`, `social-image`, `git`, `links`, `check-links`, `check-code`, `fork`, `redirects`, `replace`. `--print-workflow` prints them like
 the others. The default workflow (engine plan 4.6) does not change: a site without `douze.yml` gets no new step
 (headings and twins are opt-in), except that `collect` contributes `collections.urls` and the `markdown` step honors
 `markdown: false`.

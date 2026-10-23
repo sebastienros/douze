@@ -167,7 +167,7 @@ internal sealed partial class YamlSource
 
     private static bool IsNullLiteral(string text) => text is "" or "~" or "null" or "Null" or "NULL";
 
-    private static SharpYaml.Mark Start(YamlElement node)
+    internal static SharpYaml.Mark Start(YamlElement node)
     {
         return node switch
         {
@@ -185,7 +185,7 @@ internal sealed partial class YamlSource
     /// SharpYaml messages start with the positions, which the location already gives:
     /// <c>(Lin: 1, Col: 0, Chr: 7) - (Lin: 1, Col: 0, Chr: 7): While parsing a node, did not find expected node content.</c>
     /// </summary>
-    private static string ErrorMessage(string message)
+    internal static string ErrorMessage(string message)
     {
         message = MarksPrefix().Replace(message, "").Trim().TrimEnd('.');
         return message.Length == 0 ? "invalid YAML" : char.ToLowerInvariant(message[0]) + message[1..];
