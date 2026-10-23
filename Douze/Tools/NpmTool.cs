@@ -80,6 +80,85 @@ internal sealed record NpmTool(
         });
 
     /// <summary>
+    /// Pagefind (https://pagefind.app), the static search index, its extended build (the one npm ships, with the
+    /// segmentation of Chinese and Japanese), published as <c>@pagefind/&lt;os&gt;-&lt;arch&gt;</c>. A command step runs it
+    /// with <c>tool: pagefind</c>.
+    /// </summary>
+    public static NpmTool Pagefind { get; } = new(
+        "pagefind",
+        "1.5.2",
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["osx-arm64"] = "@pagefind/darwin-arm64",
+            ["osx-x64"] = "@pagefind/darwin-x64",
+            ["linux-x64"] = "@pagefind/linux-x64",
+            ["linux-arm64"] = "@pagefind/linux-arm64",
+            ["win-x64"] = "@pagefind/windows-x64",
+            ["win-arm64"] = "@pagefind/windows-arm64",
+        },
+        "package/bin/pagefind_extended",
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["osx-arm64"] = "sha512-MXpI+7HsAdPkvJ0gk9xj9g541BCqBZOBbdwj9g6lB5LCj6kSV6nqDSjzcAJwvOsfu0fjwvC8hQU+ecfhp+MpiQ==",
+            ["osx-x64"] = "sha512-IojxFWMEJe0RQ7PQ3KXQsPIImNsbpPYpoZ+QUDrL8fAl/O27IX+LVLs74/UzEZy5uA2LD8Nz1AiwKr72vrkZQw==",
+            ["linux-x64"] = "sha512-V+tFqHKXhQKq/WqPBD67AFy7scn1/aZID00ws4fSDd+1daSi5UHR9VVlRrOUYKxn3VuFQYRD7lYXdZK1WED1YA==",
+            ["linux-arm64"] = "sha512-Ovt9+K35sqzn8H3ZMXGwls4TD/wMJuvRtShHIsmUQREmaxjrDEX7gHckRCrwYJ4XE1H1p6HkLz3wukrAnsfXQw==",
+            ["win-x64"] = "sha512-Fa2Iyw7kaDRzGMfNYNUXNW2zbL5FQVDgSOcbDHdzBrDEdpqOqg8TcZ68F22ol6NJ9IGzvUdmeyZypLW5dyhqsg==",
+            ["win-arm64"] = "sha512-hN9Nh90fNW61nNRCW9ZyQrAj/mD0eRvmJ8NlTUzkbuW8kIzGJUi3cxjFkEcMZ5h/8FsKWD/VcouZl4yo1F7B6g==",
+        });
+
+    /// <summary>
+    /// Lightning CSS (https://lightningcss.dev), the CSS bundler, transpiler and minifier: its command line, published as
+    /// <c>lightningcss-cli-&lt;os&gt;-&lt;arch&gt;</c>. A command step runs it with <c>tool: lightningcss</c>.
+    /// </summary>
+    public static NpmTool LightningCss { get; } = new(
+        "lightningcss",
+        "1.33.0",
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["osx-arm64"] = "lightningcss-cli-darwin-arm64",
+            ["osx-x64"] = "lightningcss-cli-darwin-x64",
+            ["linux-x64"] = "lightningcss-cli-linux-x64-gnu",
+            ["linux-musl-x64"] = "lightningcss-cli-linux-x64-musl",
+            ["linux-arm64"] = "lightningcss-cli-linux-arm64-gnu",
+            ["linux-musl-arm64"] = "lightningcss-cli-linux-arm64-musl",
+            ["win-x64"] = "lightningcss-cli-win32-x64-msvc",
+            ["win-arm64"] = "lightningcss-cli-win32-arm64-msvc",
+        },
+        "package/lightningcss",
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["osx-arm64"] = "sha512-sso5hSFPis7ldw2FcBopsZviSVAXWRGX8ybUwMhQHssTlERenQJ88WihZs08tCdSnQULo2kunnrGhh4VjRw8Fg==",
+            ["osx-x64"] = "sha512-/aDYpMv2QKpJoSIwvwpIs4tIX9SCU894eospSm55FR5MxDZkJDy4fEX6elsXkHCBDqbAknb4qd2h/oDMLTC4Ew==",
+            ["linux-x64"] = "sha512-9Q4DAglm17bLhA+HZPB+vxjrHXdhR/8U44zyc8MQNA5Rw+tisvcoR/lv4iuBUFn2qreYVRWQq0wP0rgdhTSxyQ==",
+            ["linux-musl-x64"] = "sha512-+EobHdqxQ21SUMF8OU0qcizNIrLpPDaPTKQCaGbra9gL3NrW3ELG+exZl5y+WzJsEjLZ0hhjbCFjHUL/03H2JA==",
+            ["linux-arm64"] = "sha512-DkYmkBix3icAZKZsxGsjBAj59CIV0zflZtsT66lCPd2z3OqBLJlhKRrw4TlAW7mIkYeOEYWKVz/G00ZGXNse4A==",
+            ["linux-musl-arm64"] = "sha512-euNOhzo1ysRl719HfFzRe9r9usWO2Z/Nb8RnmqXxb/kvzOgAv2BcflpoTu6tWhSrbHX6YS/WP6mMFrmII6T7Hw==",
+            ["win-x64"] = "sha512-sgtNPw2gxnY8OzCCMTKCkHSIiBYb/wfXLpLMmDIJFzcX2OETY+VOnQd7OBHx+hVSlrMU7iWL6oJ5rc+nQwteVA==",
+            ["win-arm64"] = "sha512-iwQ+8rHQy3ewC4c43Ik3UZ8TCC/rjShP3r/8TOPw4fT8wQmW7dS3BNNHPK+LWz9qNrObATJ4MZEEZVRneckOBw==",
+        });
+
+    /// <summary>
+    /// The tools a command step can run with <c>tool:</c>, by name.
+    /// </summary>
+    public static IReadOnlyDictionary<string, NpmTool> Known { get; } = new Dictionary<string, NpmTool>(StringComparer.Ordinal)
+    {
+        ["lightningcss"] = LightningCss,
+        ["pagefind"] = Pagefind,
+    };
+
+    /// <summary>
+    /// The tool and version of a <c>tool:</c> option, <c>name</c> (its default version) or <c>name@version</c>, or null
+    /// when Douze does not know the tool.
+    /// </summary>
+    public static (NpmTool Tool, string Version)? Parse(string option)
+    {
+        var at = option.IndexOf('@', StringComparison.Ordinal);
+        var name = at < 0 ? option : option[..at];
+        return Known.TryGetValue(name, out var tool) ? (tool, at < 0 ? tool.DefaultVersion : option[(at + 1)..]) : null;
+    }
+
+    /// <summary>
     /// The platform of the process, as a .NET runtime identifier: <c>osx-arm64</c>, <c>linux-x64</c>,
     /// <c>linux-musl-x64</c>, <c>win-x64</c>...
     /// </summary>

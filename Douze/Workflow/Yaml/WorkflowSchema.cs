@@ -46,6 +46,7 @@ internal static partial class WorkflowSchema
         Globs("match", x => x.Match, (x, v) => x with { Match = v }),
         String("uses", x => x.Uses, (x, v) => x with { Uses = v }),
         String("run", x => x.Run, (x, v) => x with { Run = v }),
+        String("tool", x => x.Tool, (x, v) => x with { Tool = v }, commandOnly: true),
         Enum("mode", CommandMode.Batch, x => x.Mode, (x, v) => x with { Mode = v }, commandOnly: true),
         String("group-by", x => x.GroupBy, (x, v) => x with { GroupBy = v }),
         Mapping("with", x => x.With, (x, v) => x with { With = v }),
@@ -58,6 +59,7 @@ internal static partial class WorkflowSchema
         Duration("timeout", x => x.Timeout, (x, v) => x with { Timeout = v }, commandOnly: true),
         Enum("stderr", StderrPolicy.Fail, x => x.Stderr, (x, v) => x with { Stderr = v }, commandOnly: true),
         Bool("shell", true, x => x.Shell, (x, v) => x with { Shell = v }, commandOnly: true),
+        Bool("enabled", true, x => x.Enabled, (x, v) => x with { Enabled = v }),
     ];
 
     public static readonly FrozenDictionary<string, WorkflowField> StepFieldsByName = StepFields.ToFrozenDictionary(x => x.Name, StringComparer.Ordinal);

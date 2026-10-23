@@ -5,8 +5,8 @@ Tests install.sh and install.ps1: installs douze with each of them, runs it, upd
 .DESCRIPTION
 Installs from the packages of a folder (served as a local feed by test-feed.cs) or from a feed. Each script installs
 the latest preview into a temporary folder; the installed douze prints its version, builds a site whose image needs
-libvips (and the Sample site), and is uninstalled. install.sh runs on Linux and macOS, install.ps1 on PowerShell 7,
-and on Windows PowerShell 5.1 on Windows.
+libvips and whose code block needs Oniguruma (and the Sample site), and is uninstalled. install.sh runs on Linux and
+macOS, install.ps1 on PowerShell 7, and on Windows PowerShell 5.1 on Windows.
 
 .PARAMETER Packages
 A folder of .nupkg files to install from.
@@ -119,10 +119,11 @@ try {
         Write-Host "douze --version: $reported"
         if ($Version -and ($reported -replace '\+.*$', '') -ne $Version) { throw "installed $reported, expected $Version" }
 
-        # libvips loads from the install folder.
+        # libvips and Oniguruma load from the install folder.
         $site = Join-Path $work "site-$run"
         Invoke-Checked $douze @('-s', (Join-Path $PSScriptRoot 'install-test-site'), '-o', $site, '--plain', '--no-cache')
         if (-not (Get-ChildItem (Join-Path $site 'assets/images') -Filter '*.webp')) { throw 'the image variant was not written' }
+        if (-not (Select-String -LiteralPath (Join-Path $site 'index.html') -SimpleMatch 'style="--0:' -Quiet)) { throw 'the code block was not highlighted' }
         Invoke-Checked $douze @('-s', (Join-Path $repository 'Sample'), '-o', (Join-Path $work "sample-$run"), '--plain', '--no-cache', '-q')
         if (-not (Test-Path (Join-Path $work "sample-$run/index.html"))) { throw 'the Sample site has no index.html' }
 

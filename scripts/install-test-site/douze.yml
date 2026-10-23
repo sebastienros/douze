@@ -1,0 +1,9 @@
+# The default workflow with the highlight step: the smoke test of the packages checks that the native libraries the
+# image and highlight features load (libvips, Oniguruma) are found next to the binary.
+steps:
+  pages:     { inputs: ["**", "!douze.yml"], uses: frontmatter }
+  permalink: { needs: pages, uses: permalink }
+  render:    { needs: permalink, uses: liquid }
+  markdown:  { needs: render, uses: markdown }
+  highlight: { needs: markdown, uses: highlight }
+  write:     { needs: highlight, uses: write }

@@ -67,7 +67,15 @@ internal abstract class CommandStep : Step
         }
 
         _workingDirectory = directory;
+
+        // The binary of `tool`, downloaded on first use, for `{{ tool }}` in the run line.
+        if (CommandRequirements.ToolRequirement(Definition, context) is { } tool)
+        {
+            _toolPath = await tool.InstallAsync(ct);
+        }
     }
+
+    private string? _toolPath;
 
     private async ValueTask<Hash128> ComputeCacheVersionAsync(BuildContext context, CancellationToken ct)
     {
@@ -104,7 +112,7 @@ internal abstract class CommandStep : Step
 
     protected CommandModel CreateModel(string? inputs = null, string? outputs = null, FPath? file = null)
     {
-        return new CommandModel(Name, WorkingDirectory, Build.Site.OutputDirectory, inputs, outputs, file);
+        return new CommandModel(Name, WorkingDirectory, Build.Site.OutputDirectory, inputs, outputs, file, _toolPath);
     }
 
     /// <summary>

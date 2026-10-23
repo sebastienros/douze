@@ -1,0 +1,22 @@
+{%- comment -%}
+  Douze's default markup of a twoslash annotation (the `highlight` step's `templates.popup`). `node.kind` is hover
+  (`node.content`, the hovered code, with `node.type`, `node.docs` and `node.tags`), query (the same, after its line),
+  error (`node.text`, `node.code`, `node.level`, after its line), underline (the code of an error), highlight, tag
+  (`node.name`, `node.text`, around its line) or completion (`node.completions`).
+{%- endcomment -%}
+{%- case node.kind -%}
+{%- when 'hover' -%}
+<span class="twoslash-hover" tabindex="0">{{ node.content }}<span class="twoslash-popup" role="tooltip">{{ node.type }}{{ node.docs }}{% for tag in node.tags %}<p class="twoslash-tag"><b>@{{ tag.name }}</b> {{ tag.html }}</p>{% endfor %}</span></span>
+{%- when 'query' -%}
+<span class="twoslash-query">{{ node.type }}{{ node.docs }}</span>
+{%- when 'error' -%}
+<span class="twoslash-error twoslash-error-{{ node.level }}">{% if node.code %}{{ node.code }}: {% endif %}{{ node.text }}</span>
+{%- when 'underline' -%}
+<span class="twoslash-error-underline">{{ node.content }}</span>
+{%- when 'highlight' -%}
+<span class="twoslash-highlighted">{{ node.content }}</span>
+{%- when 'tag' -%}
+<span class="twoslash-tag twoslash-tag-{{ node.name }}">{{ node.content }}<span class="twoslash-tag-text">{{ node.text }}</span></span>
+{%- when 'completion' -%}
+<span class="twoslash-completions">{% for item in node.completions %}<span class="twoslash-completion">{{ item.name }}</span>{% endfor %}</span>
+{%- endcase -%}

@@ -711,7 +711,36 @@ internal static partial class WorkflowLoader
             steps.Add(ReadStep(yaml, name, nameNode, value, errors));
         }
 
-        return steps.ToImmutable();
+        return WithoutDisabledSteps(steps.ToImmutable());
+    }
+
+    /// <summary>
+    /// The steps without those of <c>enabled: false</c>: a step that needs a disabled step needs what that step needs
+    /// instead, so that the files pass it by.
+    /// </summary>
+    internal static ImmutableArray<StepDefinition> WithoutDisabledSteps(ImmutableArray<StepDefinition> steps)
+    {
+        var disabled = new Dictionary<string, StepDefinition>(StringComparer.Ordinal);
+
+        foreach (var step in steps)
+        {
+            if (!step.Enabled)
+            {
+                disabled.TryAdd(step.Name, step);
+            }
+        }
+
+        if (disabled.Count == 0)
+        {
+            return steps;
+        }
+
+        IEnumerable<string> Resolve(string name, HashSet<string> visited) =>
+            !disabled.TryGetValue(name, out var step) ? [name]
+            : visited.Add(name) ? step.Needs.SelectMany(x => Resolve(x, visited))
+            : [];
+
+        return [.. steps.Where(x => x.Enabled).Select(x => x with { Needs = [.. x.Needs.SelectMany(n => Resolve(n, [])).Distinct(StringComparer.Ordinal)] })];
     }
 
     private static StepDefinition ReadStep(YamlSource yaml, string name, YamlElement nameNode, YamlElement? node, List<WorkflowValidationError> errors)

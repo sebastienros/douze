@@ -11,7 +11,7 @@ namespace Douze.Workflow.Commands;
 
 /// <summary>
 /// The <c>run</c> line and the <c>env</c> values of a command step, parsed once and rendered per unit with
-/// <c>inputs</c>, <c>outputs</c>, <c>site</c>, <c>step</c>, <c>cwd</c> and, in filter mode, <c>file</c>
+/// <c>inputs</c>, <c>outputs</c>, <c>site</c>, <c>step</c>, <c>cwd</c>, <c>tool</c> and, in filter mode, <c>file</c>
 /// (<c>path</c>, <c>name</c>, <c>dir</c>, <c>ext</c>).
 /// </summary>
 /// <remarks>
@@ -138,6 +138,7 @@ internal sealed class CommandTemplate
         Set("site", model.Site);
         Set("inputs", model.Inputs);
         Set("outputs", model.Outputs);
+        Set("tool", model.Tool);
 
         if (model.File is { } file)
         {
@@ -318,4 +319,4 @@ internal enum QuoteStyle
 /// The values a command template is rendered with. Paths are absolute disk paths, except <see cref="File"/>, the
 /// virtual path of the file in filter mode.
 /// </summary>
-internal sealed record CommandModel(string Step, string WorkingDirectory, string? Site, string? Inputs = null, string? Outputs = null, FPath? File = null);
+internal sealed record CommandModel(string Step, string WorkingDirectory, string? Site, string? Inputs = null, string? Outputs = null, FPath? File = null, string? Tool = null);
