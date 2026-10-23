@@ -15,7 +15,9 @@
   <Folder Name="/bench/">
     <File Path="bench/README.md" />
     <File Path="bench/fetch-api-data.sh" />
+    <File Path="bench/image-bench.sh" />
     <Project Path="bench/Douze.Bench/Douze.Bench.csproj" />
+    <Project Path="bench/Douze.ImageBench/Douze.ImageBench.csproj" />
   </Folder>
   <Project Path="Douze.Tests.FakeTool/Douze.Tests.FakeTool.csproj" />
   <Project Path="Douze.Tests/Douze.Tests.csproj" />
