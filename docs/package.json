@@ -1,0 +1,21 @@
+{
+  "name": "douze-documentation-checks",
+  "private": true,
+  "type": "module",
+  "description": "Checks of the documentation site. The site itself is built by Douze (douze.yml), not by npm.",
+  "scripts": {
+    "lint": "markdownlint-cli2 \"_content/**/*.md\"",
+    "lint:fix": "npm run lint -- --fix",
+    "check-links": "node scripts/check-links.mjs _site douze",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "markdownlint-cli2": "^0.23.2"
+  },
+  "overrides": {
+    "markdownlint-cli2": {
+      "smol-toml": "1.7.1"
+    }
+  }
+}

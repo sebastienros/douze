@@ -1,0 +1,14 @@
+# Docs-heavy scenario: Chroma highlighting (inline styles, Hugo's default) and Goldmark heading ids, both built in.
+baseURL = "https://example.com/"
+languageCode = "en"
+title = "Docs"
+disableKinds = ["taxonomy", "term", "rss", "sitemap", "robotstxt"]
+
+[markup.highlight]
+  codeFences = true
+  noClasses = true
+  style = "github-dark"
+
+[markup.tableOfContents]
+  startLevel = 2
+  endLevel = 3

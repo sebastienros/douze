@@ -1,0 +1,9 @@
+<ol reversed class="postlist" style="--postlist-index: {{ postslist.size | plus: 1 }}">
+{%- for post in postslist reversed %}
+	{%- assign post_url = post.data.url | replace: "index.html", "" %}
+	<li class="postlist-item{% if post.data.url == url %} postlist-item-active{% endif %}">
+		<a href="{{ post_url }}" class="postlist-link">{{ post.data.title | default: post_url }}</a>
+		<time class="postlist-date" datetime="{{ post.data.page.date | date: '%Y-%m-%d' }}">{{ post.data.page.date | date: '%B %Y' }}</time>
+	</li>
+{%- endfor %}
+</ol>

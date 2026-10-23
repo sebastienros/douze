@@ -2,11 +2,9 @@ name: PR Checks
 
 on:
 
+  # Every pull request, documentation included: the checks build the documentation site.
   pull_request:
     branches: [ main ]
-    paths-ignore:
-    - 'doc/**'
-    - 'README.md'
   workflow_dispatch:
 
 jobs:
@@ -35,6 +33,35 @@ jobs:
 
     - name: Test
       run: dotnet test -c Release
+
+    # The documentation site (docs/) is a real site built by this Douze on every platform: a pull request that breaks
+    # it, or that changes a feature without its pages, fails here.
+    - name: Build the documentation site
+      run: dotnet run --project Douze -c Release -- -s docs --no-cache --plain
+
+    - uses: actions/setup-node@v7
+      if: matrix.os == 'ubuntu-latest'
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: docs/package-lock.json
+
+    - name: Check the documentation site (lint, links, Playwright)
+      if: matrix.os == 'ubuntu-latest'
+      working-directory: docs
+      run: |
+        npm ci
+        npx playwright install --with-deps chromium
+        npm run lint
+        npm run check-links
+        npm run test:e2e
+
+    - uses: actions/upload-artifact@v7
+      if: matrix.os == 'ubuntu-latest'
+      with:
+        name: docs-site
+        path: docs/_site/douze
+        retention-days: 7
 
     # The native AOT tool package of the platform, as build.yml and publish.yml make it.
     - name: Pack douze (native AOT, ${{ matrix.rid }})

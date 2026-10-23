@@ -1,0 +1,4 @@
+- { label: Home, link: / }
+- { label: Archive, link: /blog/ }
+- { label: About, link: /about/ }
+- { label: Feed, link: /feed/feed.xml }

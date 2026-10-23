@@ -356,3 +356,10 @@ bench/**/out/
 # The native AOT publish and smoke test folders of AGENTS.md
 /tool-out/
 /site-out/
+
+# Documentation site
+docs/_site/
+docs/.douze/
+docs/node_modules/
+docs/test-results/
+docs/playwright-report/

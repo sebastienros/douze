@@ -1,0 +1,18 @@
+{
+  "config": {
+    // Long lines are fine: prose is wrapped by editors.
+    "MD013": false,
+    // Pages have no H1: the layout renders the front matter title.
+    "MD041": false,
+    "MD025": false,
+    "MD024": { "siblings_only": true },
+    // Raw HTML is part of Douze pages (asides, details, kbd, benchmark bars).
+    "MD033": false,
+    // Douze containers (:::note) and Liquid tags are not Markdown.
+    "MD046": false,
+    "MD040": false,
+    // Tables use the compact style of the repository README.
+    "MD060": false
+  },
+  "ignores": ["node_modules/**", "_site/**", ".douze/**"]
+}

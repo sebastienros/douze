@@ -5,13 +5,15 @@
 
 Stupidly simple, blazing fast static site generator
 
+The documentation is at <https://sebastienros.github.io/douze/>, built by Douze from [`docs/`](docs/README.md).
+
 # installation
 
 Douze is a native executable for Windows, Linux and macOS (x64 and arm64), with libvips for the image features (see
 "images"). There is no stable release yet: every push to `main` publishes a preview.
 
 As a .NET tool, from the preview feed (the package of the machine's platform is the native build; elsewhere it runs on
-the .NET 11 runtime):
+the .NET runtime):
 
 ```
 dotnet tool install -g douze --prerelease --add-source https://f.feedz.io/sebastienros/douze/nuget/index.json
@@ -82,9 +84,8 @@ transient strings, the regexes of the code highlighting grammars it uses, the im
 14 of them at once. What every build holds whatever its parallelism is the site's data and metadata, and the pages that
 wait at a barrier (a `collect`, `localize` or `run:` batch step that needs every page) as UTF-8. When memory is scarce, in
 a container for instance, lower `-p` (or `site.parallelism`): the build takes longer and holds less. On a site of 70,000
-files with 78 MB of JSON data, on 14 cores, the published `douze` (Satori GC) builds in 32 s and peaks at 5.3 GB, and at
-`-p 4` in 46 s and 4.5 GB; built with the standard GC (`-p:UseSatoriGC=false`), it takes 47 s and 3.9 GB, or 59 s and 3.4 GB
-at `-p 4`.
+files with 78 MB of JSON data, on 14 cores, `douze` builds in 32 s and peaks at 5.3 GB, and at `-p 4` in 46 s and
+4.5 GB.
 
 # cache
 

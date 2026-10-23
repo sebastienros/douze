@@ -1,0 +1,6 @@
+{
+  "name": "docs-heavy",
+  "type": "module",
+  "private": true,
+  "scripts": { "build": "astro build" }
+}

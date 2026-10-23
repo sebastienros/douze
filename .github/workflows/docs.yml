@@ -1,0 +1,63 @@
+name: Documentation
+
+# Deploys the documentation site (docs/) to GitHub Pages from main, built by the Douze of the same commit. Pull requests
+# build and check the site in pr.yml.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+    - 'docs/**'
+    - 'Douze/**'
+    - '.github/workflows/docs.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
+      with:
+        global-json-file: global.json
+
+    # Pagefind, downloaded by the search step, is kept between runs.
+    - uses: actions/cache@v5
+      with:
+        path: docs/.douze/tools
+        key: douze-tools-${{ hashFiles('docs/douze.yml') }}
+
+    - name: Build the site
+      run: dotnet run --project Douze -c Release -- -s docs --no-cache --plain
+
+    - uses: actions/upload-pages-artifact@v5
+      with:
+        path: docs/_site/douze
+
+  deploy:
+    if: github.repository == 'sebastienros/douze'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+    - uses: actions/configure-pages@v6
+    - id: deployment
+      uses: actions/deploy-pages@v5

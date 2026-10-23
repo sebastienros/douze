@@ -1,0 +1,72 @@
+# The documentation site of Douze, built by Douze.
+#
+#   douze serve -s docs        http://localhost:8080/douze/
+#   douze -s docs              writes docs/_site; the site is docs/_site/douze
+#
+# GitHub Pages serves the project at /douze/, so the pages live in _content/douze/: their urls, and the urls of the
+# .md links between them, start with /douze/ without any rewriting. The deploy uploads _site/douze.
+
+site:
+  url: https://sebastienros.github.io
+  output: _site # relative to this folder, whatever the current folder is
+
+markdown:
+  extensions: [pipetables, footnotes, tasklists, definitionlists, attributes, autolinks, alerts, customcontainers]
+  aside:
+    kinds: [note, tip, caution, danger]
+
+steps:
+  site-data:
+    inputs: "_data/**/*.{yml,yaml,json}"
+    uses: data
+    with:
+      scope: site
+  folder-data:
+    inputs: "_content/**/*.{yml,yaml,json}"
+    uses: data
+    with:
+      scope: folder
+      root: _content
+  pages:
+    inputs: ["_content/**", "!_content/**/*.{yml,yaml,json}"]
+    needs: [site-data, folder-data]
+    uses: frontmatter
+    with:
+      require: [title]
+  permalink:
+    needs: pages
+    uses: permalink
+    with:
+      root: _content
+  collections:
+    needs: permalink
+    uses: collect
+  render:
+    needs: [permalink, collections]
+    uses: liquid
+  markdown:
+    needs: render
+    uses: markdown
+  headings:
+    needs: markdown
+    uses: headings
+    match: ["**/*.html", "!douze/index.html"]
+    with:
+      anchors: true
+      levels: [2, 3]
+  highlight:
+    needs: headings
+    uses: highlight
+    with:
+      themes: [github-light, github-dark]
+      stylesheet: douze/assets/code.css
+  layout:
+    needs: highlight
+    uses: layout
+  write:
+    needs: layout
+    uses: write
+  search:
+    needs: write
+    tool: pagefind
+    run: "{{ tool }} --site {{ site }}/douze --glob \"**/*.html\" --quiet"

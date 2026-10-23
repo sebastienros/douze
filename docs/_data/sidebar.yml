@@ -1,0 +1,127 @@
+# The navigation of the site: one top-level item per section (header tabs), its items are the sidebar.
+# A bare url is labeled with the title of its page.
+
+- label: Tutorial
+  href: /douze/tutorial/
+  items:
+    - label: Build a blog
+      items:
+        - /douze/tutorial/
+        - /douze/tutorial/1-setup/
+        - /douze/tutorial/2-pages/
+        - /douze/tutorial/3-includes-and-shortcodes/
+        - /douze/tutorial/4-layouts/
+        - /douze/tutorial/5-data-and-collections/
+        - /douze/tutorial/6-workflows/
+
+- label: Guide
+  href: /douze/guide/why-douze/
+  items:
+    - label: Introduction
+      items:
+        - /douze/guide/why-douze/
+        - /douze/guide/workflow-architecture/
+    - label: Start a new project
+      items:
+        - /douze/guide/install/
+        - /douze/guide/project-structure/
+        - /douze/guide/develop-and-build/
+    - label: Configuration
+      items:
+        - /douze/guide/configuration/
+        - /douze/guide/editor-setup/
+        - /douze/guide/environment-variables/
+        - /douze/guide/command-steps/
+        - /douze/guide/build-with-ai/
+    - label: Routing and navigation
+      items:
+        - /douze/guide/pages/
+        - /douze/guide/routing/
+        - /douze/guide/outputs/
+        - /douze/guide/navigation/
+        - /douze/guide/internationalization/
+    - label: Build your UI
+      items:
+        - /douze/guide/layouts/
+        - /douze/guide/shortcodes/
+        - /douze/guide/assets/
+        - /douze/guide/syntax-highlighting/
+        - /douze/guide/code-hovers/
+    - label: Add content to your site
+      items:
+        - /douze/guide/markdown/
+        - /douze/guide/data/
+        - /douze/guide/collections/
+        - /douze/guide/pagination/
+        - /douze/guide/images/
+        - /douze/guide/social-images/
+    - label: Build performance
+      items:
+        - /douze/guide/cache/
+        - /douze/guide/memory-and-parallelism/
+        - /douze/guide/tracing/
+        - /douze/guide/benchmarks/
+    - label: Help
+      items:
+        - /douze/guide/troubleshooting/
+        - /douze/contribute/
+    - label: How-to recipes
+      collapsed: true
+      items:
+        - /douze/recipes/
+        - /douze/recipes/rss/
+        - /douze/recipes/sitemap/
+        - /douze/recipes/pagefind/
+        - /douze/recipes/minify-html/
+        - /douze/recipes/node-worker/
+        - /douze/recipes/output-paths/
+        - /douze/recipes/reading-time/
+        - /douze/recipes/modified-time/
+        - /douze/recipes/external-links/
+        - /douze/recipes/github-pages/
+        - /douze/recipes/docker/
+    - label: Migrate to Douze
+      collapsed: true
+      items:
+        - /douze/migrate/
+        - /douze/migrate/from-eleventy/
+        - /douze/migrate/from-jekyll/
+        - /douze/migrate/from-hugo/
+
+- label: Reference
+  href: /douze/reference/
+  items:
+    - label: Reference
+      items:
+        - /douze/reference/
+        - /douze/reference/cli/
+        - /douze/reference/configuration/
+        - /douze/reference/template-data/
+        - /douze/reference/liquid/
+        - /douze/reference/commands/
+    - label: Built-in steps
+      items:
+        - /douze/reference/steps/
+        - { label: data, link: /douze/reference/steps/data/ }
+        - { label: frontmatter, link: /douze/reference/steps/frontmatter/ }
+        - { label: parse, link: /douze/reference/steps/parse/ }
+        - { label: replace, link: /douze/reference/steps/replace/ }
+        - { label: permalink, link: /douze/reference/steps/permalink/ }
+        - { label: collect, link: /douze/reference/steps/collect/ }
+        - { label: localize, link: /douze/reference/steps/localize/ }
+        - { label: paginate, link: /douze/reference/steps/paginate/ }
+        - { label: liquid, link: /douze/reference/steps/liquid/ }
+        - { label: fork, link: /douze/reference/steps/fork/ }
+        - { label: markdown, link: /douze/reference/steps/markdown/ }
+        - { label: headings, link: /douze/reference/steps/headings/ }
+        - { label: highlight, link: /douze/reference/steps/highlight/ }
+        - { label: hover-typescript, link: /douze/reference/steps/hover-typescript/ }
+        - { label: hover-csharp, link: /douze/reference/steps/hover-csharp/ }
+        - { label: hover-go, link: /douze/reference/steps/hover-go/ }
+        - { label: images, link: /douze/reference/steps/images/ }
+        - { label: image-map, link: /douze/reference/steps/image-map/ }
+        - { label: pictures, link: /douze/reference/steps/pictures/ }
+        - { label: social-image, link: /douze/reference/steps/social-image/ }
+        - { label: layout, link: /douze/reference/steps/layout/ }
+        - { label: write, link: /douze/reference/steps/write/ }
+        - { label: "run: (your own command)", link: /douze/reference/commands/ }

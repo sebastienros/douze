@@ -1,0 +1,14 @@
+# Docs-heavy scenario: kramdown with GFM input, Rouge highlighting and auto ids (Jekyll's defaults, set explicitly).
+title: Docs
+url: https://example.com
+permalink: pretty
+markdown: kramdown
+highlighter: rouge
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  auto_ids: true
+exclude: [Gemfile, Gemfile.lock, vendor]
+defaults:
+  - scope: { path: "" }
+    values: { layout: doc }
