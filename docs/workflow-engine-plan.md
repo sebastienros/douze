@@ -1104,7 +1104,7 @@ passes through unchanged, without `with.template` (the per-page opt-out of open 
   (required, a Liquid template rendered with the same model; no extension means a folder with
   `index.html`), the content type comes from the resulting extension. Output Own = `{ url }` plus
   `with.data` entries if any (a mapping). `group-by` is only supported with `with.template`.
-- `with.encode: html | none` (default `html`) selects the encoder.
+- `with.encode: auto | html | xml | json | none` (default `auto`: the encoder of the output path's content type, HTML for pages, XML for `.xml`, JSON strings for `.json`, none for text) selects the encoder; `xml_escape` and `json` are not encoded again.
 
 **`layout`** (map, default match: `**/*.html`). Resolves `layout` through scopes (so a global default
 in the data folder works, as today). Loads the layout through `TemplateLoader.LoadAsync` from

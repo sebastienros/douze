@@ -438,9 +438,15 @@ permalink: /sitemap.xml
 </urlset>
 ```
 
+The `liquid` step encodes the values of `{{ }}` for the content type of the output path (`encode: auto`): HTML in
+`.html` and `.md` pages, XML entities (`&`, `<`, `>`, `"`, `'`) in `.xml` files, JSON string escapes in `.json`
+files (`"title": "{{ title }}"`), and nothing in other files (`.txt`). Filters whose result is already encoded,
+`xml_escape`, `json`, `escape` and the ones that return markup, are not encoded again, and a date keeps its `+`.
+`encode: html`, `xml`, `json` or `none` forces one encoder for every file of the step.
+
 | Filter | Result |
 |---|---|
-| `xml_escape` | `&`, `<`, `>`, `"` and `'` as entities |
+| `xml_escape` | `&`, `<`, `>`, `"` and `'` as entities, not encoded again |
 | `absolute_url` | `site.url` followed by the url |
 | `relative_url` | the url after the path of `site.url` (`/blog/x/` for `https://example.com/blog`) |
 | `strip_html` | the text without tags, comments, scripts and styles |
@@ -449,7 +455,7 @@ permalink: /sitemap.xml
 | `group_by_exp: "item", "item.data.date \| date: '%Y'"` | `{ name, items, size }` per value, in order of appearance |
 | `sort_by: "data.title"`, `sort_by: "data.date", "desc"` | the items sorted by the value at a path, missing values last |
 | `index_by: "data.url"` | an object of the items by the value at a path |
-| `jsonify` | `json` |
+| `json`, `jsonify` | the value as JSON, not encoded again: `{{ tags \| json }}` in a `.json` file or a script |
 
 The `collect` step options:
 

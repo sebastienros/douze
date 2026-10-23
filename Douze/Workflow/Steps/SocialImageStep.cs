@@ -173,7 +173,7 @@ internal sealed partial class SocialImageStep : Step, IMapStep
             ?? throw new DouzeException($"template '{_template}' not found in '{build.Site.IncludesFolder}'");
 
         var svgContext = context.CreateTemplateContext(model, file, ct);
-        var svg = await loaded.Template.Template.RenderAsync(svgContext, HtmlEncoders.Html);
+        var svg = await loaded.Template.Template.RenderAsync(svgContext, OutputEncoders.Html);
         svg = await InlineImagesAsync(svg, loaded.Path.GetDirectory(), context);
 
         var blocks = new List<TextBlock>(_text.Length);
