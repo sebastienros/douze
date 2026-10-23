@@ -331,7 +331,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `needs` | none | a step name or a list: the steps whose files, and data, enter this step |
 | `inputs` | none | a glob or a list: the source files that enter this step |
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `check-code`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `check-code`, `links`, `check-links`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -885,6 +885,34 @@ The `check-code` step checks that code is well formed, with parsers built into D
 CSS, Markdown and HTML have no validator: their parsers recover from any text, so a parse catches nothing. A linter
 (stylelint, html-validate) runs as a `run:` step on a branch of the workflow (a step no other step needs), and fails the
 build by its exit code or its stderr.
+
+# check-links
+
+Two steps check the links of the built site. `links` (HTML pages after `layout`) extracts the urls of `href`, `src`,
+`srcset`, `poster` and `data-src` attributes with their lines into `links`, and the `id`s (and `name`s of `<a>`) into
+`anchors`; `check-links` checks them against every file of the build and fails it on a broken link or a missing anchor:
+
+````yaml
+  links:       { needs: layout, uses: links }
+  check-links: { needs: links, uses: check-links, with: { ignore: ["/reference/api/**"] } }
+  write:       { needs: links, uses: write }   # does not wait for the check: an error fails the build anyway
+````
+
+```
+/docs/a/index.html (/_content/docs/a.md): broken link '/docs/b/' (line 42)
+/docs/a/index.html (/_content/docs/a.md): missing anchor '#setup' in '/docs/c/' (line 57)
+```
+
+- Urls resolve like a static server: relative to the page, `/a/b/` to `/a/b/index.html`; with `extensionless: true`,
+  `/a/b` to `/a/b/index.html` or `/a/b.html` too. Queries are ignored. Fragments are checked against the target's
+  anchors when the target is a page `links` scanned (`anchors: false` turns this off; `#` and `#top` are always valid).
+- `ignore`: globs of the targets not checked (`/i18n/**`), or url prefixes of external links (`https://example.com/`);
+  `skip`: globs of the pages whose links are not checked; `errors: warn` makes errors warnings.
+- External links (`http`, `https`) are checked only with `external: true`, over the network (10 seconds per url, 8 at
+  a time), and reported as warnings, never errors. The check is cached like any step: add `incremental: false` to
+  check them on every build.
+- `check-links` reads metadata only: an edit that changes no link, anchor or `page.date` of any page (a layout's) does
+  not run it again. Warnings are reported again when it is replayed.
 
 # commands
 

@@ -1172,14 +1172,17 @@ a translation dashboard), fallback pages not reported, external links optional.
 
 ```yaml
 links:       { needs: layout, uses: links }                       # map: extracts links and anchors into metadata
-check-links: { needs: [links, redirects, og], uses: check-links, with: { ignore: ["/reference/api/**", "/i18n/**"], external: false, anchors: true, warn: false } }
+check-links: { needs: [links, redirects, og], uses: check-links, with: { ignore: ["/reference/api/**", "/i18n/**"], external: false, anchors: true, errors: fail } }
 write:       { needs: [links, redirects, og], uses: write }       # write does not wait for the check: an error fails the build anyway
 ```
 
 `uses: links` (map over HTML; `ReadsContent: true`): scans the content for `href`, `src`, `srcset`, `poster`,
-`data-src` attributes and `id` attributes (plus `name` on `<a>`), and sets Own `links` (sorted, distinct: `{ url,
-line }` with the url as written) and `anchors` (sorted ids). The scanner is the attribute scanner of 3.3 extended
-(quoted attribute values, entity decoding, `<pre>`/`<code>`/`<script>` skipped).
+`data-src` attributes and `id` attributes (plus `name` on `<a>`), and sets Own `links` (sorted by line then url,
+distinct: `{ url, line }` with the url as written, entities decoded) and `anchors` (sorted ids). The scanner
+(`Markdown/LinkScanner.cs`) reads tags like the heading scanner of 3.3 (quoted and unquoted values, entity decoding);
+comments and the raw text of `<script>`, `<style>` and `<textarea>` are skipped. `<pre>` and `<code>` are scanned, a
+change from the first design: the markup of a sample is escaped text, so it is never read as a tag, and the elements
+inside them (a highlighted fence's) are the page's. A `srcset` url runs to whitespace, as the HTML parser reads it.
 
 `uses: check-links` (reduce over every page and asset, `ReadsContent: false`: it receives metadata and paths
 without contents (2.2, metadata-only barriers), reads the `links` and `anchors` metadata, so a body edit that
@@ -1190,20 +1193,37 @@ url (relative to the page's url, query and fragment split, trailing slash and `i
 set of output paths of its inputs (`/a/b/` matches `/a/b/index.html`; `/a/b` matches `/a/b/index.html` and `/a/b.html`
 when `with.extensionless: true`), then the fragment against the target's `anchors` when `anchors: true`. Reports
 `error: check-links: /docs/a/index.html: broken link '/docs/b/' (line 42)` and `... missing anchor '#setup' in
-'/docs/b/'`; `warn: true` reports warnings instead. `ignore` globs match the link target; `with.skip` globs match
-the pages not scanned. External links (`http(s)://`) are checked only with `external: true`, with a 10 second
-timeout and a concurrency of 8 through `HttpClient`, cached per url for the build, and never fail the build (warnings),
-since the network is not deterministic. Pages with `fallback: true` are checked like the others (their links are the
+'/docs/b/'`; `errors: warn` reports warnings instead (named like `check-code` and the hover steps: `errors: fail`
+is the default). The page is named by its output path and, when it differs, its source (`/docs/a/index.html
+(/_content/docs/a.md)`); the line is the output's. Queries are ignored, `#` and `#top` are always valid, text
+fragments (`#:~:text=`) are not checked, and a fragment is checked only when the target is a page `links` scanned (a
+PDF's `#page=2` is not). Non-http schemes (`mailto:`, `tel:`, `data:`, `javascript:`) are not checked. `ignore` globs
+match the resolved link target (`/reference/api/x/`); an `ignore` entry that starts with `http://` or `https://` is a
+url prefix of the external links not checked. `with.skip` globs match the pages not scanned. External links
+(`http(s)://`, and `//host/`) are checked only with `external: true`, with a 10 second timeout and a concurrency of 8
+through `HttpClient` (`HEAD`, then `GET` when the server refuses it), once per url for the build, and never fail the
+build (warnings), since the network is not deterministic. The check is a cached unit like any other: its external
+results are not checked again until a link changes, and `incremental: false` checks them on every build. Warnings
+(external, or every error with `errors: warn`) are kept in a memo keyed by the step's configuration and the metadata
+of its inputs, and logged again when the check is replayed (`IReplayObserver`). Pages with `fallback: true` are checked like the others (their links are the
 root page's and resolve in the fallback locale through the same alternates logic: a link to `/docs/x/` from
 `/ja/docs/y/` is valid when `/docs/x/` exists).
 
+**What replays.** The result key of a metadata-only reduce leaves contents out but keeps the metadata and the dates of
+its inputs, so the check runs again when a page's links or anchors change, when lines move (a paragraph added above a
+link), and when a source file's date changes (`page.date` is metadata). It replays when a layout or include edit
+leaves every link on its line, and when a page's body changes without moving links or its date (the test keeps the
+date, as `EarlyCutoffTests` do). Running it is cheap: it reads metadata, not contents.
+
 **Tests** (`Steps/LinksStepTests.cs`, `CheckLinksStepTests.cs`): extraction of the attributes with line numbers,
 `srcset` candidates, ids, skipped elements; resolution rules (relative, absolute, `..`, query, fragment, trailing
-slash, `index.html`, extensionless); missing page and missing anchor errors with line; ignore and skip globs; `warn`;
-external off by default; a body edit without link changes replays the check (`EarlyCutoffTests`); determinism of
-the error order.
+slash, `index.html`, extensionless); missing page and missing anchor errors with line; ignore and skip globs; `errors: warn` and its warnings replayed;
+external off by default, and on against a local HTTP server (404 as a warning, an ignored prefix, one request per url);
+a body edit without link changes replays the check; determinism of the error order.
 
 **Acceptance.** Shared criteria; `douze build` on the Sample with a broken link added exits 1 with the message.
+Status: implemented. On the Sample, the check finds a real broken image (`/posts/images/coffee.jpg`, the file is
+`coffee2.jpg`); Douze's documentation site (87 pages) has none.
 
 **Where it lives and why.** Built-in: all output paths and anchors are known in the build, no tool has that
 knowledge without crawling. The split in two steps keeps the barrier metadata-only.
@@ -1458,7 +1478,7 @@ The steps follow the engine's `Step` pattern (constructor validates `with` throu
 // Douze/Workflow/Steps/SocialImageStep.cs    uses: social-image map    with.template, with.width, with.height, with.output, with.skip, with.text
 // Douze/Workflow/Steps/GitStep.cs            uses: git         map     with.root, with.updated, with.created, with.author, with.ignore, with.required; CacheVersion = HEAD + dirty set
 // Douze/Workflow/Steps/LinksStep.cs          uses: links       map     options: none
-// Douze/Workflow/Steps/CheckLinksStep.cs     uses: check-links reduce  ReadsContent false, emits nothing; with.ignore, with.skip, with.external, with.anchors, with.warn, with.extensionless
+// Douze/Workflow/Steps/CheckLinksStep.cs     uses: check-links reduce  ReadsContent false, emits nothing; with.ignore, with.skip, with.external, with.anchors, with.errors, with.extensionless
 // Douze/Workflow/Steps/RedirectsStep.cs      uses: redirects   reduce  with.data, with.template, with.manifest
 internal sealed class LocalizeStep : Step, IMapStep { public LocalizeStep(StepDefinition definition); public override Hash128 CacheVersion { get; } public ValueTask<FileList> ProcessAsync(VirtualFile file, StepContext context, CancellationToken ct); }
 // the others have the same shape with IMapStep or IReduceStep
@@ -1573,10 +1593,8 @@ hash), which `Replayed` logs again, so a cached build reports the same warnings.
 **Relation to `check-links` (3.11).** Both validate output, but differently: `check-code` judges each file or fence
 alone (a map, cached per page, streaming), `check-links` judges every page against every other (a metadata-only
 reduce barrier after a `links` extraction step). They share nothing but the error and `warn` conventions, so they stay
-two steps. `check-links` is not implemented with this change: it needs the `links` extraction step, the resolution
-rules and their tests (3.11), a change of its own; nothing in `check-code` blocks it or would be reworked by it.
-Follow-up: implement 3.11 as designed, naming its `warn: true` option `errors: warn` like `check-code` and the hover
-steps.
+two steps. `check-links` came as a change of its own (3.11), with its option named `errors: fail|warn` like `check-code` and
+the hover steps.
 
 **Custom rules: command steps.** Any linter that reads files and exits non-zero (or writes to stderr) on a problem is
 a command step, which already fails the build with its output (`stderr: fail` is the default):
