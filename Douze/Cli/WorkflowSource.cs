@@ -64,6 +64,7 @@ internal static class WorkflowSource
         // Locations are relative to the current folder, like the paths of the command line, unless the file is outside it.
         var fileName = Path.GetRelativePath(Environment.CurrentDirectory, path);
 
-        return await WorkflowLoader.LoadAsync(path, fileName.StartsWith("..", StringComparison.Ordinal) ? path : fileName);
+        var environment = WorkflowEnvironment.Current(watch: commandLine.Command is Command.Watch or Command.Serve);
+        return await WorkflowLoader.LoadAsync(path, fileName.StartsWith("..", StringComparison.Ordinal) ? path : fileName, environment);
     }
 }

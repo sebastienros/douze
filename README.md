@@ -297,14 +297,23 @@ entering files that its `match` selects, and the others pass through it unchange
 | `needs` | none | a step name or a list: the steps whose files, and data, enter this step |
 | `inputs` | none | a glob or a list: the source files that enter this step |
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write` |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
-| `enabled` | `true` | `false` leaves the step out: the steps that need it need what it needs (a switch between two steps) |
+| `enabled` | `true` | `true`, `false` or a Liquid expression (see below): a step that is not enabled is left out, and the steps that need it need what it needs (a switch between two steps) |
 | `run`, `tool`, `mode`, `outputs`, `sources`, `version`, `env`, `cwd`, `timeout`, `stderr`, `shell` | | command steps, see "commands" |
+
+`enabled` can be a Liquid expression, as in `{% if %}`, evaluated once when the workflow file is loaded. It sees
+`os` (`windows`, `linux`, `macos` or `other`), `arch` (`x64`, `arm64`, ...), `env`, the environment variables (a
+missing one is `nil`; names are case insensitive on Windows), and `watch`, true for `douze watch` and `douze serve`:
+
+```yaml
+steps:
+  og: { needs: pages, uses: social-image, enabled: "env.CI", with: { ... } }       # only in CI
+  check: { needs: pages, uses: hover-typescript, enabled: "watch == false" }     # not while editing
+  sample-og: { needs: paginate, uses: social-image, enabled: "os != 'windows'", with: { ... } }
+```
 
 A step has either `uses` or `run`. Steps run as soon as their files are available, in parallel; their order in the
 file does not matter.
