@@ -77,7 +77,9 @@ Published by the [collect step](steps/collect.md) (`collections` by default, or 
 | `collections.urls` | Every page by its url without `index.html`: `collections.urls["/blog/post/"]`. |
 
 Each item has `data`, the page's data at the point of the workflow where `collect` runs (`item.data.title`,
-`item.data.url`, `item.data.page.date`), and with `content: true`, `content`. Items are sorted by `date` (front matter,
+`item.data.page.date`), `date` (the date it is sorted by, absent without one), `url` (`item.data.url`, with
+`index.html`), `inputPath` (the source path of the page), and with `content: true`, `content`. Filters that take a
+member name use the root ones: `sort: 'date'`, `where: 'url', url`. Items are sorted by `date` (front matter,
 or `page.date`), then by source path. A paginated page is in the collections once, with the url of its first page.
 
 ```liquid

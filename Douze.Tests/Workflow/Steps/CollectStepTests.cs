@@ -99,6 +99,29 @@ public class CollectStepTests : StepTestBase
     }
 
     [Fact]
+    public async Task ItemsExposeDateUrlAndInputPathForStandardFilters()
+    {
+        // Dates whose text does not sort like the dates; c.md has no date and comes first (page.date of 2019).
+        await Source.WriteTextFileAsync("/posts/b.md", "---\ntags: post\ntitle: B\ndate: 2021-12-01\n---\nb");
+        await Source.WriteTextFileAsync("/posts/a.md", "---\ntags: post\ntitle: A\ndate: 2022-01-15\n---\na");
+        await Source.WriteTextFileAsync("/posts/c.md", "---\ntags: post\ntitle: C\n---\nc");
+        Source.SetLastWriteTimeUtc("/posts/c.md", new DateTime(2019, 6, 30, 0, 0, 0, DateTimeKind.Utc));
+        await Source.WriteTextFileAsync("/list.html",
+            "{% assign items = collections.post | sort: 'url' %}{% for p in items %}{{ p.data.title }}:{{ p.url }}:{{ p.inputPath }}:{{ p.date | date: '%Y' }};{% endfor %}"
+            + "|{% assign items = collections.post | sort: 'date' | reverse %}{% for p in items %}{{ p.data.title }}{% endfor %}"
+            + "|{% assign found = collections.post | where: 'url', '/posts/b/index.html' | first %}{{ found.data.title }}");
+
+        var result = await BuildSuccessfullyAsync(Workflow(
+            Step("pages", "frontmatter", inputs: ["**"]),
+            Step("permalink", "permalink", needs: ["pages"]),
+            Step("collections", "collect", needs: ["permalink"]),
+            Step("render", "liquid", needs: ["permalink", "collections"])));
+
+        var list = result["render"].Results.Single(x => x.Inputs.Single().Path == "/list/index.html").Files.Single();
+        Assert.Equal("A:/posts/a/index.html:/posts/a.md:2022;B:/posts/b/index.html:/posts/b.md:2021;C:/posts/c/index.html:/posts/c.md:2019;|ABC|B", await TextAsync(list));
+    }
+
+    [Fact]
     public async Task ReadingOneUrlRecordsThatMemberOnly()
     {
         await Source.WriteTextFileAsync("/docs/a.md", "---\ntitle: A\n---\na");

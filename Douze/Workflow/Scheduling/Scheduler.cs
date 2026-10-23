@@ -884,7 +884,7 @@ internal sealed class Scheduler
 
         private Hash128 ComputeResultKey(IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs)
         {
-            return ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent, [.. inputFiles.Select(x => x.LastWriteTimeUtc)]);
+            return ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent, [.. inputFiles.Select(x => x.LastWriteTimeUtc)], [.. inputFiles.Select(x => x.SourcePath)]);
         }
 
         /// <summary>

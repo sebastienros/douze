@@ -24,7 +24,14 @@ The step waits for every page it consumes, then publishes one site value, `colle
 | `collections.urls` | every page by its url without a trailing `index.html`: `collections.urls["/blog/post/"]` |
 
 Each item is an object with `data`, the page's data at that point of the workflow (`item.data.title`,
-`item.data.url`), and with `content: true`, `content`, the page's text at that point.
+`item.data.url`), and with `content: true`, `content`, the page's text at that point. At its root, it also has the
+values that filters taking a member name (`sort`, `where`, `map`) need, since they don't read paths like `data.date`:
+
+| Member | Value |
+| --- | --- |
+| `date` | the date the items are sorted by: front matter `date`, else `page.date`; absent when neither is a date |
+| `url` | the page's `url`, the same as `data.url` (with `index.html`) |
+| `inputPath` | the source path of the page (`/posts/first.md`), its own path for a file that a step made |
 
 - `tags` is a string or a list, read from the page's data, its folder data or the site data. Empty tags are ignored,
   and a tag listed twice adds the page once.

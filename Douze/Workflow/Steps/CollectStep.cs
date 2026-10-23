@@ -7,8 +7,10 @@ namespace Douze.Workflow.Steps;
 /// <summary>
 /// <c>uses: collect</c>. Builds <c>collections.all</c>, one <c>collections.&lt;tag&gt;</c> per tag and
 /// <c>collections.urls</c>, emits no files, and contributes <c>collections</c> (or <c>with.name</c>) to the site scope.
-/// Each item is <c>{ data: &lt;the file's metadata&gt; }</c>, plus <c>content</c> (the file's text) with
-/// <c>with.content: true</c>. Items are sorted by date (<c>date</c>, else <c>page.date</c>), then by path.
+/// Each item is <c>{ data: &lt;the file's metadata&gt; }</c> with, at its root, the resolved <c>date</c>, the <c>url</c>
+/// and the <c>inputPath</c> (the source path), so that standard filters can use them (<c>sort: 'date'</c>), plus
+/// <c>content</c> (the file's text) with <c>with.content: true</c>. Items are sorted by date (<c>date</c>, else
+/// <c>page.date</c>), then by path.
 /// <c>urls</c> maps the normalized <c>url</c> of every item (no trailing <c>index.html</c>) to the same item node as in
 /// <c>all</c>; when two items have the same url, the first one in <c>all</c> wins.
 /// </summary>
@@ -17,6 +19,10 @@ internal sealed class CollectStep : Step, IReduceStep
     public const string Collections = "collections";
     public const string All = "all";
     public const string Urls = "urls";
+    public const string Data = "data";
+    public const string Date = "date";
+    public const string Url = "url";
+    public const string InputPath = "inputPath";
 
     private static readonly GlobSet Pages = GlobSet.Parse(["**/*.html", "**/*.md"]);
 
@@ -52,14 +58,31 @@ internal sealed class CollectStep : Step, IReduceStep
 
         foreach (var file in files)
         {
-            var node = new NodeObject { ["data"] = new NodeValue<Metadata>(file.Metadata) };
+            var date = GetDate(file.Metadata, scopes, deps);
+
+            // The common values are also at the root of the item, as in Eleventy: Liquid filters take a member name,
+            // not a path like 'data.date'. The url is the file's own (permalink), covered by the inputs of the unit,
+            // and so is the source path (ResultKey).
+            var node = new NodeObject { [Data] = new NodeValue<Metadata>(file.Metadata) };
+
+            if (date != DateTimeOffset.MinValue)
+            {
+                node[Date] = NodeValue.Create(date);
+            }
+
+            if (file.Metadata.Own[Url] is { } url)
+            {
+                node[Url] = url;
+            }
+
+            node[InputPath] = NodeValue.Create((file.SourcePath ?? file.Path).FullName);
 
             if (_content)
             {
                 node["content"] = file.Content.IsText ? NodeValue.Create(await file.Content.ReadTextAsync(ct)) : null;
             }
 
-            var item = new Item(node, GetDate(file.Metadata, scopes, deps), file.Path);
+            var item = new Item(node, date, file.Path);
             items.Add(item);
 
             foreach (var tag in GetTags(file.Metadata, scopes, deps))
@@ -102,8 +125,7 @@ internal sealed class CollectStep : Step, IReduceStep
         foreach (var item in all)
         {
             if (item is NodeObject obj
-                && obj["data"] is NodeValue<Metadata> data
-                && data.Value.Own["url"] is NodeValue<string> { Value: { Length: > 0 } url }
+                && obj[Url] is NodeValue<string> { Value: { Length: > 0 } url }
                 && !urls.ContainsKey(LocaleSet.NormalizeUrl(url)))
             {
                 urls[LocaleSet.NormalizeUrl(url)] = item;
@@ -140,12 +162,12 @@ internal sealed class CollectStep : Step, IReduceStep
 
     private static DateTimeOffset GetDate(Metadata metadata, ScopeSet scopes, DependencyTracker deps)
     {
-        if (scopes.TryResolve(metadata, "date", null, deps, out var date, out _) && TryGetDate(date, out var result))
+        if (scopes.TryResolve(metadata, Date, null, deps, out var date, out _) && TryGetDate(date, out var result))
         {
             return result;
         }
 
-        if (scopes.TryResolve(metadata, "page", null, deps, out var page, out _) && page is NodeObject pageObject && TryGetDate(pageObject["date"], out result))
+        if (scopes.TryResolve(metadata, "page", null, deps, out var page, out _) && page is NodeObject pageObject && TryGetDate(pageObject[Date], out result))
         {
             return result;
         }
