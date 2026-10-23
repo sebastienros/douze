@@ -398,6 +398,45 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     }
 
     /// <summary>
+    /// <see cref="Restore(CachedOutput, IReadOnlyList{VirtualFile}, Provenance)"/> for a unit with many inputs: the inputs
+    /// are looked up instead of scanned for each output.
+    /// </summary>
+    public VirtualFile Restore(CachedOutput output, RestoreIndex inputs, Provenance provenance)
+    {
+        if (inputs.Files.TryGetValue(new FileRef(output.Path, output.Content, output.Metadata), out var same))
+        {
+            return same;
+        }
+
+        var content = inputs.Contents.GetValueOrDefault(output.Content) ?? FileContent.FromLoader(output.Content, output.Length, output.IsText, ct => new(ReadBlob(new BlobId(BlobKind.Content, output.Content))));
+        var metadata = inputs.Metadata.GetValueOrDefault(output.Metadata) ?? GetMetadata(output.Metadata);
+
+        return new VirtualFile(output.Path, content, metadata, output.ContentType, provenance, output.LastWriteTimeUtc, output.SourcePath);
+    }
+
+    /// <summary>
+    /// The inputs of a replayed unit by reference, content hash and metadata hash, the first input of each.
+    /// </summary>
+    public sealed class RestoreIndex
+    {
+        public RestoreIndex(IReadOnlyList<VirtualFile> inputs)
+        {
+            foreach (var input in inputs)
+            {
+                Files.TryAdd(input.Ref, input);
+                Contents.TryAdd(input.ContentHash, input.Content);
+                Metadata.TryAdd(input.MetadataHash, input.Metadata);
+            }
+        }
+
+        public Dictionary<FileRef, VirtualFile> Files { get; } = [];
+
+        public Dictionary<Hash128, FileContent> Contents { get; } = [];
+
+        public Dictionary<Hash128, Metadata> Metadata { get; } = [];
+    }
+
+    /// <summary>
     /// Recreates the contribution of a replayed reduce unit. The metadata its values refer to are the inputs' when they
     /// are equal; site values are read when a unit reads them.
     /// </summary>

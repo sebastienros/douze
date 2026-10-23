@@ -65,12 +65,18 @@ internal sealed class ReplayState
 
         foreach (var (path, length, lastWriteTimeUtc) in dependencies.Written)
         {
-            if (!(await _context.Output.GetFileEntryAsync(path)).Exists)
+            // One query per written file, not an existence check first: on Windows each is a file system call of its
+            // own, and a large site has tens of thousands of written files.
+            FileMetadata info;
+
+            try
+            {
+                info = await _context.Output.GetFileMetadataAsync(path);
+            }
+            catch (FileNotFoundException)
             {
                 return false;
             }
-
-            var info = await _context.Output.GetFileMetadataAsync(path);
 
             if (info.Length != length || info.LastWriteTimeUtc != lastWriteTimeUtc)
             {
