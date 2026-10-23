@@ -33,6 +33,7 @@ internal sealed class PageMetadataProcessor : IFileProcessor
             }
 
             page.Add("date", metadata.LastWriteTimeUtc);
+            page.Add("inputPath", document.Path.FullName);
         });
 
         return documents.Select(x => new DocumentsResult(x)).ToArray();

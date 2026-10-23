@@ -947,7 +947,8 @@ means a folder with `index.html`; `index.*` stays in place; otherwise `name/inde
 `permalink` so both produce identical paths.
 
 **`collect`** (reduce, default match: `**/*.html`). Builds `collections.all` and `collections.<tag>`
-from the sorted input: each item is `NodeObject { ["data"] = new NodeValue<Metadata>(file.Metadata) }`,
+from the sorted input: each item is `NodeObject { ["data"] = new NodeValue<Metadata>(file.Metadata) }` plus the
+resolved `date`, `url` and `inputPath` at its root,
 items are sorted by date (front matter `date`, else `page.date`, resolved through scopes), then by
 source path (ordinal), exactly as today. Emits **no files** and contributes
 `SiteScope("step:<name>", { ["collections"] = collectionsObject })`. The `collections` hash is the

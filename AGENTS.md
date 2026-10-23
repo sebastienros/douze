@@ -16,6 +16,7 @@ Douze has **no public release yet**. There are no external consumers to protect,
 
 - Builds must be deterministic: documents are processed in parallel, so anything collected across documents must be sorted before it is exposed.
 - Collection items (`collections.all`, `collections.<tag>`) are sorted by date ascending, using front matter `date` if defined, or `page.date` (the file date) otherwise, then by source path (ordinal). This matches Eleventy.
+- Collection items expose the document data as `data`, plus the resolved `date`, `url` and `inputPath` at their root, so standard Liquid filters work on them (`sort: 'date'`). Shopify Liquid filters don't support dotted paths like `data.date`.
 - Pagination pages (`pagination.pages`, `page.next`, ...) only link pages generated from the same template.
 
 ## Build and test

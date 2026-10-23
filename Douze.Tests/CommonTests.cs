@@ -198,6 +198,24 @@ public class CommonTests
     }
 
     [Fact]
+    public async Task CollectionItemsShouldExposeDateUrlAndInputPath()
+    {
+        // Dates whose text representation doesn't sort chronologically
+        await _sourceFs.CreateTemplateAsync("/articles/b.md", "Hello World", new { tags = "article", title = "B", date = "2021-12-01" });
+        await _sourceFs.CreateTemplateAsync("/articles/a.md", "Hello World", new { tags = "article", title = "A", date = "2022-01-15" });
+        await _sourceFs.CreateTemplateAsync("/articles/c.md", "Hello World", new { tags = "article", title = "C", date = "2020-06-30" });
+
+        var template = "{% assign items = collections.article | sort: 'url' %}{% for p in items %}{{ p.data.title }}:{{ p.url }}:{{ p.inputPath }}:{{ p.date | date: '%Y' }};{% endfor %}"
+            + "|{% assign items = collections.article | sort: 'date' | reverse %}{% for p in items %}{{ p.data.title }}{% endfor %}";
+
+        await _sourceFs.CreateTemplateAsync("/list.html", template, new { });
+
+        await SiteHelper.BuildSiteAsync(_options);
+
+        Assert.Equal("A:/articles/a/index.html:/articles/a.md:2022;B:/articles/b/index.html:/articles/b.md:2021;C:/articles/c/index.html:/articles/c.md:2020;|ABC", await _outputFs.ReadAllTextAsync("/list/index.html"));
+    }
+
+    [Fact]
     public async Task PaginationShouldOnlyLinkPagesOfTheSameDocument()
     {
         var template = "{{ pagination.pageNumber }}/{{ pagination.pages.size }}:{{ pagination.items | join: ',' }}";

@@ -9,6 +9,7 @@ namespace Douze.FileProcessors;
 /// <summary>
 /// Creates the 'collections' properties.
 /// Items are sorted by date ascending, using the 'date' property if defined, or 'page.date' otherwise, then by source path.
+/// Each item exposes the document's data as 'data', and the resolved 'date', 'url' and 'inputPath' at its root.
 /// </summary>
 internal sealed class CollectionsProcessor : IFileProcessor
 {
@@ -16,6 +17,10 @@ internal sealed class CollectionsProcessor : IFileProcessor
     internal static readonly string All = "all";
     internal static readonly string Tags = "tags";
     internal static readonly string Data = "data";
+    internal static readonly string Date = "date";
+    internal static readonly string Url = "url";
+    internal static readonly string Page = "page";
+    internal static readonly string InputPath = "inputPath";
 
     public Predicate<FPath> Match { get; set; } = _ => true;
 
@@ -44,10 +49,31 @@ internal sealed class CollectionsProcessor : IFileProcessor
                 return;
             }
 
-            var page = new CollectionItem(new NodeObject
+            var date = GetDate(document.Data);
+
+            // Common properties are copied at the root of the item, like Eleventy, so that
+            // standard filters can use them, e.g. "sort: 'date'"
+            var item = new NodeObject
             {
                 [Data] = document.Data
-            }, GetDate(document.Data), document.Path);
+            };
+
+            if (date != DateTimeOffset.MinValue)
+            {
+                item[Date] = date;
+            }
+
+            if (document.Data.TryGetItem(Url, out var url))
+            {
+                item[Url] = url;
+            }
+
+            if (document.Data.TryGetItem(Page, out var pageData) && pageData is NodeObject pageObject && pageObject.TryGetItem(InputPath, out var inputPath))
+            {
+                item[InputPath] = inputPath;
+            }
+
+            var page = new CollectionItem(item, date, document.Path);
 
             // All documents that are content are added to the "all" collection
             if (document.DocumentType == DocumentTypes.Content)
@@ -101,12 +127,12 @@ internal sealed class CollectionsProcessor : IFileProcessor
 
     private static DateTimeOffset GetDate(NodeObject data)
     {
-        if (data.TryGetItem("date", out var date) && TryGetDate(date, out var result))
+        if (data.TryGetItem(Date, out var date) && TryGetDate(date, out var result))
         {
             return result;
         }
 
-        if (data.TryGetItem("page", out var page) && page is NodeObject pageObject && pageObject.TryGetItem("date", out var pageDate) && TryGetDate(pageDate, out result))
+        if (data.TryGetItem(Page, out var page) && page is NodeObject pageObject && pageObject.TryGetItem(Date, out var pageDate) && TryGetDate(pageDate, out result))
         {
             return result;
         }
