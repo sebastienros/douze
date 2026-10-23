@@ -558,3 +558,22 @@ time.
    does not write such a file onto itself. Peak RSS: 6 GB. Left: a replayed `write` unit restores its outputs with the
    input's content, so a rebuild from the cache still holds the contents of what reaches the indexer; the Satori GC
    peaks higher than the standard GC on the same build (17 to 21 GB against 10 to 14 GB before this change).
+
+14. *Fixed: the arguments of Fluid's filters, `CodeTokenizer`'s time limit.* **Some pages of the target site differed
+   between two clean builds of the same binary** (about one build in three at `-p 14`, a few pages each: locale copies,
+   API reference pages, a page with a shell code block). Two causes, neither in the scheduler:
+   - *Fluid cached the arguments of a filter that were not literals.* A filter call caches its arguments when they are
+     all literals, but the flag was a read then a write on every evaluation without cached arguments: when the first
+     renders of a template run on several threads at once, one could write `true` back after another wrote `false`,
+     and that one cached its arguments for every later render. On the target site `dirs | slice: 0, n` (the common
+     source folder of a C# package page) and `s.name | slice: 3, s.name.size` (the setters of a TypeScript handle:
+     `readonly`, `get · set`) took another page's values; the locale copies that differed were most likely the same
+     race in the templates they share (they did not differ again with the fix). Fixed in Fluid (sebastienros/fluid#1067); Douze builds deterministically once it takes a Fluid preview
+     with the fix.
+   - *A highlighted line stopped at 500 ms.* `CodeTokenizer` gave the rest of a line that took longer the style of
+     where it stopped, and how long a line takes depends on the load of the machine: a new registry compiles its rules
+     on its first lines while the other units run (`aspire add redis` came out as one token in some builds). The
+     limit is now 30 s, and a line that reaches it fails the build instead of being styled differently.
+
+   With both, six clean builds in a row at `-p 14` gave the same bytes for all 60,036 files but `rss.xml` (dated
+   now). The variant leader race of finding 11 did not show: the locale copies that differed were the Fluid race.
