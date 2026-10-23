@@ -1,0 +1,15 @@
+---
+layout: home.liquid
+---
+{%- assign posts_count = collections.posts.size %}
+{%- assign latest_count = posts_count | at_most: 3 %}
+<h1>Latest {{ latest_count }} Post{% if latest_count != 1 %}s{% endif %}</h1>
+
+{%- assign start = posts_count | minus: latest_count %}
+{%- assign postslist = collections.posts | slice: start, latest_count %}
+{% include "postslist.liquid" %}
+
+{%- assign more_posts = posts_count | minus: 3 %}
+{%- if more_posts > 0 %}
+<p>{{ more_posts }} more post{% if more_posts != 1 %}s{% endif %} can be found in <a href="/blog/">the archive</a>.</p>
+{%- endif %}

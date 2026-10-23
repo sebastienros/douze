@@ -81,10 +81,19 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 - `Douze/Progress/`: the views of a build: `PlainProgressView` (a line per step), `SpectreProgressView` (live table and summary with a timeline), `SilentProgressView`, `RebuildProgressView` (a line per rebuild of a watch session); `StepSummary` formats what they share.
 - `Douze/Tracing/`: `TraceRecorder` records build, step, command and (with `--trace-units`) unit spans; `ChromeTraceWriter` writes them for Perfetto (`--trace`), `TimelineHtmlWriter` into the self-contained `timeline.html` (`--timeline`).
 - `Douze.Tests.FakeTool/`: the fake external tool of the command step tests, launched with `dotnet Douze.Tests.FakeTool.dll <mode>`; it is in `Douze.slnx` so that it builds in the configuration of the tests.
-- `bench/`: the benchmark harness (`Douze.Bench`: a synthetic site, the pages of a real-world API reference) and its results (`bench/README.md`).
+- `bench/`: the benchmark harness (`Douze.Bench`: a synthetic site, the pages of a real-world API reference) and its results (`bench/README.md`). `bench/ssg-comparison/` compares Douze with other generators in Docker.
+- `docs/`: the documentation site (<https://sebastienros.github.io/douze/>), built by Douze itself (`docs/douze.yml`) and deployed by `.github/workflows/docs.yml`. Pages are in `docs/_content/douze/` (`tutorial/`, `guide/`, `recipes/`, `migrate/`, `reference/`), the navigation in `docs/_data/sidebar.yml`, the theme in `docs/_includes/` and `docs/_content/douze/assets/`; `docs/README.md` has the writing rules. The design documents (`docs/*-plan.md`, `docs/code-hover-steps.md`) are not part of the site.
 
 ## Conventions
 
+- Keep the documentation site in sync with the code. A change that adds, alters or removes a feature (a step or one of
+  its options, a command line option, a `douze.yml` key, a filter, a tag, a template variable, a default, a behavior
+  or an error message that a page shows) updates the pages that describe it in the same change: the reference first
+  (`docs/_content/douze/reference/`: `steps/<step>.md`, `cli.md`, `configuration.md`, `liquid.md`,
+  `template-data.md`, `commands.md`), then the guide, recipe and tutorial pages that use it (search `docs/_content`
+  for the name), and the README when it documents it. A new step or page gets an entry in `docs/_data/sidebar.yml`.
+  Build the site with the changed Douze (`dotnet run --project Douze -- -s docs`) and fix what it reports; a change
+  to the tutorial or the install page is checked with `docs/tests/docker/`.
 - Docs, comments and names don't name the external projects Douze is evaluated against: describe them generically (the target site, a real-world API reference data set).
 - Builds must be deterministic: files are processed in parallel, so anything collected across files must be sorted before it is exposed (reduce and group inputs, collections, results).
 - `VirtualFile` is immutable: a step returns new files (`With`, `Derived`) or the same instance. Metadata nodes are shared between files and never mutated once published: shallow clone (`Metadata.With`) and replace.
@@ -131,6 +140,13 @@ Generate the sample site:
 
 ```bash
 dotnet run --project Douze -- -s Sample -o <output folder>
+```
+
+Build and serve the documentation site (`http://localhost:8080/douze/`), then check it like CI does:
+
+```bash
+dotnet run --project Douze -- serve -s docs
+cd docs && npm ci && npm run lint && npm run check-links && npm run test:e2e
 ```
 
 Compare the Sample output with another branch's Douze (lines with `Generated on` are ignored); any difference must be intentional and documented in the change:

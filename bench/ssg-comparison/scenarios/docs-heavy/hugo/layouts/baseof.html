@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ .Title }}</title>
+<meta name="description" content="{{ .Description }}">
+<style>body{font-family:system-ui;margin:0}.docs{display:grid;grid-template-columns:16rem 1fr 14rem;gap:2rem}pre{padding:1rem;overflow:auto}</style>
+</head>
+<body>
+<header><a href="/">Docs</a></header>
+<div class="docs">
+{{- $current := .RelPermalink }}
+<nav class="sidebar"><ul>
+{{- range site.Data.sidebar }}
+<li><a href="{{ .url }}"{{ if eq .url $current }} aria-current="page"{{ end }}>{{ .title }}</a></li>
+{{- end }}
+</ul></nav>
+<main>
+<h1>{{ .Title }}</h1>
+{{ block "main" . }}{{ end }}
+</main>
+<aside class="toc">
+{{- block "toc" . }}{{ end }}
+</aside>
+</div>
+</body>
+</html>

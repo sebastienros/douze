@@ -1,0 +1,12 @@
+---
+layout: home.liquid
+title: Tags
+---
+<h1>Tags</h1>
+
+<ul>
+{%- assign post_tags = collections.posts | map: "data" | map: "tags" | join: "," | split: "," | uniq | sort %}
+{%- for tag in post_tags %}{% if tag != "posts" %}
+	<li><a href="/tags/{{ tag | slug }}/" class="post-tag">{{ tag }}</a></li>
+{%- endif %}{% endfor %}
+</ul>

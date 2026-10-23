@@ -1,0 +1,8 @@
+# The .NET tool route of the installation page: the .NET SDK, on Ubuntu 24.04 (the native build needs glibc 2.38).
+ARG BASE=mcr.microsoft.com/dotnet/sdk:10.0-noble
+FROM ${BASE}
+
+RUN useradd --create-home --shell /bin/bash reader
+USER reader
+WORKDIR /home/reader
+ENV DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1

@@ -1,0 +1,1454 @@
+{
+  "environment": "date: 2026-10-23T16:42:19Z\nhost: Apple M4 Pro, 14 cores, 48 GB\nhost os: macOS 15.8.1 24.6.0\ndocker: 28.0.4 Docker Desktop 6.10.14-linuxkit aarch64, 14 CPUs, 8217473024 bytes\ndouze commit: da30df9291e9b78502967188000d7e714438803a\nbenchmark commit: fbda1c16fdf9d06bc2a3d785207a05c5c7f3b148",
+  "versions": {
+    "douze": "douze 1.0.0-beta-0",
+    "hugo": "hugo v0.168.0-e27a6760c5547237f87d353aebe0580feadb20f4+extended linux/arm64 BuildDate=2026-10-13T16:42:50Z VendorInfo=gohugoio",
+    "eleventy": "node v24.22.1\neleventy 3.1.7\n+-- @11ty/eleventy-img@7.0.0\n+-- @11ty/eleventy-navigation@1.0.5\n+-- @11ty/eleventy-plugin-rss@3.0.0\n+-- @11ty/eleventy-plugin-syntaxhighlight@5.0.2\n+-- @11ty/eleventy@3.1.7\n+-- @zachleat/heading-anchors@1.0.5\n+-- cross-env@10.1.0\n+-- luxon@3.7.2\n+-- prismjs@1.30.0\n`-- zod@4.4.3",
+    "astro": "node v24.22.1\nastro    astro  v7.4.0\n+-- @astrojs/mdx@8.1.1\n+-- @astrojs/rss@4.0.19\n+-- @astrojs/sitemap@3.7.4\n+-- astro@7.4.0\n`-- sharp@0.35.5",
+    "jekyll": "ruby ruby 3.4.11 (2026-09-23 revision 592f1ffdb3) +PRISM [aarch64-linux]\njekyll 4.4.1\n  * jekyll (4.4.1)\n  * jekyll-feed (0.18.0)\n  * jekyll-sass-converter (3.1.0)\n  * jekyll-seo-tag (2.9.1)\n  * jekyll-watch (2.2.1)\n  * minima (2.5.2)\n  * sass-embedded (1.106.1)"
+  },
+  "summary": [
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 250,
+      "ok": true,
+      "fastest": 0.039,
+      "median": 0.043,
+      "runs": [
+        0.043,
+        0.051,
+        0.039
+      ],
+      "html": 255,
+      "posts": 250
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 250,
+      "ok": true,
+      "fastest": 0.014,
+      "median": 0.014,
+      "runs": [
+        0.014,
+        0.014,
+        0.015
+      ],
+      "html": 255,
+      "posts": 250
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 500,
+      "ok": true,
+      "fastest": 0.058,
+      "median": 0.06,
+      "runs": [
+        0.058,
+        0.06,
+        0.06
+      ],
+      "html": 505,
+      "posts": 500
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 500,
+      "ok": true,
+      "fastest": 0.018,
+      "median": 0.02,
+      "runs": [
+        0.02,
+        0.02,
+        0.018
+      ],
+      "html": 505,
+      "posts": 500
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 1000,
+      "ok": true,
+      "fastest": 0.107,
+      "median": 0.107,
+      "runs": [
+        0.107,
+        0.107,
+        0.115
+      ],
+      "html": 1005,
+      "posts": 1000
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 1000,
+      "ok": true,
+      "fastest": 0.028,
+      "median": 0.03,
+      "runs": [
+        0.03,
+        0.03,
+        0.028
+      ],
+      "html": 1005,
+      "posts": 1000
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 2000,
+      "ok": true,
+      "fastest": 0.224,
+      "median": 0.241,
+      "runs": [
+        0.241,
+        0.243,
+        0.224
+      ],
+      "html": 2005,
+      "posts": 2000
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 2000,
+      "ok": true,
+      "fastest": 0.048,
+      "median": 0.048,
+      "runs": [
+        0.048,
+        0.048,
+        0.05
+      ],
+      "html": 2005,
+      "posts": 2000
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 4000,
+      "ok": true,
+      "fastest": 0.531,
+      "median": 0.595,
+      "runs": [
+        0.6,
+        0.595,
+        0.531
+      ],
+      "html": 4005,
+      "posts": 4000
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 4000,
+      "ok": true,
+      "fastest": 0.086,
+      "median": 0.087,
+      "runs": [
+        0.091,
+        0.087,
+        0.086
+      ],
+      "html": 4005,
+      "posts": 4000
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 250,
+      "ok": true,
+      "fastest": 0.048,
+      "median": 0.049,
+      "runs": [
+        0.048,
+        0.049,
+        0.049
+      ],
+      "html": 250,
+      "posts": 250
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 500,
+      "ok": true,
+      "fastest": 0.072,
+      "median": 0.073,
+      "runs": [
+        0.073,
+        0.073,
+        0.072
+      ],
+      "html": 500,
+      "posts": 500
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 1000,
+      "ok": true,
+      "fastest": 0.119,
+      "median": 0.119,
+      "runs": [
+        0.163,
+        0.119,
+        0.119
+      ],
+      "html": 1000,
+      "posts": 1000
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 2000,
+      "ok": true,
+      "fastest": 0.205,
+      "median": 0.207,
+      "runs": [
+        0.205,
+        0.207,
+        0.208
+      ],
+      "html": 2000,
+      "posts": 2000
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 4000,
+      "ok": true,
+      "fastest": 0.386,
+      "median": 0.393,
+      "runs": [
+        0.393,
+        0.386,
+        0.419
+      ],
+      "html": 4000,
+      "posts": 4000
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 250,
+      "ok": true,
+      "fastest": 0.595,
+      "median": 0.626,
+      "runs": [
+        0.633,
+        0.626,
+        0.595
+      ],
+      "html": 255,
+      "posts": 250
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 500,
+      "ok": true,
+      "fastest": 0.829,
+      "median": 0.86,
+      "runs": [
+        0.86,
+        0.829,
+        0.88
+      ],
+      "html": 505,
+      "posts": 500
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 1000,
+      "ok": true,
+      "fastest": 1.344,
+      "median": 1.362,
+      "runs": [
+        1.408,
+        1.344,
+        1.362
+      ],
+      "html": 1005,
+      "posts": 1000
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 2000,
+      "ok": true,
+      "fastest": 2.516,
+      "median": 2.566,
+      "runs": [
+        2.597,
+        2.516,
+        2.566
+      ],
+      "html": 2005,
+      "posts": 2000
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 4000,
+      "ok": true,
+      "fastest": 6.248,
+      "median": 6.287,
+      "runs": [
+        6.287,
+        6.353,
+        6.248
+      ],
+      "html": 4005,
+      "posts": 4000
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 250,
+      "ok": true,
+      "fastest": 1.066,
+      "median": 1.078,
+      "runs": [
+        1.185,
+        1.078,
+        1.066
+      ],
+      "html": 253,
+      "posts": 250
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 500,
+      "ok": true,
+      "fastest": 1.249,
+      "median": 1.25,
+      "runs": [
+        1.25,
+        1.374,
+        1.249
+      ],
+      "html": 503,
+      "posts": 500
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 1000,
+      "ok": true,
+      "fastest": 1.496,
+      "median": 1.5,
+      "runs": [
+        1.543,
+        1.5,
+        1.496
+      ],
+      "html": 1003,
+      "posts": 1000
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 2000,
+      "ok": true,
+      "fastest": 2.065,
+      "median": 2.077,
+      "runs": [
+        2.115,
+        2.065,
+        2.077
+      ],
+      "html": 2003,
+      "posts": 2000
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 4000,
+      "ok": true,
+      "fastest": 3.131,
+      "median": 3.217,
+      "runs": [
+        3.217,
+        3.131,
+        3.245
+      ],
+      "html": 4003,
+      "posts": 4000
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 250,
+      "ok": true,
+      "fastest": 0.31,
+      "median": 0.31,
+      "runs": [
+        0.31,
+        0.331,
+        0.31
+      ],
+      "html": 253,
+      "posts": 250
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 500,
+      "ok": true,
+      "fastest": 0.412,
+      "median": 0.429,
+      "runs": [
+        0.412,
+        0.47,
+        0.429
+      ],
+      "html": 503,
+      "posts": 500
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 1000,
+      "ok": true,
+      "fastest": 0.666,
+      "median": 0.672,
+      "runs": [
+        0.666,
+        0.68,
+        0.672
+      ],
+      "html": 1003,
+      "posts": 1000
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 2000,
+      "ok": true,
+      "fastest": 1.02,
+      "median": 1.028,
+      "runs": [
+        1.066,
+        1.02,
+        1.028
+      ],
+      "html": 2003,
+      "posts": 2000
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 4000,
+      "ok": true,
+      "fastest": 1.809,
+      "median": 1.873,
+      "runs": [
+        1.958,
+        1.873,
+        1.809
+      ],
+      "html": 4003,
+      "posts": 4000
+    }
+  ],
+  "runs": [
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 250,
+      "run": 1,
+      "seconds": 0.043,
+      "exit": 0,
+      "html": 255,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 250,
+      "run": 2,
+      "seconds": 0.051,
+      "exit": 0,
+      "html": 255,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 250,
+      "run": 3,
+      "seconds": 0.039,
+      "exit": 0,
+      "html": 255,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 250,
+      "run": 1,
+      "seconds": 0.014,
+      "exit": 0,
+      "html": 255,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 250,
+      "run": 2,
+      "seconds": 0.014,
+      "exit": 0,
+      "html": 255,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 250,
+      "run": 3,
+      "seconds": 0.015,
+      "exit": 0,
+      "html": 255,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 500,
+      "run": 1,
+      "seconds": 0.058,
+      "exit": 0,
+      "html": 505,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 500,
+      "run": 2,
+      "seconds": 0.06,
+      "exit": 0,
+      "html": 505,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 500,
+      "run": 3,
+      "seconds": 0.06,
+      "exit": 0,
+      "html": 505,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 500,
+      "run": 1,
+      "seconds": 0.02,
+      "exit": 0,
+      "html": 505,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 500,
+      "run": 2,
+      "seconds": 0.02,
+      "exit": 0,
+      "html": 505,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 500,
+      "run": 3,
+      "seconds": 0.018,
+      "exit": 0,
+      "html": 505,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 1000,
+      "run": 1,
+      "seconds": 0.107,
+      "exit": 0,
+      "html": 1005,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 1000,
+      "run": 2,
+      "seconds": 0.107,
+      "exit": 0,
+      "html": 1005,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 1000,
+      "run": 3,
+      "seconds": 0.115,
+      "exit": 0,
+      "html": 1005,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 1000,
+      "run": 1,
+      "seconds": 0.03,
+      "exit": 0,
+      "html": 1005,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 1000,
+      "run": 2,
+      "seconds": 0.03,
+      "exit": 0,
+      "html": 1005,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 1000,
+      "run": 3,
+      "seconds": 0.028,
+      "exit": 0,
+      "html": 1005,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 2000,
+      "run": 1,
+      "seconds": 0.241,
+      "exit": 0,
+      "html": 2005,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 2000,
+      "run": 2,
+      "seconds": 0.243,
+      "exit": 0,
+      "html": 2005,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 2000,
+      "run": 3,
+      "seconds": 0.224,
+      "exit": 0,
+      "html": 2005,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 2000,
+      "run": 1,
+      "seconds": 0.048,
+      "exit": 0,
+      "html": 2005,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 2000,
+      "run": 2,
+      "seconds": 0.048,
+      "exit": 0,
+      "html": 2005,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 2000,
+      "run": 3,
+      "seconds": 0.05,
+      "exit": 0,
+      "html": 2005,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 4000,
+      "run": 1,
+      "seconds": 0.6,
+      "exit": 0,
+      "html": 4005,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 4000,
+      "run": 2,
+      "seconds": 0.595,
+      "exit": 0,
+      "html": 4005,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "clean",
+      "size": 4000,
+      "run": 3,
+      "seconds": 0.531,
+      "exit": 0,
+      "html": 4005,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 4000,
+      "run": 1,
+      "seconds": 0.091,
+      "exit": 0,
+      "html": 4005,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 4000,
+      "run": 2,
+      "seconds": 0.087,
+      "exit": 0,
+      "html": 4005,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "douze",
+      "kind": "warm",
+      "size": 4000,
+      "run": 3,
+      "seconds": 0.086,
+      "exit": 0,
+      "html": 4005,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 250,
+      "run": 1,
+      "seconds": 0.048,
+      "exit": 0,
+      "html": 250,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 250,
+      "run": 2,
+      "seconds": 0.049,
+      "exit": 0,
+      "html": 250,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 250,
+      "run": 3,
+      "seconds": 0.049,
+      "exit": 0,
+      "html": 250,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 500,
+      "run": 1,
+      "seconds": 0.073,
+      "exit": 0,
+      "html": 500,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 500,
+      "run": 2,
+      "seconds": 0.073,
+      "exit": 0,
+      "html": 500,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 500,
+      "run": 3,
+      "seconds": 0.072,
+      "exit": 0,
+      "html": 500,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 1000,
+      "run": 1,
+      "seconds": 0.163,
+      "exit": 0,
+      "html": 1000,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 1000,
+      "run": 2,
+      "seconds": 0.119,
+      "exit": 0,
+      "html": 1000,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 1000,
+      "run": 3,
+      "seconds": 0.119,
+      "exit": 0,
+      "html": 1000,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 2000,
+      "run": 1,
+      "seconds": 0.205,
+      "exit": 0,
+      "html": 2000,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 2000,
+      "run": 2,
+      "seconds": 0.207,
+      "exit": 0,
+      "html": 2000,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 2000,
+      "run": 3,
+      "seconds": 0.208,
+      "exit": 0,
+      "html": 2000,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 4000,
+      "run": 1,
+      "seconds": 0.393,
+      "exit": 0,
+      "html": 4000,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 4000,
+      "run": 2,
+      "seconds": 0.386,
+      "exit": 0,
+      "html": 4000,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "hugo",
+      "kind": "clean",
+      "size": 4000,
+      "run": 3,
+      "seconds": 0.419,
+      "exit": 0,
+      "html": 4000,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 250,
+      "run": 1,
+      "seconds": 0.633,
+      "exit": 0,
+      "html": 255,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 250,
+      "run": 2,
+      "seconds": 0.626,
+      "exit": 0,
+      "html": 255,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 250,
+      "run": 3,
+      "seconds": 0.595,
+      "exit": 0,
+      "html": 255,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 500,
+      "run": 1,
+      "seconds": 0.86,
+      "exit": 0,
+      "html": 505,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 500,
+      "run": 2,
+      "seconds": 0.829,
+      "exit": 0,
+      "html": 505,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 500,
+      "run": 3,
+      "seconds": 0.88,
+      "exit": 0,
+      "html": 505,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 1000,
+      "run": 1,
+      "seconds": 1.408,
+      "exit": 0,
+      "html": 1005,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 1000,
+      "run": 2,
+      "seconds": 1.344,
+      "exit": 0,
+      "html": 1005,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 1000,
+      "run": 3,
+      "seconds": 1.362,
+      "exit": 0,
+      "html": 1005,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 2000,
+      "run": 1,
+      "seconds": 2.597,
+      "exit": 0,
+      "html": 2005,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 2000,
+      "run": 2,
+      "seconds": 2.516,
+      "exit": 0,
+      "html": 2005,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 2000,
+      "run": 3,
+      "seconds": 2.566,
+      "exit": 0,
+      "html": 2005,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 4000,
+      "run": 1,
+      "seconds": 6.287,
+      "exit": 0,
+      "html": 4005,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 4000,
+      "run": 2,
+      "seconds": 6.353,
+      "exit": 0,
+      "html": 4005,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "eleventy",
+      "kind": "clean",
+      "size": 4000,
+      "run": 3,
+      "seconds": 6.248,
+      "exit": 0,
+      "html": 4005,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 250,
+      "run": 1,
+      "seconds": 1.185,
+      "exit": 0,
+      "html": 253,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 250,
+      "run": 2,
+      "seconds": 1.078,
+      "exit": 0,
+      "html": 253,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 250,
+      "run": 3,
+      "seconds": 1.066,
+      "exit": 0,
+      "html": 253,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 500,
+      "run": 1,
+      "seconds": 1.25,
+      "exit": 0,
+      "html": 503,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 500,
+      "run": 2,
+      "seconds": 1.374,
+      "exit": 0,
+      "html": 503,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 500,
+      "run": 3,
+      "seconds": 1.249,
+      "exit": 0,
+      "html": 503,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 1000,
+      "run": 1,
+      "seconds": 1.543,
+      "exit": 0,
+      "html": 1003,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 1000,
+      "run": 2,
+      "seconds": 1.5,
+      "exit": 0,
+      "html": 1003,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 1000,
+      "run": 3,
+      "seconds": 1.496,
+      "exit": 0,
+      "html": 1003,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 2000,
+      "run": 1,
+      "seconds": 2.115,
+      "exit": 0,
+      "html": 2003,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 2000,
+      "run": 2,
+      "seconds": 2.065,
+      "exit": 0,
+      "html": 2003,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 2000,
+      "run": 3,
+      "seconds": 2.077,
+      "exit": 0,
+      "html": 2003,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 4000,
+      "run": 1,
+      "seconds": 3.217,
+      "exit": 0,
+      "html": 4003,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 4000,
+      "run": 2,
+      "seconds": 3.131,
+      "exit": 0,
+      "html": 4003,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "astro",
+      "kind": "clean",
+      "size": 4000,
+      "run": 3,
+      "seconds": 3.245,
+      "exit": 0,
+      "html": 4003,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 250,
+      "run": 1,
+      "seconds": 0.31,
+      "exit": 0,
+      "html": 253,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 250,
+      "run": 2,
+      "seconds": 0.331,
+      "exit": 0,
+      "html": 253,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 250,
+      "run": 3,
+      "seconds": 0.31,
+      "exit": 0,
+      "html": 253,
+      "posts": 250,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 500,
+      "run": 1,
+      "seconds": 0.412,
+      "exit": 0,
+      "html": 503,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 500,
+      "run": 2,
+      "seconds": 0.47,
+      "exit": 0,
+      "html": 503,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 500,
+      "run": 3,
+      "seconds": 0.429,
+      "exit": 0,
+      "html": 503,
+      "posts": 500,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 1000,
+      "run": 1,
+      "seconds": 0.666,
+      "exit": 0,
+      "html": 1003,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 1000,
+      "run": 2,
+      "seconds": 0.68,
+      "exit": 0,
+      "html": 1003,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 1000,
+      "run": 3,
+      "seconds": 0.672,
+      "exit": 0,
+      "html": 1003,
+      "posts": 1000,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 2000,
+      "run": 1,
+      "seconds": 1.066,
+      "exit": 0,
+      "html": 2003,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 2000,
+      "run": 2,
+      "seconds": 1.02,
+      "exit": 0,
+      "html": 2003,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 2000,
+      "run": 3,
+      "seconds": 1.028,
+      "exit": 0,
+      "html": 2003,
+      "posts": 2000,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 4000,
+      "run": 1,
+      "seconds": 1.958,
+      "exit": 0,
+      "html": 4003,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 4000,
+      "run": 2,
+      "seconds": 1.873,
+      "exit": 0,
+      "html": 4003,
+      "posts": 4000,
+      "ok": true
+    },
+    {
+      "generator": "jekyll",
+      "kind": "clean",
+      "size": 4000,
+      "run": 3,
+      "seconds": 1.809,
+      "exit": 0,
+      "html": 4003,
+      "posts": 4000,
+      "ok": true
+    }
+  ]
+}

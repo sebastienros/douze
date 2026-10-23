@@ -1,0 +1,15 @@
+# Docs-heavy scenario: the default workflow plus the headings and highlight steps (one theme, as the others use).
+site:
+  url: https://example.com
+
+steps:
+  site-data:   { inputs: "_data/**/*.json", uses: data, with: { scope: site } }
+  folder-data: { inputs: "_content/**/*.json", uses: data, with: { scope: folder, root: _content } }
+  pages:       { inputs: ["_content/**", "!_content/**/*.json"], needs: [site-data, folder-data], uses: frontmatter }
+  permalink:   { needs: pages, uses: permalink, with: { root: _content } }
+  render:      { needs: permalink, uses: liquid }
+  markdown:    { needs: render, uses: markdown }
+  headings:    { needs: markdown, uses: headings, with: { levels: [2, 3] } }
+  highlight:   { needs: headings, uses: highlight, with: { themes: [github-dark], stylesheet: assets/code.css } }
+  layout:      { needs: highlight, uses: layout }
+  write:       { needs: layout, uses: write }

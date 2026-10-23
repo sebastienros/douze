@@ -1,0 +1,23 @@
+---
+permalink: /feed/feed.xml
+---
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:base="{{ metadata.url }}">
+	<title>{{ metadata.title | xml_escape }}</title>
+	<subtitle>{{ metadata.description | xml_escape }}</subtitle>
+	<link href="{{ '/feed/feed.xml' | absolute_url }}" rel="self" />
+	<link href="{{ metadata.url }}" />
+	<updated>{{ collections.posts.last.data.page.date | date_to_xmlschema }}</updated>
+	<id>{{ metadata.url }}</id>
+	<author><name>{{ metadata.author.name | xml_escape }}</name></author>
+	{%- assign latest = collections.posts | reverse | slice: 0, 10 %}
+	{%- for post in latest %}
+	{%- assign post_url = post.data.url | replace: "index.html", "" | absolute_url %}
+	<entry>
+		<title>{{ post.data.title | xml_escape }}</title>
+		<link href="{{ post_url }}" />
+		<updated>{{ post.data.page.date | date_to_xmlschema }}</updated>
+		<id>{{ post_url }}</id>
+	</entry>
+	{%- endfor %}
+</feed>

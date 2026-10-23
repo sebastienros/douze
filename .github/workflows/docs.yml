@@ -1,0 +1,91 @@
+name: Documentation
+
+# The documentation site (docs/), built by the Douze of the same commit and deployed to GitHub Pages from main. Pull
+# requests that change Douze build it too: the site is a real-world check of the build.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+    - 'docs/**'
+    - 'Douze/**'
+    - '.github/workflows/docs.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+    - 'docs/**'
+    - 'Douze/**'
+    - '.github/workflows/docs.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
+      with:
+        global-json-file: global.json
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: docs/package-lock.json
+
+    # Pagefind, downloaded by the search step, is kept between runs.
+    - uses: actions/cache@v5
+      with:
+        path: docs/.douze/tools
+        key: douze-tools-${{ hashFiles('docs/douze.yml') }}
+
+    - name: Build the site
+      run: dotnet run --project Douze -c Release -- -s docs --no-cache --plain
+
+    - name: Install the test tools
+      run: npm ci && npx playwright install --with-deps chromium
+      working-directory: docs
+
+    - name: Lint Markdown
+      run: npm run lint
+      working-directory: docs
+
+    - name: Check links
+      run: npm run check-links
+      working-directory: docs
+
+    - name: Test the site
+      run: npm run test:e2e
+      working-directory: docs
+
+    - uses: actions/upload-pages-artifact@v5
+      if: github.event_name != 'pull_request'
+      with:
+        path: docs/_site/douze
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.repository == 'sebastienros/douze'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+    - uses: actions/configure-pages@v6
+    - id: deployment
+      uses: actions/deploy-pages@v5

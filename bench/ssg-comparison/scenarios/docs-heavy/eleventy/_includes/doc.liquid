@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<meta name="description" content="{{ description }}">
+<style>body{font-family:system-ui;margin:0}.docs{display:grid;grid-template-columns:16rem 1fr 14rem;gap:2rem}pre{padding:1rem;overflow:auto}</style>
+</head>
+<body>
+<header><a href="/">Docs</a></header>
+<div class="docs">
+{%- assign current = page.url %}
+<nav class="sidebar"><ul>
+{%- for item in sidebar %}
+<li><a href="{{ item.url }}"{% if item.url == current %} aria-current="page"{% endif %}>{{ item.title }}</a></li>
+{%- endfor %}
+</ul></nav>
+<main>
+<h1>{{ title }}</h1>
+{{ content }}
+</main>
+</div>
+</body>
+</html>

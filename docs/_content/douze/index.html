@@ -1,0 +1,126 @@
+---
+title: Douze
+description: A single native binary that turns Markdown, Liquid and data into a static site, and rebuilds only what changed.
+layout: base.html
+body_class: home
+---
+<main id="main" class="home" data-pagefind-ignore="all">
+  <section class="hero">
+    <div class="hero__copy">
+      <p class="eyebrow"><span class="eyebrow__dot"></span>Preview builds, every push to main</p>
+      <h1 class="hero__title">Markdown in. A site out. <em>Before you look up.</em></h1>
+      <p class="hero__lede">Douze is a stupidly simple, blazing fast static site generator. One native binary reads your Markdown, Liquid templates and data files, runs them through a workflow of steps, and writes HTML. The next build only runs what changed.</p>
+      <div class="hero__actions">
+        <a class="button button--primary" href="{{ meta.base }}tutorial/">Build your first site</a>
+        <a class="button button--ghost" href="{{ meta.base }}guide/why-douze/">Why Douze?</a>
+      </div>
+      <div class="install" data-copy-root>
+        <span class="install__prompt" aria-hidden="true">$</span>
+        <code class="install__command">curl -fsSL https://raw.githubusercontent.com/sebastienros/douze/main/install.sh | sh -s -- --preview</code>
+        <button class="install__copy" type="button" data-copy>Copy</button>
+      </div>
+    </div>
+    <div class="hero__visual" aria-label="A Douze build in a terminal">
+      <div class="terminal">
+        <div class="terminal__bar"><span></span><span></span><span></span><p>~/douze</p></div>
+{% raw %}<pre class="terminal__body"><code><span class="t-prompt">$</span> douze -s docs
+<span class="t-ok">✓</span> folder-data    0 files    <span class="t-dim">0.00 s</span>
+<span class="t-ok">✓</span> site-data      3 files    <span class="t-dim">0.00 s</span>
+<span class="t-ok">✓</span> pages         87 files    <span class="t-dim">0.01 s</span>
+<span class="t-ok">✓</span> permalink     90 files    <span class="t-dim">0.01 s</span>
+<span class="t-ok">✓</span> collections   87 files    <span class="t-dim">0.01 s</span>
+<span class="t-ok">✓</span> render        87 files    <span class="t-dim">0.00 s</span>
+<span class="t-ok">✓</span> markdown      85 files    <span class="t-dim">0.11 s</span>
+<span class="t-ok">✓</span> headings      87 files    <span class="t-dim">0.19 s</span>
+<span class="t-ok">✓</span> highlight     87 files    <span class="t-dim">0.53 s</span>
+<span class="t-ok">✓</span> layout        87 files    <span class="t-dim">0.53 s</span>
+<span class="t-ok">✓</span> write        173 files    <span class="t-dim">0.53 s</span>
+<span class="t-ok">✓</span> search       173 files    <span class="t-dim">0.64 s</span>
+<span class="t-strong">Build succeeded</span>: 12 steps, 173 files written in <span class="t-accent">0.68 s</span>
+<span class="t-dim">This site, 87 pages, highlighting and search included.</span></code></pre>{% endraw %}
+      </div>
+      <div class="dial" aria-hidden="true">{% include "logo.html" %}</div>
+    </div>
+  </section>
+
+  <section class="twelve" aria-labelledby="twelve-title">
+    <header class="section-head">
+      <p class="section-head__kicker">Douze is French for twelve</p>
+      <h2 id="twelve-title">Twelve things it does well</h2>
+    </header>
+    <ol class="twelve__grid">
+      <li><span class="n">01</span><h3>No configuration</h3><p>A folder of Markdown builds as it is. <code>_content</code>, <code>_includes</code> and <code>_data</code> are optional conventions, Eleventy style.</p><a href="{{ meta.base }}guide/project-structure/">Project structure</a></li>
+      <li><span class="n">02</span><h3>One native binary</h3><p>A single executable for Windows, macOS and Linux, x64 and arm64. No Node, no runtime to install, no <code>node_modules</code>.</p><a href="{{ meta.base }}guide/install/">Installation</a></li>
+      <li><span class="n">03</span><h3>Liquid and Markdown</h3><p>Liquid runs before Markdown, as in Eleventy and Jekyll, so pages use variables, loops and shortcodes.</p><a href="{{ meta.base }}guide/markdown/">Markdown</a></li>
+      <li><span class="n">04</span><h3>Workflows</h3><p>A <code>douze.yml</code> describes a graph of steps that files flow through, in parallel, GitHub Actions style.</p><a href="{{ meta.base }}guide/workflow-architecture/">Workflow architecture</a></li>
+      <li><span class="n">05</span><h3>A real cache</h3><p>Every unit of work is cached by its inputs. A second build without changes runs nothing.</p><a href="{{ meta.base }}guide/cache/">Cache</a></li>
+      <li><span class="n">06</span><h3>Serve and live reload</h3><p>Rebuilds only what an edit affects. Stylesheets are swapped in place without a reload.</p><a href="{{ meta.base }}guide/develop-and-build/">Develop and build</a></li>
+      <li><span class="n">07</span><h3>Syntax highlighting</h3><p>TextMate grammars and themes, the ones of VS Code and Shiki, with titles, markers and diffs. No Node.</p><a href="{{ meta.base }}guide/syntax-highlighting/">Syntax highlighting</a></li>
+      <li><span class="n">08</span><h3>Code hovers</h3><p>Types and errors of TypeScript, C# and Go samples, twoslash style, from real language servers.</p><a href="{{ meta.base }}guide/code-hovers/">Code hovers</a></li>
+      <li><span class="n">09</span><h3>Images</h3><p>Responsive variants, <code>&lt;picture&gt;</code> markup and Open Graph cards, with libvips.</p><a href="{{ meta.base }}guide/images/">Images</a></li>
+      <li><span class="n">10</span><h3>Content at scale</h3><p>Collections, pagination, sidebars, locales. Tens of thousands of pages in seconds.</p><a href="{{ meta.base }}guide/collections/">Collections</a></li>
+      <li><span class="n">11</span><h3>Any tool as a step</h3><p>Run a command per file, per batch, or as a long-lived Node worker. Pagefind and Lightning CSS are one line.</p><a href="{{ meta.base }}guide/command-steps/">Command steps</a></li>
+      <li><span class="n">12</span><h3>See every millisecond</h3><p>A live view of the running steps, Chrome traces and a self-contained timeline of the build.</p><a href="{{ meta.base }}guide/tracing/">Progress and tracing</a></li>
+    </ol>
+  </section>
+
+  <section class="flow" aria-labelledby="flow-title">
+    <div class="flow__copy">
+      <p class="section-head__kicker">Workflows</p>
+      <h2 id="flow-title">A build is a graph you can read</h2>
+      <p>Without a <code>douze.yml</code>, Douze runs its default workflow. With one, every step is a line: what it needs, which files it matches, what it uses. Steps start as soon as their first file arrives.</p>
+      <p>This site is built by Douze with a workflow like the one on the right (<a href="{{ meta.repo }}/blob/main/docs/douze.yml">docs/douze.yml</a>), Pagefind search included.</p>
+      <a class="button button--ghost" href="{{ meta.base }}reference/steps/">All built-in steps</a>
+    </div>
+    <div class="flow__code">
+{% raw %}<pre data-lang="yaml" data-meta="title=&quot;docs/douze.yml&quot;"><code class="language-yaml">steps:
+  pages:
+    inputs: "_content/**"
+    uses: frontmatter
+  permalink:
+    needs: pages
+    uses: permalink
+    with:
+      root: _content
+  render:
+    needs: permalink
+    uses: liquid
+  markdown:
+    needs: render
+    uses: markdown
+  highlight:
+    needs: markdown
+    uses: highlight
+  layout:
+    needs: highlight
+    uses: layout
+  write:
+    needs: layout
+    uses: write
+  search:
+    needs: write
+    tool: pagefind
+    run: "{{ tool }} --site {{ site }}"
+</code></pre>{% endraw %}
+    </div>
+  </section>
+
+  <section class="numbers" aria-labelledby="numbers-title">
+    <header class="section-head">
+      <p class="section-head__kicker">Benchmarks</p>
+      <h2 id="numbers-title">Measured, in a container, against the usual suspects</h2>
+      <p>Zach Leatherman's Markdown build benchmark, reproduced with Hugo, Eleventy, Astro, Jekyll and Douze on the same machine.</p>
+    </header>
+    {% include "home-benchmark.html" %}
+    <a class="button button--ghost" href="{{ meta.base }}guide/benchmarks/">Methodology and all results</a>
+  </section>
+
+  <section class="cta">
+    <h2>Start with an empty folder.</h2>
+    <p>The tutorial builds a blog in six short units: pages, includes, layouts, collections, a workflow, and a deploy to GitHub Pages.</p>
+    <a class="button button--primary" href="{{ meta.base }}tutorial/">Start the tutorial</a>
+  </section>
+</main>
+<footer class="site-footer">
+  <p>Douze is released under the MIT License. This site is built with Douze from <a href="{{ meta.repo }}/tree/main/docs">docs/</a>.</p>
+</footer>

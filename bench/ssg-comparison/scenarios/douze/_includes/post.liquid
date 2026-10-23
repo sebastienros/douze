@@ -1,0 +1,27 @@
+---
+layout: base.liquid
+---
+<h1>{{ title }}</h1>
+
+<ul class="post-metadata">
+	<li><time datetime="{{ page.date | date: '%Y-%m-%d' }}">{{ page.date | date: '%d %B %Y' }}</time></li>
+	{%- for tag in tags %}{% if tag != "posts" %}
+	<li><a href="/tags/{{ tag | slug }}/" class="post-tag">{{ tag }}</a></li>
+	{%- endif %}{% endfor %}
+</ul>
+
+{{ content }}
+
+{%- assign previous_post = nil %}
+{%- assign next_post = nil %}
+{%- assign found = false %}
+{%- for p in collections.posts %}
+	{%- if found %}{% assign next_post = p %}{% break %}{% endif %}
+	{%- if p.data.url == url %}{% assign found = true %}{% else %}{% assign previous_post = p %}{% endif %}
+{%- endfor %}
+{%- if next_post or previous_post %}
+<ul class="links-nextprev">
+	{%- if previous_post %}<li class="links-nextprev-prev">← Previous<br> <a href="{{ previous_post.data.url | replace: 'index.html', '' }}">{{ previous_post.data.title }}</a></li>{% endif %}
+	{%- if next_post %}<li class="links-nextprev-next">Next →<br><a href="{{ next_post.data.url | replace: 'index.html', '' }}">{{ next_post.data.title }}</a></li>{% endif %}
+</ul>
+{%- endif %}

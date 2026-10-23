@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="{{ metadata.language }}">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>{{ title | default: metadata.title }}</title>
+		<meta name="description" content="{{ description | default: metadata.description }}">
+		<link rel="alternate" href="/feed/feed.xml" type="application/atom+xml" title="{{ metadata.title }}">
+		<style>{% include "css/index.css" %}</style>
+		{%- if extra_css %}
+		<style>{% include extra_css %}</style>
+		{%- endif %}
+	</head>
+	<body>
+		<a href="#main" id="skip-link" class="visually-hidden">Skip to main content</a>
+
+		<header>
+			<a href="/" class="home-link">{{ metadata.title }}</a>
+			<nav>
+				<h2 class="visually-hidden">Top level navigation menu</h2>
+				<ul class="nav">
+				{%- assign current = url | replace: "index.html", "" %}
+				{%- for entry in nav %}
+					<li class="nav-item"><a href="{{ entry.link }}"{% if entry.link == current %} aria-current="page"{% endif %}>{{ entry.label }}</a></li>
+				{%- endfor %}
+				</ul>
+			</nav>
+		</header>
+
+		<main id="main">
+			{{ content }}
+		</main>
+
+		<footer>
+			<p><em>Built with <a href="https://github.com/sebastienros/douze">Douze</a></em></p>
+		</footer>
+	</body>
+</html>

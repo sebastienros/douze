@@ -1,0 +1,38 @@
+---
+import sidebar from "../data/sidebar.json";
+
+interface Props {
+  title: string;
+  description: string;
+  headings?: { depth: number; slug: string; text: string }[];
+}
+const { title, description, headings = [] } = Astro.props;
+const current = Astro.url.pathname;
+const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<meta name="description" content={description}>
+<style is:inline>body{font-family:system-ui;margin:0}.docs{display:grid;grid-template-columns:16rem 1fr 14rem;gap:2rem}pre{padding:1rem;overflow:auto}</style>
+</head>
+<body>
+<header><a href="/">Docs</a></header>
+<div class="docs">
+<nav class="sidebar"><ul>
+{sidebar.map((item) => <li><a href={item.url} aria-current={item.url === current ? "page" : undefined}>{item.title}</a></li>)}
+</ul></nav>
+<main>
+<h1>{title}</h1>
+<slot />
+</main>
+<aside class="toc">
+{toc.length > 0 && <p>On this page</p>}
+<ul>{toc.map((h) => <li class={`depth-${h.depth}`}><a href={`#${h.slug}`}>{h.text}</a></li>)}</ul>
+</aside>
+</div>
+</body>
+</html>

@@ -1,0 +1,6 @@
+title: Douze
+tagline: Stupidly simple, blazing fast static site generator
+base: /douze/
+repo: https://github.com/sebastienros/douze
+edit: https://github.com/sebastienros/douze/edit/main/docs/
+index_pages: [/douze/tutorial/, /douze/recipes/, /douze/migrate/, /douze/reference/, /douze/reference/steps/]
