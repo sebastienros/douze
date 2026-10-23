@@ -292,6 +292,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
+| `enabled` | `true` | `false` leaves the step out: the steps that need it need what it needs (a switch between two steps) |
 | `run`, `mode`, `outputs`, `sources`, `version`, `env`, `cwd`, `timeout`, `stderr`, `shell` | | command steps, see "commands" |
 
 A step has either `uses` or `run`. Steps run as soon as their files are available, in parallel; their order in the

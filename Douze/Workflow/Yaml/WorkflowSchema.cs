@@ -58,6 +58,7 @@ internal static partial class WorkflowSchema
         Duration("timeout", x => x.Timeout, (x, v) => x with { Timeout = v }, commandOnly: true),
         Enum("stderr", StderrPolicy.Fail, x => x.Stderr, (x, v) => x with { Stderr = v }, commandOnly: true),
         Bool("shell", true, x => x.Shell, (x, v) => x with { Shell = v }, commandOnly: true),
+        Bool("enabled", true, x => x.Enabled, (x, v) => x with { Enabled = v }),
     ];
 
     public static readonly FrozenDictionary<string, WorkflowField> StepFieldsByName = StepFields.ToFrozenDictionary(x => x.Name, StringComparer.Ordinal);

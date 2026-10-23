@@ -54,6 +54,24 @@ public class WorkflowLoaderTests
     }
 
     [Fact]
+    public void DisabledStepsAreLeftOut()
+    {
+        // The steps that need a disabled step need what it needs, through several disabled steps.
+        var steps = Load("""
+            steps:
+              data: { inputs: "data/**", uses: data, with: { scope: site } }
+              pages: { inputs: "**", needs: data, uses: frontmatter }
+              highlight: { needs: pages, uses: highlight }
+              worker: { needs: highlight, run: node worker.mjs, mode: worker, enabled: false }
+              other: { needs: worker, run: node other.mjs, enabled: false }
+              write: { needs: [other, data], uses: write, enabled: true }
+            """).Workflow!.Steps;
+
+        Assert.Equal(["data", "pages", "highlight", "write"], steps.Select(x => x.Name));
+        Assert.Equal(["highlight", "data"], steps[^1].Needs);
+    }
+
+    [Fact]
     public void RootMustBeAMapping()
     {
         AssertError("- a\n- b\n", "a workflow file must be a mapping with 'site', 'markdown' and 'steps'", 1, 1);
