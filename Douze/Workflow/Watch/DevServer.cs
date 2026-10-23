@@ -85,9 +85,16 @@ internal sealed class DevServer : IAsyncDisposable
                 return;
             }
 
-            if (path == LiveReload.EventsPath)
+            if (path == LiveReload.SocketPath)
             {
-                await Reload.ServeAsync(response, _stopping.Token);
+                if (!request.IsWebSocketRequest)
+                {
+                    await SendTextAsync(response, 400, "Bad Request", head: false);
+                    return;
+                }
+
+                var socket = await context.AcceptWebSocketAsync(subProtocol: null, LiveReload.KeepAlive);
+                await Reload.ServeAsync(socket.WebSocket, _stopping.Token);
                 return;
             }
 
