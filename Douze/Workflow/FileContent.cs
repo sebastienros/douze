@@ -14,9 +14,9 @@ internal abstract class FileContent
         ".css", ".js", ".mjs", ".cjs", ".ts", ".svg", ".csv", ".tsv", ".map", ".rss", ".atom", ".webmanifest",
     };
 
-    private readonly Lock _hashLock = new();
-    private Hash128 _hash;
-    private volatile bool _hashed;
+    private protected readonly Lock _hashLock = new();
+    private protected Hash128 _hash;
+    private protected volatile bool _hashed;
 
     protected FileContent()
     {
@@ -74,6 +74,15 @@ internal abstract class FileContent
     public static bool IsTextPath(FPath path) => TextExtensions.Contains(path.GetExtensionWithDot());
 
     public abstract bool IsText { get; }
+
+    /// <summary>
+    /// Keeps the content in less memory while it waits for a step: a text drops its UTF-16 string for its UTF-8 bytes,
+    /// in blocks small enough to stay out of the large object heap (<see cref="Utf8Blocks"/>). Reading it decodes it
+    /// again, so the scheduler compacts only what waits (in front of a barrier, in the input of a reduce step).
+    /// </summary>
+    public virtual void Compact()
+    {
+    }
 
     public abstract long? Length { get; }
 
@@ -158,29 +167,69 @@ internal abstract class FileContent
 
     private sealed class TextContent : FileContent
     {
-        private readonly string _text;
+        // The string, until the content is compacted: then its UTF-8 blocks. A reference, replaced atomically.
+        private volatile object _state;
 
-        // A reference, published atomically: a nullable memory could be seen set with half of its fields.
-        private byte[]? _bytes;
+        // The UTF-8 encoding of the string, made once when asked for. Published atomically, like the state.
+        private volatile byte[]? _bytes;
+
+        private long _length = -1;
 
         public TextContent(string text)
         {
             ArgumentNullException.ThrowIfNull(text);
 
             // The text is exposed without a byte order mark, whatever its origin.
-            _text = text.Length > 0 && text[0] == '﻿' ? text[1..] : text;
+            _state = text.Length > 0 && text[0] == '\ufeff' ? text[1..] : text;
         }
 
         public override bool IsText => true;
 
-        public override long? Length => Encoding.UTF8.GetByteCount(_text);
+        public override long? Length
+        {
+            get
+            {
+                if (_length < 0)
+                {
+                    _length = _state is string text ? Encoding.UTF8.GetByteCount(text) : ((Utf8Blocks)_state).Length;
+                }
 
-        public override ValueTask<string> ReadTextAsync(CancellationToken ct) => new(_text);
+                return _length;
+            }
+        }
+
+        public override void Compact()
+        {
+            lock (_hashLock)
+            {
+                if (_state is not string text)
+                {
+                    return;
+                }
+
+                // Known before the string goes.
+                _length = Encoding.UTF8.GetByteCount(text);
+
+                if (!_hashed)
+                {
+                    _hash = Hash128.OfText(text);
+                    _hashed = true;
+                }
+
+                _state = Utf8Blocks.Encode(text);
+                _bytes = null;
+            }
+        }
+
+        public override ValueTask<string> ReadTextAsync(CancellationToken ct)
+        {
+            return new(_state as string ?? ((Utf8Blocks)_state).Decode());
+        }
 
         public override ValueTask<ReadOnlyMemory<byte>> ReadBytesAsync(CancellationToken ct)
         {
             // Benign race: two threads may encode the same text.
-            return new(_bytes ??= Encoding.UTF8.GetBytes(_text));
+            return new(_state is string text ? _bytes ??= Encoding.UTF8.GetBytes(text) : ((Utf8Blocks)_state).ToArray());
         }
 
         public override async ValueTask<Stream> OpenReadAsync(CancellationToken ct)
@@ -191,17 +240,29 @@ internal abstract class FileContent
 
         public override ValueTask<PooledBytes> RentBytesAsync(CancellationToken ct)
         {
+            // Read once: a compaction may replace it.
+            var state = _state;
+
+            if (state is Utf8Blocks blocks)
+            {
+                var rented = System.Buffers.ArrayPool<byte>.Shared.Rent(blocks.Length);
+                blocks.CopyTo(rented);
+                return new(new PooledBytes(rented.AsMemory(0, blocks.Length), rented));
+            }
+
             if (_bytes is { } bytes)
             {
                 return new(new PooledBytes(bytes, null));
             }
 
-            var array = System.Buffers.ArrayPool<byte>.Shared.Rent(Encoding.UTF8.GetByteCount(_text));
-            var length = Encoding.UTF8.GetBytes(_text, array);
+            var text = (string)state;
+            var array = System.Buffers.ArrayPool<byte>.Shared.Rent(Encoding.UTF8.GetByteCount(text));
+            var length = Encoding.UTF8.GetBytes(text, array);
             return new(new PooledBytes(array.AsMemory(0, length), array));
         }
 
-        protected override Hash128 ComputeHash() => Hash128.OfText(_text);
+        // A compacted text has its hash.
+        protected override Hash128 ComputeHash() => Hash128.OfText((string)_state);
     }
 
     private sealed class BytesContent : FileContent
@@ -389,6 +450,93 @@ internal abstract class FileContent
             {
                 return _bytes ??= _load(CancellationToken.None).AsTask();
             }
+        }
+    }
+
+    /// <summary>
+    /// UTF-8 bytes in blocks of <see cref="BlockSize"/> bytes at most, below the size of the large object heap: a large
+    /// heap is collected only with the whole heap and is not compacted, so large contents that come and go fragment it.
+    /// </summary>
+    internal sealed class Utf8Blocks
+    {
+        public const int BlockSize = 64 * 1024;
+
+        private readonly byte[][] _blocks;
+
+        private Utf8Blocks(byte[][] blocks, int length)
+        {
+            _blocks = blocks;
+            Length = length;
+        }
+
+        public int Length { get; }
+
+        public static Utf8Blocks Encode(string text)
+        {
+            var encoder = Encoding.UTF8.GetEncoder();
+            var blocks = new List<byte[]>();
+            var chars = text.AsSpan();
+            var length = 0;
+            var buffer = new byte[BlockSize];
+
+            while (true)
+            {
+                encoder.Convert(chars, buffer, flush: true, out var used, out var written, out var completed);
+                chars = chars[used..];
+
+                if (written > 0)
+                {
+                    blocks.Add(written == buffer.Length ? buffer : buffer[..written]);
+                    length += written;
+                    buffer = new byte[BlockSize];
+                }
+
+                if (completed)
+                {
+                    return new Utf8Blocks([.. blocks], length);
+                }
+            }
+        }
+
+        public string Decode()
+        {
+            var decoder = Encoding.UTF8.GetDecoder();
+            var chars = 0;
+
+            foreach (var block in _blocks)
+            {
+                chars += decoder.GetCharCount(block, flush: false);
+            }
+
+            chars += decoder.GetCharCount([], flush: true);
+            decoder.Reset();
+
+            return string.Create(chars, this, static (span, self) =>
+            {
+                var decoder = Encoding.UTF8.GetDecoder();
+
+                for (var i = 0; i < self._blocks.Length; i++)
+                {
+                    var written = decoder.GetChars(self._blocks[i], span, flush: i == self._blocks.Length - 1);
+                    span = span[written..];
+                }
+            });
+        }
+
+        public void CopyTo(Span<byte> destination)
+        {
+            foreach (var block in _blocks)
+            {
+                block.CopyTo(destination);
+                destination = destination[block.Length..];
+            }
+        }
+
+        public byte[] ToArray()
+        {
+            var bytes = new byte[Length];
+            CopyTo(bytes);
+            return bytes;
         }
     }
 

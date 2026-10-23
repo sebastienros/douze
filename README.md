@@ -73,6 +73,17 @@ The exit code is 0 on success, 1 when the build has errors (each one is printed 
 `error: <step>: <file>(<line>,<col>): <message>`) or a requirement is missing (see "doctor"), 2 for an invalid command line or workflow, and 130 when the
 build is cancelled with Ctrl+C.
 
+## memory and parallelism
+
+The memory of a build grows with its parallelism: each unit that runs holds its working set (the page it renders, its
+transient strings, the regexes of the code highlighting grammars it uses, the image it encodes), so `-p 14` holds about
+14 of them at once. What every build holds whatever its parallelism is the site's data and metadata, and the pages that
+wait at a barrier (a `collect`, `localize` or `run:` batch step that needs every page) as UTF-8. When memory is scarce, in
+a container for instance, lower `-p` (or `site.parallelism`): the build takes longer and holds less. On a site of 70,000
+files with 78 MB of JSON data, on 14 cores, the published `douze` (Satori GC) builds in 32 s and peaks at 5.3 GB, and at
+`-p 4` in 46 s and 4.5 GB; built with the standard GC (`-p:UseSatoriGC=false`), it takes 47 s and 3.9 GB, or 59 s and 3.4 GB
+at `-p 4`.
+
 # cache
 
 A build stores the result of each unit of work (a file in a step, a group, a whole step for collections and data) in

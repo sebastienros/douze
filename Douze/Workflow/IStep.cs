@@ -53,6 +53,14 @@ internal abstract class Step : IAsyncDisposable
     public virtual bool ReadsContent => true;
 
     /// <summary>
+    /// Whether the units of the step read the scopes (<see cref="StepContext.Scopes"/>): the data of the site and of the
+    /// folders, and the contributions of reduce steps. A step that reads none does not wait for the reduce steps upstream
+    /// of it to publish their contributions; it reads its inputs as soon as they arrive, so the channels in front of it
+    /// can be bounded, and its producers do not pile files up while a barrier upstream of it runs.
+    /// </summary>
+    public virtual bool ReadsScopes => true;
+
+    /// <summary>
     /// Whether the units of the step record every key of their file's own metadata they read, defined or not
     /// (<see cref="ScopeSet.TryResolve"/> records the keys it resolves, a step reading <see cref="Metadata.Own"/> from C#
     /// calls <see cref="DependencyTracker.RecordOwn(string)"/>), and whether a result depends on the path of the file

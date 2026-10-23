@@ -5,7 +5,8 @@ namespace Douze.Workflow.Scheduling;
 /// <summary>
 /// The output of a node: one channel per consumer, so that every output reaches every dependent (fan-out). A channel is
 /// bounded when its consumer reads as soon as the producer writes (backpressure: a producer waits for the slowest of
-/// its bounded consumers), unbounded when it must hold everything, in front of a barrier.
+/// its bounded consumers), unbounded when it must hold everything, in front of a barrier. A file waits in an unbounded
+/// channel with its content compacted (<see cref="FileContent.Compact"/>).
 /// </summary>
 internal sealed class FileChannel
 {
@@ -13,6 +14,7 @@ internal sealed class FileChannel
 
     private readonly Dictionary<string, Channel<VirtualFile>> _channels = new(StringComparer.Ordinal);
     private readonly Channel<VirtualFile>[] _all;
+    private readonly bool _hasUnbounded;
 
     /// <param name="consumers">Each consumer with the capacity of its channel, null for unbounded.</param>
     public FileChannel(IEnumerable<(string Consumer, int? Capacity)> consumers)
@@ -24,6 +26,8 @@ internal sealed class FileChannel
                 _channels[consumer] = capacity is { } bound
                     ? Channel.CreateBounded<VirtualFile>(new BoundedChannelOptions(bound) { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait })
                     : Channel.CreateUnbounded<VirtualFile>(UnboundedOptions);
+
+                _hasUnbounded |= capacity == null;
             }
         }
 
@@ -38,6 +42,11 @@ internal sealed class FileChannel
     /// </summary>
     public ValueTask WriteAsync(VirtualFile file, CancellationToken ct)
     {
+        if (_hasUnbounded)
+        {
+            file.Content.Compact();
+        }
+
         for (var i = 0; i < _all.Length; i++)
         {
             if (!_all[i].Writer.TryWrite(file))

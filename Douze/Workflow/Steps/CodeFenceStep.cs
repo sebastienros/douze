@@ -126,8 +126,10 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
     public async ValueTask<StepOutput> ProcessAllAsync(IReadOnlyList<VirtualFile> files, StepContext context, CancellationToken ct)
     {
         var (state, settingsKey) = await PrepareAsync(context, ct);
-        var texts = new string?[files.Count];
         var fences = new List<CodeFence>();
+
+        // The texts are not kept: a page is read again to write its results, so that the pages of the site are not
+        // all in memory as strings at once.
 
         for (var i = 0; i < files.Count; i++)
         {
@@ -142,8 +144,6 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
             {
                 continue;
             }
-
-            texts[i] = text;
 
             var index = 0;
 
@@ -241,7 +241,7 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
                 continue;
             }
 
-            var text = texts[i]!;
+            var text = await files[i].Content.ReadTextAsync(ct);
             var builder = new StringBuilder(text.Length + fileFences.Sum(x => results[x.Key].Length + 32));
             var last = 0;
 
@@ -254,7 +254,11 @@ internal abstract partial class CodeFenceStep<TState> : Step, IReduceStep
             }
 
             builder.Append(text, last, text.Length - last);
-            outputs[i] = files[i].With(Name, content: FileContent.FromText(builder.ToString()));
+
+            // Waits for the other pages: as UTF-8.
+            var content = FileContent.FromText(builder.ToString());
+            content.Compact();
+            outputs[i] = files[i].With(Name, content: content);
         }
 
         return new StepOutput(FileList.Of(outputs));
