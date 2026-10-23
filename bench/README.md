@@ -392,6 +392,64 @@ the scanner); the CPU of single runs ranged from 170 to 330 s for the same binar
 share the units of the copies: it reads `lang` (the labels of its copy buttons are translated) and a worker cannot
 report what it read.
 
+### Memory of the target site, 2026-10-22
+
+The target site with its current workflow (the native `highlight` and `hover-typescript` steps, no Node worker), clean
+builds with `--no-cache`, M4 Pro (14 cores, 48 GB), native AOT, one run each (the machine was otherwise idle). *Footprint*
+is macOS's `peak memory footprint` (dirty memory, compressed or not); *max RSS* also counts the pages malloc freed and
+macOS reclaims on demand, so it overstates the memory a container would need. **Base** is ca78c8d.
+
+| GC | Variant | `-p` | Wall (s) | Max RSS (GB) | Footprint (GB) |
+|---|---|---:|---:|---:|---:|
+| Satori | base | 14 | 48.3 | 12.5 | 22.0 |
+| Satori | head | 14 | 32.0 | 6.6 | 5.3 |
+| Satori | head | 4 | 45.7 | 5.9 | 4.5 |
+| standard | base | 14 | 43.4 | 15.6 | 14.5 to 15.1 |
+| standard | base | 2 | 147.0 | 13.5 | 13.3 |
+| standard | head | 14 | 46.8 | 5.3 | 3.9 |
+| standard | head | 4 | 59.2 | 4.6 | 3.4 |
+
+The outputs are the same as the base's (70,734 files compared by hash), but for files that differ between two builds
+of the base too (`rss.xml`, some locale copies, some API reference pages: finding 14).
+
+Where the memory went, from a sampler of `GC.GetGCMemoryInfo` and full heap dumps (`dotnet-dump`; `dotnet-gcdump` stops
+at 10 million objects and misses most of this heap):
+
+- **Lowering `-p` did not lower the peak of the base** (13.3 GB at 14, 13.5 GB at 2): the peak was what the build kept,
+  12.4 GB of GC heap, 10 GB of it in the large object heap: the 48,000 API reference pages and their Markdown twins.
+  `write` waited for every reduce step upstream of it to publish its contribution, `hover-typescript` among them (an
+  11 s barrier on the articles), although it reads no scopes. Its channel from `api-layout` was unbounded for that
+  reason (`Scheduler.GetCapacity`): a full channel would have stopped the API branch, which shares `site-data` with the
+  articles. By the time `write` started, the API branch had rendered almost everything. A step now says whether it reads
+  scopes (`Step.ReadsScopes`, false for `write`): one that does not starts at once and its channels are bounded. GC heap
+  peak 12.4 to 3.3 GB.
+- **What waits is UTF-8.** A content entering an unbounded channel or the input of a reduce or group step is compacted
+  (`FileContent.Compact`): a text drops its UTF-16 string for its UTF-8 bytes, in blocks of 64 KB, below the 85 KB of the
+  large object heap, which is collected only with the whole heap and not compacted. A step that reads it decodes it
+  again. `hover-typescript` and `hover-csharp` (`CodeFenceStep`) kept the text of every page with a fence until the end of
+  their unit, and built every output before returning them: they read a page again to write its results, and compact
+  their outputs.
+- **Native memory: Oniguruma.** About 800 MB of malloc at `-p 14` (`MallocStackLogging` and `malloc_history`): the
+  regexes of the TextMate grammars, compiled once per registry, and the highlighter kept one registry of a language per
+  parallel unit. libvips holds about 10 MB. A language now has 4 registries at most (`CodeTokenizer`); a unit waits
+  for one when they are all in use, which costs nothing measurable here.
+- **The live set at the peak** (head, standard GC, JIT, mid-build): 1.6 GB of a 3.1 GB heap; the rest is garbage, mostly
+  the transient strings of rendered pages. Of the live set, the API reference data as `Node` trees is about 450 MB
+  (78 MB of JSON: 5 million strings, and a `Dictionary` per object, 190 MB of dictionaries alone), the pages waiting at
+  barriers about 400 MB before compaction, the registries' managed side 130 MB, and the scheduler's refs, dependency
+  sets and unit results about 150 MB.
+- **The Satori GC keeps about 1.5 GB more** than the standard GC on this site, for a third less wall time. It does not
+  follow `GCHeapHardLimit` (set at startup or with `GC.RefreshMemoryLimit`): its footprint stays at 5 GB with a 2.25 GB
+  limit.
+
+Tried and left out: a store that moves the contents waiting at barriers to a temporary file beyond a memory budget (a
+`--memory` option, which also set `GCHeapHardLimit`). Once `write` stopped waiting and waiting contents became UTF-8,
+nothing reached the store, even with a 3 GB budget; a 2 GB budget ran out of memory in the live set, not in waiting
+contents. Lowering `-p` is the way to use less memory.
+
+What is left, by size: a compact representation of data nodes (keys shared, small objects without a `Dictionary`,
+repeated strings once) for the 450 MB of data; rendering into UTF-8 blocks instead of a string, for the large object heap
+churn of rendered pages; image variants, memoized as bytes for the whole build (`ImageProcessor._variants`).
 ### Images: NetVips or SkiaSharp, buffers or streams, 2026-10-22
 
 Is SkiaSharp lighter than libvips for Douze's image work, can images stream from source file to output file instead of
@@ -669,3 +727,12 @@ time.
    does not write such a file onto itself. Peak RSS: 6 GB. Left: a replayed `write` unit restores its outputs with the
    input's content, so a rebuild from the cache still holds the contents of what reaches the indexer; the Satori GC
    peaks higher than the standard GC on the same build (17 to 21 GB against 10 to 14 GB before this change).
+
+14. **Some pages of the target site differ between two builds of the same binary.** Seen while comparing outputs by hash
+   ("Memory of the target site"): besides `rss.xml` (dated now), a few locale copies (8 `hi/` pages in two builds of
+   ca78c8d, `zh-cn/` and `uk/` pages in others) and a few API reference pages, which flip from one build to the next:
+   TypeScript members of `aspire.hosting.azure.provisioning.cognitiveservices` rendered with or without `readonly` and
+   `get · set`, and some C# package pages (`communitytoolkit.aspire.hosting.ngrok`, `.ollama`, `aspire.hosting.documentdb`).
+   The locale copies are likely the variant leader race of finding 11 (a page that reads a key only some copies have).
+   The API pages are not variants: they read shared data, so something that depends on timing (an index built
+   concurrently, or which of two equal keys a lookup returns) decides their content. Not investigated.

@@ -152,6 +152,12 @@ internal sealed class Scheduler
             return null;
         }
 
+        // A step that reads no scopes reads as soon as its needs write, whatever runs upstream of it.
+        if (!consumer.Step.ReadsScopes)
+        {
+            return FilesPerSlot * _context.MaxDegreeOfParallelism;
+        }
+
         // A step reads nothing before the reduce steps upstream of it published their contributions. When a full
         // channel would stop a node that feeds one of them (the producer, or one of its ancestors, which stop once the
         // producer stops reading), the reduce step would wait for files waiting for it: the channel holds everything.
@@ -363,8 +369,11 @@ internal sealed class Scheduler
 
             try
             {
-                // A step sees the contributions of every ancestor, nearest first (descending topological index).
-                var ancestors = _scheduler._graph.Ancestors(Name).Select(x => _runners[_scheduler._graph[x].Index]).OrderByDescending(x => x.Node.Index).ToArray();
+                // A step sees the contributions of every ancestor, nearest first (descending topological index). A step
+                // that reads no scopes sees only the base scopes, and does not wait.
+                var ancestors = Node.Step.ReadsScopes
+                    ? _scheduler._graph.Ancestors(Name).Select(x => _runners[_scheduler._graph[x].Index]).OrderByDescending(x => x.Node.Index).ToArray()
+                    : [];
                 await Task.WhenAll(ancestors.Select(x => x.ContributionReady.Task)).WaitAsync(token);
                 Run.Scopes = ScopeSet.Merge(ancestors.Select(x => x.Run.Contributions).ToArray(), Context.BaseScopes);
 
@@ -807,6 +816,9 @@ internal sealed class Scheduler
 
             await ReadInputsAsync(sources, file =>
             {
+                // Waits for the other inputs.
+                file.Content.Compact();
+
                 lock (filesLock)
                 {
                     files.Add(file);
