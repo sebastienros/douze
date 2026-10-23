@@ -54,8 +54,12 @@ steps:
     with:
       anchors: true
       levels: [2, 3]
-  highlight:
+  # The YAML, JSON, XML and Liquid samples parse, and the douze.yml samples follow the workflow schema.
+  check-code:
     needs: headings
+    uses: check-code
+  highlight:
+    needs: check-code
     uses: highlight
     with:
       themes: [github-light, github-dark]

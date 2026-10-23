@@ -164,5 +164,5 @@ copy button; `/assets/code.css` holds the theme rules.
 - [Syntax highlighting guide](../../guide/syntax-highlighting.md)
 - [Code hovers guide](../../guide/code-hovers.md)
 - [markdown](markdown.md), [hover-typescript](hover-typescript.md),
-  [hover-csharp](hover-csharp.md), [hover-go](hover-go.md)
+  [hover-csharp](hover-csharp.md), [hover-go](hover-go.md), [check-code](check-code.md)
 - [The `markdown.code` settings](../configuration.md)

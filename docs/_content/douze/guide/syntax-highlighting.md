@@ -222,6 +222,24 @@ The block template gets `code`: `language`, `grammar`, `meta`, `options`, `title
 `Douze/Highlighting/Templates/block.liquid` in the repository, a good starting point. Templates read the page's data
 like any template, so they can use its `lang` or the `t` filter.
 
+## Check the samples
+
+Highlighting shows code; it does not tell whether the code is valid. The [check-code](../reference/steps/check-code.md)
+step, before `highlight`, parses the YAML, JSON, XML and Liquid fences and fails the build on a sample that does not
+parse. A ` ```yaml title="douze.yml" ` sample is also checked against the workflow schema, so an option renamed in a
+new version of Douze is caught in the documentation that still shows it:
+
+```yaml title="douze.yml"
+check-code:
+  needs: markdown
+  uses: check-code
+highlight:
+  needs: check-code
+  uses: highlight
+```
+
+A sample that is wrong on purpose takes the `nocheck` word: ` ```yaml nocheck `.
+
 ## Caching
 
 The tokens of each fence are kept in the disk cache by language and code, together with the step's settings. A page
@@ -232,5 +250,6 @@ that changes highlights only its new fences, and a theme change highlights every
 
 - [highlight step reference](../reference/steps/highlight.md)
 - [Code hovers](code-hovers.md)
+- [check-code step reference](../reference/steps/check-code.md)
 - [markdown step reference](../reference/steps/markdown.md)
 - [Markdown](markdown.md)

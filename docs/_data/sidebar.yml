@@ -118,6 +118,7 @@
         - { label: hover-typescript, link: /douze/reference/steps/hover-typescript/ }
         - { label: hover-csharp, link: /douze/reference/steps/hover-csharp/ }
         - { label: hover-go, link: /douze/reference/steps/hover-go/ }
+        - { label: check-code, link: /douze/reference/steps/check-code/ }
         - { label: images, link: /douze/reference/steps/images/ }
         - { label: image-map, link: /douze/reference/steps/image-map/ }
         - { label: pictures, link: /douze/reference/steps/pictures/ }

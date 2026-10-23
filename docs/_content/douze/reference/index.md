@@ -25,6 +25,6 @@ and walkthroughs, start with the [guide](../guide/workflow-architecture.md) or t
 | Data | [data](steps/data.md), [frontmatter](steps/frontmatter.md), [parse](steps/parse.md) |
 | Paths and lists | [permalink](steps/permalink.md), [collect](steps/collect.md), [paginate](steps/paginate.md), [localize](steps/localize.md), [fork](steps/fork.md) |
 | Rendering | [replace](steps/replace.md), [liquid](steps/liquid.md), [markdown](steps/markdown.md), [headings](steps/headings.md), [layout](steps/layout.md) |
-| Code | [highlight](steps/highlight.md), [hover-typescript](steps/hover-typescript.md), [hover-csharp](steps/hover-csharp.md), [hover-go](steps/hover-go.md) |
+| Code | [highlight](steps/highlight.md), [hover-typescript](steps/hover-typescript.md), [hover-csharp](steps/hover-csharp.md), [hover-go](steps/hover-go.md), [check-code](steps/check-code.md) |
 | Images | [images](steps/images.md), [image-map](steps/image-map.md), [pictures](steps/pictures.md), [social-image](steps/social-image.md) |
 | Output | [write](steps/write.md) |

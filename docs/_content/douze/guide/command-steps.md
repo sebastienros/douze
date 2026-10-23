@@ -182,6 +182,25 @@ error: minify: /blog/a.html: command exited with code 2 for '/blog/a.html': <las
 or `ignore`. Node prints some warnings on stderr (`ExperimentalWarning`): set `NODE_NO_WARNINGS: "1"` in `env`, or
 `stderr: warn`.
 
+## Linters and validators
+
+A linter fails the build the same way: a non-zero exit code or output on stderr. Run it on a branch, a step that no
+other step needs, so that the files it consumes do not replace the files that continue to `write`:
+
+```yaml title="douze.yml"
+lint-css:
+  needs: pages
+  match: "**/*.css"
+  run: "npx stylelint \"{{ inputs }}/**/*.css\""
+validate-html:
+  needs: layout
+  match: "**/*.html"
+  run: "npx html-validate {{ inputs }}"
+```
+
+For the syntax of code samples (YAML, JSON, XML, Liquid, `douze.yml`) and of generated feeds, the built-in
+[check-code](../reference/steps/check-code.md) step needs no tool.
+
 ## Caching
 
 A command's result is cached by the files it received, its fields, its `version`, and the content of the files its
@@ -198,5 +217,6 @@ the step on every build.
 - [Environment variables](environment-variables.md)
 - [Workflow architecture](workflow-architecture.md)
 - [Minify HTML with a command step](../recipes/minify-html.md)
+- [check-code step reference](../reference/steps/check-code.md)
 - [Write a Node worker step](../recipes/node-worker.md)
 - [Add search with Pagefind](../recipes/pagefind.md)

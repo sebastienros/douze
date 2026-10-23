@@ -331,7 +331,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `needs` | none | a step name or a list: the steps whose files, and data, enter this step |
 | `inputs` | none | a glob or a list: the source files that enter this step |
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `check-code`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -858,6 +858,33 @@ The tokens of each fence are kept in the cache by its language and code, so that
 new fences. Tokenization uses [TextMateSharp](https://github.com/danipen/TextMateSharp) on Oniguruma (a native library
 next to `douze`, like libvips); Douze reads the grammars and resolves the themes itself, with vscode-textmate's rules,
 and gives Shiki's tokens.
+
+# check-code
+
+The `check-code` step checks that code is well formed, with parsers built into Douze: the fences of HTML pages (as the
+`markdown` step writes them, so before `highlight`), and any other file whole, by its extension (a feed after
+`layout`). Files pass through unchanged.
+
+````yaml
+  check-code:  { needs: markdown, uses: check-code }
+  highlight:   { needs: check-code, uses: highlight }
+  check-files: { needs: layout, uses: check-code, match: ["**/*.xml", "**/*.json"] }
+````
+
+- Validators (`languages`, all by default): `yaml` (SharpYaml, every document, duplicate keys), `json` (duplicate
+  properties), `jsonc` (comments and trailing commas), `jsonl` (a value per line), `xml` (`XmlReader`, a DTD is ignored
+  and nothing is fetched), `liquid` (the build's parser, shortcodes included). Built-in aliases (`yml`, `svg`,
+  `webmanifest`, `ndjson`...) and `aliases` (`{ compose: yaml }`) map fence languages and extensions to them.
+- A YAML fence titled `douze.yml`, or a file of that name (`workflow` lists the names), is also checked against the
+  workflow schema: unknown keys, unknown steps, unknown or invalid `with` options. `needs` to steps the sample does not
+  show are not errors, and a sample of steps without the `steps:` line is read as its content.
+- The `nocheck` meta word (`skip`) leaves a fence out, `ignore` globs leave pages out; `errors: warn` makes errors
+  warnings, reported again when a page is replayed from the cache.
+- Errors name the page, the fence's language and number, its first line, then the line and column in the fence.
+
+CSS, Markdown and HTML have no validator: their parsers recover from any text, so a parse catches nothing. A linter
+(stylelint, html-validate) runs as a `run:` step on a branch of the workflow (a step no other step needs), and fails the
+build by its exit code or its stderr.
 
 # commands
 
