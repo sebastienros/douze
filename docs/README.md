@@ -1,7 +1,8 @@
 # Douze documentation site
 
-The site at <https://sebastienros.github.io/douze/>, built by Douze itself from this folder (`douze.yml`) and deployed
-by `.github/workflows/docs.yml`. The design documents in this folder (`*-plan.md`, `code-hover-steps.md`) are not part
+The site at <https://sebastienros.github.io/douze/>, built by Douze itself from this folder (`douze.yml`). Every pull
+request builds it with its own Douze on Linux, macOS and Windows and checks it (`.github/workflows/pr.yml`), and
+`.github/workflows/docs.yml` deploys it from `main`. The design documents in this folder (`*-plan.md`, `code-hover-steps.md`) are not part
 of the site.
 
 ```bash

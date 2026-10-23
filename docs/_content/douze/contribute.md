@@ -79,7 +79,8 @@ source-generated context in `Douze/Liquid/DouzeJsonContext.cs`: a new type that 
 
 | Workflow | Runs on | Does |
 |---|---|---|
-| `pr.yml` | pull requests to `main` | tests, packs the native AOT tool for Linux x64, macOS arm64 and Windows x64, smoke tests it and the install scripts |
+| `pr.yml` | pull requests to `main` | tests, builds the documentation site on Linux, macOS and Windows (and checks it on Linux: lint, links, Playwright), packs the native AOT tool for Linux x64, macOS arm64 and Windows x64, smoke tests it and the install scripts |
+| `docs.yml` | pushes to `main` that change `docs/` or `Douze/` | builds the documentation site and deploys it to GitHub Pages |
 | `build.yml` | pushes to `main` | tests, then publishes framework dependent preview packages to Feedz |
 | `publish.yml` | `v*` tags | publishes the native AOT tool packages of each platform, and a CoreCLR fallback, to NuGet |
 
