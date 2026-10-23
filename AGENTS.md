@@ -56,6 +56,14 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
   downloads a tool declares a `ToolRequirement` (`NpmToolRequirement`, `NuGetToolRequirement`, `GoToolRequirement`),
   which `douze tools install` installs ahead. Pin a new default version with the integrity of every platform from the
   registry.
+- `Douze/Highlighting/`: the `highlight` step's engine (`Workflow/Steps/HighlightStep.cs`). `TextMateBundle` reads the
+  bundled grammars and themes (`textmate.zip`, written by `scripts/update-textmate.cs`: tm-grammars and tm-themes at the
+  versions of Shiki); `CodeTokenizer` tokenizes with TextMateSharp (one pool of registries per language: a grammar is not
+  used by two threads at once; grammars read into TextMateSharp's rules by Douze, whose reader drops numbers and booleans)
+  and styles tokens in every theme at once;
+  `CodeTheme` normalizes themes and resolves styles with vscode-textmate's rule trie, `Color` is the contrast arithmetic;
+  `CodeMeta` parses fence metas, `CodeBlockBuilder` builds the block model (frames, markers, sections, twoslash nodes)
+  that the Liquid templates render (`Templates/`, the defaults).
 - `Douze/Markdown/`: Markdown rendering. `MarkdownOptions` is the `markdown:` section of `douze.yml`;
   `MarkdownPipelineFactory` builds the one Markdig pipeline of a build, which `MarkdownRenderer` (`BuildContext.Markdown`)
   renders with pooled renderers: anything that renders Markdown uses it, never a second configuration. Douze's own

@@ -32,5 +32,6 @@ internal static class BuiltInSteps
             ["hover-typescript"] = static d => new TwoslashStep(d),
             ["hover-csharp"] = static d => new CSharpStep(d),
             ["hover-go"] = static d => new GoStep(d),
+            ["highlight"] = static d => new HighlightStep(d),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 }

@@ -288,7 +288,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `write` |
 | `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `write` |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `twoslash`, `csharp`, `go`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -753,6 +753,50 @@ has the `trigger` word when it is set) gets a `data-twoslash` attribute with the
 - gopls has no prebuilt binaries: on first use, `go install golang.org/x/tools/gopls@<version>` builds it into
   `<cache>/tools/gopls/<version>/` (`version`, or `path` to a gopls). It needs Go (`go`, or the `PATH`'s), which also
   adds the requirements and loads the packages; the Go version is part of the outcomes' key.
+
+# highlight
+
+The `highlight` step highlights the code fences of HTML pages, as the `markdown` step writes them, with TextMate
+grammars and themes (the grammars of VS Code and of most highlighters for the web), without Node:
+
+````yaml
+  highlight: { needs: markdown, uses: highlight,
+               with: { themes: [github-dark, github-light], stylesheet: assets/code.css } }
+````
+
+- Grammars and themes: every grammar of [tm-grammars](https://github.com/shikijs/textmate-grammars-themes) and every
+  theme of tm-themes are bundled (the versions of Shiki 4.5), and `grammars` adds files of the source folder (names to
+  grammar files: `grammars: { mylang: syntax/mylang.json }`); `aliases` maps fence languages to grammar names. A fence
+  whose language no grammar knows is plain text, with one warning per build listing the languages and their fences.
+  `text`, `txt`, `plain` and `plaintext` are plain text.
+- Themes: `themes` lists bundled names or theme files (VS Code's JSON); the first is the default, the others are
+  selected by CSS. Each token is a `<span style="--0:#color;--1:#color">`, a variable per theme (with `--0fs`, `--0fw`
+  and `--0td` for italic, bold and decorations), so that a stylesheet switches themes without another render.
+  `min-contrast` (5.5) makes token colors readable on the background and on marked lines (a WCAG contrast ratio, the
+  rules of Expressive Code); 0 keeps the theme's colors. `markers` sets the background of `mark`, `ins` and `del` lines
+  in each theme, which that applies to.
+- Fence options, in the meta: `title="file.cs"` (else a file name in a comment on one of the first lines, which is
+  removed: `title-from-comment`), `frame=code|terminal|none` (terminal languages get a terminal frame), line markers
+  `{1,3-5}`, `ins={2}`, `del={3}` (`{"Label":2-3}` labels them), inline markers `"text"` and `/regex/` (keyed the same
+  way), `diff` fences (with `lang=ts` to highlight the code), `collapse={4-10}` with `collapseStyle`,
+  `showLineNumbers` and `startLineNumber=`, `wrap`. Every option is also given to the template.
+- Twoslash: a fence with a `data-twoslash` attribute (from `hover-typescript`, `hover-csharp` or `hover-go`) gets its
+  popups: the hovered code wraps the hover's type (highlighted as a block of its own, in the fence's language),
+  documentation (Markdown) and tags; errors, queries, highlights and custom tags too.
+- Markup: Liquid templates of the includes folder render a block (`templates: { block: code/block.liquid }`, given
+  `code`: `language`, `title`, `frame`, `terminal`, `copy` (the code to copy, without the comment lines of a terminal),
+  `options`, `lines` (each with `html`, `text`, `number`, `marker`, `label`, `indent`), `rows` (the lines grouped in
+  collapsed `section`s), `line_numbers`, `wrap`, `popup`) and an annotation (`templates: { popup: ... }`, given `node`:
+  `kind`, `content`, `type`, `docs`, `tags`, `text`...). Douze's defaults write
+  `<figure class="code"><figcaption>...</figcaption><pre><code><span class="line">...` and the twoslash classes of
+  other renderers (`twoslash-hover`, `twoslash-popup`); `stylesheet` writes a stylesheet for them. The templates read
+  the page's data like any template (its `lang`, the `t` filter).
+- `tab-width` replaces tabs; the code is trimmed as Markdown highlighters do (trailing spaces, blank lines around it).
+
+The tokens of each fence are kept in the cache by its language and code, so that a changed page highlights only its
+new fences. Tokenization uses [TextMateSharp](https://github.com/danipen/TextMateSharp) on Oniguruma (a native library
+next to `douze`, like libvips); Douze reads the grammars and resolves the themes itself, with vscode-textmate's rules,
+and gives Shiki's tokens.
 
 # commands
 

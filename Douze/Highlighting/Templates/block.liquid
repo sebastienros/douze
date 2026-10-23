@@ -1,0 +1,20 @@
+{%- comment -%}
+  Douze's default markup of a highlighted code block (the `highlight` step's `templates.block`). `code` is the block:
+  language, title, frame (code, terminal, none), copy (the text to copy), lines and rows (lines grouped in collapsed
+  sections), line_numbers, popup (a type in a twoslash popup). Each line's `html` is its highlighted code.
+{%- endcomment -%}
+<figure class="code code-{{ code.frame }}{% if code.title %} has-title{% endif %}" data-language="{{ code.language }}">
+{%- if code.title or code.frame == 'terminal' %}<figcaption class="code-title">{{ code.title }}</figcaption>{% endif -%}
+<pre{% if code.wrap %} class="wrap"{% endif %}><code>
+{%- for row in code.rows -%}
+{%- if row.section %}<details class="code-section"><summary>{{ row.lines.size }} {% if row.lines.size == 1 %}line{% else %}lines{% endif %}</summary>{% endif -%}
+{%- for line in row.lines -%}
+<span class="line{% if line.marker %} {{ line.marker }}{% endif %}"{% if line.label %} data-label="{{ line.label }}"{% endif %}>
+{%- if code.line_numbers %}<span class="line-number" aria-hidden="true">{{ line.number }}</span>{% endif -%}
+{{ line.html }}</span>
+{% endfor -%}
+{%- if row.section %}</details>{% endif -%}
+{%- endfor -%}
+</code></pre>
+{%- unless code.popup or code.frame == 'none' %}<button class="code-copy" type="button" title="Copy" data-code="{{ code.copy }}">Copy</button>{% endunless -%}
+</figure>

@@ -1,0 +1,146 @@
+[
+ {
+  "lang": "csharp",
+  "code": "using System;\n\n// A record with a generic method\npublic record Point(int X, int Y)\n{\n    public T Map<T>(Func<int, int, T> f) where T : notnull => f(X, Y);\n}\n\nvar p = new Point(1, 2);\nConsole.WriteLine($\"x = {p.X}, y = {p.Y:D3}\");\n#pragma warning disable CS0168\nstring raw = \"\"\"\n    raw \"string\"\n    \"\"\";"
+ },
+ {
+  "lang": "cs",
+  "code": "namespace Demo;\n\n[Obsolete(\"Use B\")]\ninternal static class A\n{\n    /// <summary>Doc comment.</summary>\n    public static async Task<int> RunAsync(CancellationToken ct = default)\n    {\n        await Task.Delay(10, ct);\n        return 42 is > 40 and < 50 ? 1 : 0;\n    }\n}"
+ },
+ {
+  "lang": "typescript",
+  "code": "import { readFile } from \"node:fs/promises\";\n\ninterface Options<T extends object = {}> {\n  name: string;\n  value?: T;\n}\n\nexport async function load(path: string): Promise<Options> {\n  const text = await readFile(path, \"utf8\");\n  return JSON.parse(text) as Options;\n}\n\nconst re = /^a(b|c)+$/gi;\nenum Color { Red = 1, Green }\ntype Pair = [left: number, right: number];"
+ },
+ {
+  "lang": "ts",
+  "code": "class Stack<T> {\n  #items: T[] = [];\n  push(item: T): this { this.#items.push(item); return this; }\n  get size() { return this.#items.length; }\n}\nconst s = new Stack<string>().push(`a ${1 + 2} b`);"
+ },
+ {
+  "lang": "tsx",
+  "code": "export function Button({ label }: { label: string }) {\n  return <button className=\"btn\" onClick={() => alert(label)}>{label}</button>;\n}"
+ },
+ {
+  "lang": "javascript",
+  "code": "// comment\nconst sum = (...xs) => xs.reduce((a, b) => a + b, 0);\nclass A extends B { static x = 1; }\nexport default { sum };"
+ },
+ {
+  "lang": "js",
+  "code": "document.querySelectorAll('a[href]').forEach(a => { a.target = '_blank'; });"
+ },
+ {
+  "lang": "json",
+  "code": "{\n  \"name\": \"demo\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"count\": 12.5,\n  \"tags\": [\"a\", \"b\"],\n  \"nested\": { \"value\": null }\n}"
+ },
+ {
+  "lang": "jsonc",
+  "code": "{\n  // a comment\n  \"compilerOptions\": { \"strict\": true, }, /* block */\n}"
+ },
+ {
+  "lang": "bash",
+  "code": "#!/usr/bin/env bash\nset -euo pipefail\nNAME=\"world\"\nfor f in *.txt; do\n  echo \"Hello, ${NAME}: $f\" | tr a-z A-Z > \"out/$f\"\ndone\nif [ -z \"$HOME\" ]; then exit 1; fi\ncurl -sSL https://example.com/install.sh | bash -s -- --quiet"
+ },
+ {
+  "lang": "sh",
+  "code": "export PATH=\"$HOME/.local/bin:$PATH\" # comment\nls -la ~/projects && cd \"$(dirname \"$0\")\""
+ },
+ {
+  "lang": "powershell",
+  "code": "$items = Get-ChildItem -Path . -Filter *.cs -Recurse\nforeach ($item in $items) {\n    Write-Host \"File: $($item.Name)\" -ForegroundColor Green\n}\n# comment\nfunction Get-Answer([int]$x) { return $x * 2 }"
+ },
+ {
+  "lang": "python",
+  "code": "import asyncio\nfrom dataclasses import dataclass\n\n@dataclass\nclass User:\n    name: str\n    age: int = 0\n\nasync def main() -> None:\n    \"\"\"Docstring.\"\"\"\n    users = [User(n) for n in (\"a\", \"b\") if n]\n    print(f\"{len(users)} users\", end=\"\\n\")\n\nasyncio.run(main())"
+ },
+ {
+  "lang": "go",
+  "code": "package main\n\nimport (\n\t\"fmt\"\n\t\"net/http\"\n)\n\nfunc handler(w http.ResponseWriter, r *http.Request) {\n\tfmt.Fprintf(w, \"Hello, %s!\", r.URL.Path[1:])\n}\n\nfunc main() {\n\thttp.HandleFunc(\"/\", handler)\n\t_ = http.ListenAndServe(\":8080\", nil)\n}"
+ },
+ {
+  "lang": "rust",
+  "code": "use std::collections::HashMap;\n\n#[derive(Debug, Clone)]\nstruct Item<'a> { name: &'a str, count: u32 }\n\nfn main() {\n    let mut map: HashMap<&str, u32> = HashMap::new();\n    *map.entry(\"a\").or_insert(0) += 1;\n    println!(\"{:?}\", map);\n}"
+ },
+ {
+  "lang": "java",
+  "code": "package demo;\n\nimport java.util.List;\n\npublic final class App {\n    @Override\n    public String toString() { return \"App\"; }\n    public static void main(String[] args) {\n        List<String> xs = List.of(\"a\", \"b\");\n        xs.forEach(System.out::println);\n    }\n}"
+ },
+ {
+  "lang": "xml",
+  "code": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<Project Sdk=\"Microsoft.NET.Sdk\">\n  <!-- comment -->\n  <PropertyGroup>\n    <TargetFramework>net10.0</TargetFramework>\n  </PropertyGroup>\n  <ItemGroup>\n    <PackageReference Include=\"Some.Package\" Version=\"1.2.3\" />\n  </ItemGroup>\n</Project>"
+ },
+ {
+  "lang": "html",
+  "code": "<!doctype html>\n<html lang=\"en\">\n<head>\n  <style>body { color: #333; margin: 0 auto; }</style>\n  <script>const x = 1 < 2 && \"a\";</script>\n</head>\n<body class=\"home\"><a href=\"/\">Home &amp; away</a></body>\n</html>"
+ },
+ {
+  "lang": "css",
+  "code": "@media (prefers-color-scheme: dark) {\n  :root { --bg: #111; }\n}\n.card > a:hover::after { content: \"\\2192\"; transition: opacity 0.2s ease-in-out; }"
+ },
+ {
+  "lang": "yaml",
+  "code": "# comment\nname: build\non:\n  push:\n    branches: [ main ]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: |\n          echo \"multi\"\n          echo line\n    env: { DEBUG: \"true\", COUNT: 3 }"
+ },
+ {
+  "lang": "toml",
+  "code": "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n\n[dependencies]\nserde = { version = \"1\", features = [\"derive\"] } # comment"
+ },
+ {
+  "lang": "ini",
+  "code": "; comment\n[section]\nkey = value\nother=42"
+ },
+ {
+  "lang": "dockerfile",
+  "code": "FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build\nWORKDIR /src\nCOPY . .\nRUN dotnet publish -c Release -o /app\n\nFROM mcr.microsoft.com/dotnet/aspnet:10.0\nCOPY --from=build /app .\nENTRYPOINT [\"dotnet\", \"App.dll\"]"
+ },
+ {
+  "lang": "sql",
+  "code": "SELECT u.id, COUNT(*) AS orders\nFROM users u\nLEFT JOIN orders o ON o.user_id = u.id\nWHERE u.created_at > '2024-01-01' -- comment\nGROUP BY u.id\nHAVING COUNT(*) > 2;"
+ },
+ {
+  "lang": "markdown",
+  "code": "# Title\n\nSome *emphasis*, **strong** and `code`.\n\n- item [link](https://example.com)\n- [ ] task\n\n```js\nconst x = 1;\n```\n\n> quote"
+ },
+ {
+  "lang": "md",
+  "code": "## Heading\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n<details><summary>More</summary>Text</details>"
+ },
+ {
+  "lang": "diff",
+  "code": "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n context\n-removed line\n+added line"
+ },
+ {
+  "lang": "http",
+  "code": "POST /api/items HTTP/1.1\nHost: localhost:5000\nContent-Type: application/json\n\n{ \"name\": \"item\" }"
+ },
+ {
+  "lang": "bicep",
+  "code": "param location string = resourceGroup().location\n\nresource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {\n  name: 'st${uniqueString(resourceGroup().id)}'\n  location: location\n  kind: 'StorageV2'\n}"
+ },
+ {
+  "lang": "vue",
+  "code": "<template>\n  <button @click=\"count++\">{{ count }}</button>\n</template>\n\n<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst count = ref(0);\n</script>\n\n<style scoped>\nbutton { color: red; }\n</style>"
+ },
+ {
+  "lang": "razor",
+  "code": "@page \"/counter\"\n<h1>Counter</h1>\n<p>Count: @currentCount</p>\n<button @onclick=\"Increment\">Click</button>\n@code {\n    private int currentCount = 0;\n    private void Increment() => currentCount++;\n}"
+ },
+ {
+  "lang": "groovy",
+  "code": "def greet(String name) {\n    println \"Hello, ${name}!\"\n}\ngreet('world')"
+ },
+ {
+  "lang": "nix",
+  "code": "{ pkgs ? import <nixpkgs> {} }:\npkgs.mkShell {\n  buildInputs = [ pkgs.dotnet-sdk ];\n  shellHook = \"echo ready\";\n}"
+ },
+ {
+  "lang": "properties",
+  "code": "# comment\napp.name=demo\napp.port = 8080"
+ },
+ {
+  "lang": "dotenv",
+  "code": "# comment\nAPI_KEY=\"secret\"\nPORT=8080"
+ },
+ {
+  "lang": "text",
+  "code": "Plain text, no grammar.\n  indented"
+ }
+]
