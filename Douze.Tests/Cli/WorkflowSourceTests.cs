@@ -143,6 +143,34 @@ public class WorkflowSourceTests : IDisposable
     }
 
     [Fact]
+    public async Task VarsReachTheTemplates()
+    {
+        var output = Path.Combine(_folder, "out");
+        await WriteAsync(WorkflowSource.DefaultFileName, "vars:\n  label: default\n");
+        await WriteAsync(Path.Combine("_content", "index.md"), "{{ vars.label }}");
+
+        var (workflow, site) = await WorkflowSource.LoadAsync(CommandLine.Parse(["-s", _folder, "-o", output, "--var", "LABEL=from the command line"]), _folder);
+
+        var result = await SiteBuilder.BuildAsync(WorkflowGraph.Build(workflow), site, new BuildOptions
+        {
+            Trace = NullTraceRecorder.Instance,
+            View = SilentProgressView.Discard,
+            Cancellation = TestContext.Current.CancellationToken,
+        });
+
+        Assert.True(result.Succeeded, string.Join(Environment.NewLine, result.Errors));
+        Assert.Contains("from the command line", await File.ReadAllTextAsync(Path.Combine(output, "index.html"), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task VarsNeedAWorkflowFile()
+    {
+        var error = await Assert.ThrowsAsync<WorkflowValidationException>(() => WorkflowSource.LoadAsync(CommandLine.Parse(["-s", _folder, "--var", "a=1"]), _folder));
+
+        Assert.Equal("error: unknown variable 'a' in '--var a'; declare it in 'vars'", Assert.Single(error.Errors).ToString());
+    }
+
+    [Fact]
     public async Task TwoPipelineFixtureBuilds()
     {
         var source = Path.Combine(WorkflowLoaderTests.Fixtures, "two-pipelines");

@@ -50,7 +50,7 @@ public class WorkflowLoaderTests
             steps:
               write: { inputs: "**", uses: write }
             jobs: {}
-            """, "unknown key 'jobs'; expected 'site', 'markdown' or 'steps'", 3, 1);
+            """, "unknown key 'jobs'; expected 'site', 'vars', 'markdown' or 'steps'", 3, 1);
     }
 
     [Fact]
@@ -93,6 +93,51 @@ public class WorkflowLoaderTests
     }
 
     [Fact]
+    public void VarsAreSetByTheEnvironmentThenTheCommandLine()
+    {
+        var env = new Dictionary<string, string> { ["DOUZE_VARS__OG"] = "false", ["DOUZE_VARS__label"] = "env", ["SECRET"] = "s3cret" };
+        var environment = new WorkflowEnvironment("linux", "x64", env, watch: false,
+            [VarOverride.FromValue("label", "cli"), VarOverride.FromVariable("token", "SECRET"), VarOverride.FromVariable("count", "UNSET")]);
+
+        var file = WorkflowLoader.Load("""
+            steps:
+              pages: { inputs: "**", uses: frontmatter }
+              og: { needs: pages, uses: markdown, enabled: "vars.og" }
+              write: { needs: og, uses: write }
+            vars:
+              og: true
+              label: default
+              token: ~
+              count: 1
+            """, "douze.yml", environment: environment);
+
+        // The section can follow the steps; an unset variable of --env leaves the value as it is.
+        Assert.Equal(["pages", "write"], file.Workflow!.Steps.Select(x => x.Name));
+        Assert.Equal(new NodeObject { ["og"] = false, ["label"] = "cli", ["token"] = "s3cret", ["count"] = 1 }, file.Vars);
+    }
+
+    [Fact]
+    public void VarsErrors()
+    {
+        var env = new Dictionary<string, string> { ["NUM"] = "abc" };
+        var environment = new WorkflowEnvironment("linux", "x64", env, watch: false,
+            [VarOverride.FromValue("ogg", "1"), VarOverride.FromVariable("count", "NUM"), VarOverride.FromValue("og", "nope"), VarOverride.FromValue("list", "x")]);
+
+        var error = Assert.Throws<WorkflowValidationException>(() => WorkflowLoader.Load("""
+            vars: { og: true, count: 1, list: [a, b] }
+            """, "douze.yml", environment: environment));
+
+        // The value of an environment variable mapped by --env is not shown.
+        Assert.Equal(
+        [
+            "error: unknown variable 'ogg' in '--var ogg'; declare it in 'vars'; did you mean 'og'?",
+            "error: variable 'count' must be an integer; the value of '--env count=NUM' is not",
+            "error: variable 'og' must be true or false, not 'nope' ('--var og')",
+            "error: variable 'list' is a list and cannot be set by '--var list'",
+        ], error.Errors.Select(x => x.ToString()));
+    }
+
+    [Fact]
     public void InvalidEnabledExpression()
     {
         var error = Assert.Single(Errors("""
@@ -107,7 +152,7 @@ public class WorkflowLoaderTests
     [Fact]
     public void RootMustBeAMapping()
     {
-        AssertError("- a\n- b\n", "a workflow file must be a mapping with 'site', 'markdown' and 'steps'", 1, 1);
+        AssertError("- a\n- b\n", "a workflow file must be a mapping with 'site', 'vars', 'markdown' and 'steps'", 1, 1);
     }
 
     [Fact]
@@ -414,7 +459,7 @@ public class WorkflowLoaderTests
 
         Assert.Equal(
             [
-                "douze.yml(1,1): error: unknown key 'jobs'; expected 'site', 'markdown' or 'steps'",
+                "douze.yml(1,1): error: unknown key 'jobs'; expected 'site', 'vars', 'markdown' or 'steps'",
                 "douze.yml(3,22): error: 'mode' is only valid with 'run'",
                 "douze.yml(4,3): error: invalid step name 'B': use lowercase letters, digits and dashes",
             ],

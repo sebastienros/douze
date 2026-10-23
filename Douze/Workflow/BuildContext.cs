@@ -102,7 +102,7 @@ internal sealed class BuildContext : IAsyncDisposable
     /// <summary>
     /// What templates see of the site settings, under <c>site</c>: <c>url</c> when it is set, and <c>locales</c>
     /// (<see cref="LocaleSet.ToNode"/>) when the site has locales. The other settings (folders, output, parallelism)
-    /// configure the build and are not exposed.
+    /// configure the build and are not exposed. The variables are under <c>vars</c>.
     /// </summary>
     private static NodeObject SiteValues(SiteOptions site)
     {
@@ -118,7 +118,14 @@ internal sealed class BuildContext : IAsyncDisposable
             values["locales"] = site.Locales.ToNode();
         }
 
-        return values.Count == 0 ? new NodeObject() : new NodeObject { ["site"] = values };
+        var settings = values.Count == 0 ? new NodeObject() : new NodeObject { ["site"] = values };
+
+        if (site.Vars.Count > 0)
+        {
+            settings["vars"] = site.Vars;
+        }
+
+        return settings;
     }
 
     /// <summary>
