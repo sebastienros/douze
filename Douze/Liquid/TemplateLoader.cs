@@ -183,6 +183,27 @@ internal sealed class TemplateLoader : ITemplateFileProvider, ITemplateCache
     }
 
     /// <summary>
+    /// The <see cref="Tags.ShortcodeRegistry.Hash"/> of the shortcodes the templates were parsed with.
+    /// </summary>
+    public Hash128 ShortcodesHash { get; private set; }
+
+    /// <summary>
+    /// Forgets every file and parsed template when the shortcodes changed (watch mode): the templates parsed before
+    /// call the previous shortcodes, or tags that are gone.
+    /// </summary>
+    public void UseShortcodes(Hash128 hash)
+    {
+        if (hash == ShortcodesHash)
+        {
+            return;
+        }
+
+        ShortcodesHash = hash;
+        InvalidateAll();
+        _parsed.Clear();
+    }
+
+    /// <summary>
     /// Drops the slots of parsed templates that nobody holds anymore: a watch session parses the new content of every
     /// page it rebuilds.
     /// </summary>

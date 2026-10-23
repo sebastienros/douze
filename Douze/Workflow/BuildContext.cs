@@ -24,9 +24,11 @@ internal sealed class BuildContext : IAsyncDisposable
     /// <exception cref="WorkflowValidationException">A shortcode is invalid: the build does not start.</exception>
     public static async Task<BuildContext> CreateAsync(SiteOptions site, BuildOptions options, IProgressView view, ITraceRecorder trace, CancellationToken ct = default)
     {
-        // Watch mode reuses a template loader across rebuilds: the shortcodes are registered on its parser.
+        // Watch mode reuses a template loader across rebuilds: the shortcodes are registered on its parser, and what it
+        // parsed with other shortcodes is parsed again.
         var parser = options.Templates?.Parser as DouzeParser ?? Liquid.LiquidOptions.CreateParser();
         var shortcodes = await ShortcodeRegistry.ScanAsync(site.Source, site.ShortcodesFolder, parser, ct);
+        options.Templates?.UseShortcodes(shortcodes.Hash);
 
         return new BuildContext(site, options, view, trace, parser, shortcodes);
     }
