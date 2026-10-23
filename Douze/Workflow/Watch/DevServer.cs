@@ -5,8 +5,8 @@ namespace Douze.Workflow.Watch;
 
 /// <summary>
 /// The server of <c>douze serve</c>: serves the output folder on <c>http://localhost:&lt;port&gt;/</c> (GET and HEAD),
-/// with the live reload script injected before <c>&lt;/body&gt;</c> in HTML pages and the live reload events on
-/// <c>/__douze/events</c> (<see cref="LiveReload"/>). A folder URL serves its <c>index.html</c>, a folder without its
+/// with the live reload script injected before <c>&lt;/body&gt;</c> in HTML pages and the live reload WebSocket on
+/// <c>/__douze/socket</c> (<see cref="LiveReload"/>). A folder URL serves its <c>index.html</c>, a folder without its
 /// final slash redirects to it, a missing file serves <c>/404.html</c> when the site has one. Nothing is cached by the
 /// browser: every page asks again after a reload.
 /// </summary>
@@ -19,7 +19,7 @@ internal sealed class DevServer : IAsyncDisposable
 
     /// <param name="root">The output folder, read for every request: a workflow file can move it.</param>
     /// <param name="port">The port to listen on.</param>
-    /// <param name="reload">The live reload events.</param>
+    /// <param name="reload">The live reload of the pages.</param>
     public DevServer(Func<string?> root, int port, LiveReload reload)
     {
         _root = root;

@@ -80,7 +80,7 @@ internal static partial class CommandRequirements
     }
 
     /// <summary>
-    /// The tool of a step's <c>tool</c> option, which Douze downloads (<see cref="NpmTool.Known"/>), or null.
+    /// The tool of a step's <c>tool</c> option, which Douze downloads (<see cref="Tools.NpmTool.Known"/>), or null.
     /// </summary>
     /// <exception cref="WorkflowValidationException">Douze does not know the tool.</exception>
     public static Tools.ToolRequirement? ToolRequirement(StepDefinition definition, BuildContext context)
@@ -91,7 +91,7 @@ internal static partial class CommandRequirements
         }
 
         var (tool, version) = Tools.NpmTool.Parse(option)
-            ?? throw new WorkflowValidationException($"unknown tool '{option}' for step '{definition.Name}'; Douze knows {string.Join(", ", Tools.NpmTool.Known.Keys.Order(StringComparer.Ordinal))}", definition.Location);
+            ?? throw new WorkflowValidationException($"unknown tool '{option}' on step '{definition.Name}'; Douze knows {Yaml.WorkflowSchema.Expected([.. Tools.NpmTool.Known.Keys.Order(StringComparer.Ordinal)])}", definition.Location);
         var installer = new Tools.ToolInstaller(context.ToolsRoot, null, (level, message) => context.View.Message(level, definition.Name, message));
         return new Tools.NpmToolRequirement(tool, version, installer, $"run 'douze tools install', or remove the option 'tool' of step '{definition.Name}' and run a {tool.Name} on PATH");
     }

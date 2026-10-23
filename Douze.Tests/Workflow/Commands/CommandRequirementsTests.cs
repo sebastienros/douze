@@ -121,7 +121,7 @@ public class CommandRequirementsTests : CommandTestBase
 
         var e = await Assert.ThrowsAsync<WorkflowValidationException>(() => CheckAsync(Command("search", "{{ tool }}", CommandMode.Batch, inputs: ["**"]) with { Tool = "pagefnd" }));
 
-        Assert.Equal("unknown tool 'pagefnd' for step 'search'; Douze knows lightningcss, pagefind", e.Errors.Single().Message);
+        Assert.Equal("unknown tool 'pagefnd' on step 'search'; Douze knows 'lightningcss' or 'pagefind'", e.Errors.Single().Message);
     }
 
     private async Task<IReadOnlyList<RequirementResult>> CheckAsync(params StepDefinition[] steps)
