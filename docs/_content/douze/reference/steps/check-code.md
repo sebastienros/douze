@@ -168,5 +168,6 @@ steps, so an unchanged site does not run them again.
 
 - [markdown](markdown.md)
 - [highlight](highlight.md)
+- [check-links](check-links.md)
 - [Command steps](../../guide/command-steps.md)
 - [Configuration](../configuration.md)

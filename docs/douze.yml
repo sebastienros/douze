@@ -67,8 +67,14 @@ steps:
   layout:
     needs: highlight
     uses: layout
-  write:
+  links:
     needs: layout
+    uses: links
+  check-links:
+    needs: links
+    uses: check-links
+  write:
+    needs: links
     uses: write
   search:
     needs: write
