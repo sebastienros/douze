@@ -112,7 +112,7 @@ public class FileContentTests
         var fs = new CountingFileSystem();
         await fs.WriteTextFileAsync("/a.md", "hello");
 
-        var content = FileContent.FromFile(fs, "/a.md", 5);
+        var content = FileContent.FromFile(fs, "/a.md");
 
         Assert.Equal(0, fs.Opens);
         Assert.Null(content.Length);
@@ -132,7 +132,7 @@ public class FileContentTests
         var fs = new CountingFileSystem();
         await fs.WriteTextFileAsync("/a.md", "hello");
 
-        var content = FileContent.FromFile(fs, "/a.md", 5);
+        var content = FileContent.FromFile(fs, "/a.md");
 
         await content.LoadAsync(TestContext.Current.CancellationToken);
         await content.LoadAsync(TestContext.Current.CancellationToken);
@@ -153,7 +153,7 @@ public class FileContentTests
         var fs = new MemoryFileSystem();
         await fs.WriteTextFileAsync("/a.md", "# Title\n\nBody 世界");
 
-        var lazy = FileContent.FromFile(fs, "/a.md", 0);
+        var lazy = FileContent.FromFile(fs, "/a.md");
         var text = FileContent.FromText("# Title\n\nBody 世界");
 
         Assert.True(lazy.IsText);
@@ -171,7 +171,7 @@ public class FileContentTests
         var fs = new MemoryFileSystem();
         await fs.WriteBinaryFileAsync("/a.html", bytes);
 
-        Assert.Equal("text", await FileContent.FromFile(fs, "/a.html", bytes.Length).ReadTextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("text", await FileContent.FromFile(fs, "/a.html").ReadTextAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public class FileContentTests
         var fs = new CountingFileSystem();
         await fs.WriteBinaryFileAsync("/image.jpg", [1, 2, 3]);
 
-        var content = FileContent.FromFile(fs, "/image.jpg", 3);
+        var content = FileContent.FromFile(fs, "/image.jpg");
 
         await using (var stream = await content.OpenReadAsync(TestContext.Current.CancellationToken))
         {

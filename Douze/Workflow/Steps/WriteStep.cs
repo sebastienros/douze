@@ -56,10 +56,9 @@ internal sealed class WriteStep : Step, IMapStep, IReplayObserver
             try
             {
                 // Creates the directory too.
-                await using (var stream = await output.CreateFileAsync(file.Path))
+                using (var bytes = await file.Content.RentBytesAsync(ct))
                 {
-                    using var bytes = await file.Content.RentBytesAsync(ct);
-                    await stream.WriteAsync(bytes.Memory, ct);
+                    await output.WriteFileAsync(file.Path, bytes.Memory);
                     length = bytes.Memory.Length;
                 }
 
