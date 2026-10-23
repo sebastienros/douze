@@ -124,5 +124,6 @@
         - { label: pictures, link: /douze/reference/steps/pictures/ }
         - { label: social-image, link: /douze/reference/steps/social-image/ }
         - { label: layout, link: /douze/reference/steps/layout/ }
+        - { label: check-links, link: /douze/reference/steps/check-links/ }
         - { label: write, link: /douze/reference/steps/write/ }
         - { label: "run: (your own command)", link: /douze/reference/commands/ }

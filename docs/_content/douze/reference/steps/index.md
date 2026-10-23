@@ -48,6 +48,8 @@ steps:
 | [pictures](pictures.md) | map | `**/*.html` | | Rewrites the `<img>` of known images into responsive markup. |
 | [social-image](social-image.md) | map | `**/*.html`, `**/*.md` | | Renders an Open Graph image per page. |
 | [layout](layout.md) | map | `**/*.html` | `layout` | Applies layouts. |
+| [links](check-links.md#links) | map | `**/*.html` | | Reads the links and anchors of pages into `links` and `anchors`. |
+| [check-links](check-links.md) | reduce | every file | | Fails the build on links to missing files or anchors. |
 | [write](write.md) | map | every file | `write` | Writes files to the output folder. |
 | [`run:` command steps](../commands.md) | map (`filter`, `worker`) or reduce (`batch`) | every file | | Runs an executable or script of your own on the files. |
 

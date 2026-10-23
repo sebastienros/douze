@@ -34,5 +34,7 @@ internal static class BuiltInSteps
             ["hover-go"] = static d => new GoStep(d),
             ["highlight"] = static d => new HighlightStep(d),
             ["check-code"] = static d => new CheckCodeStep(d),
+            ["links"] = static d => new LinksStep(d),
+            ["check-links"] = static d => new CheckLinksStep(d),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 }
