@@ -52,6 +52,8 @@ Options:
   -s, --source <dir>             source folder (default: .)
   -o, --output <dir>             output folder (default: _site)
   -w, --workflow <file>          workflow file (default: <source>/douze.yml when it exists)
+      --var <name>=<value>       set a variable of the workflow file's 'vars' section
+      --env <name>=<variable>    set a variable from an environment variable, when it is set
   -p, --parallelism <n>          max parallel units (default: processor count)
       --keep-going               report every error instead of stopping the failing step
       --fail-fast                stop everything on the first error
@@ -263,6 +265,9 @@ site:
   url: https://example.com  # site.url in templates
   parallelism: 8         # -p wins
 
+vars:                    # see "vars"
+  og: true
+
 markdown:                # see "markdown"
   extensions: [pipetables, footnotes, alerts, customcontainers, attributes]
 
@@ -286,6 +291,34 @@ steps:
 Paths are relative to the source folder. Without `steps`, the default workflow runs with the folders of `site`.
 `douze --print-workflow` prints the steps that a build runs, the default ones included, in the same format.
 
+## vars
+
+The `vars` section declares the variables of the site, with their default values. Templates read them as
+`vars.<name>`, and so do the `enabled` expressions of the steps. Each of these sets them, over the previous one:
+
+1. the `vars` section,
+2. the environment variables `DOUZE_VARS__<name>`,
+3. the `--var <name>=<value>` and `--env <name>=<variable>` options, in order. `--env` reads the value of an
+   environment variable, so that it stays out of the command line (and of the errors); it does nothing when the
+   variable is not set.
+
+```yaml
+vars:
+  og: true
+  label: Preview
+steps:
+  og: { needs: pages, uses: social-image, enabled: "vars.og", with: { ... } }
+```
+
+```bash
+douze --var og=false --env label=RELEASE_NAME
+```
+
+Only declared variables can be set, and their names match case insensitively. A value takes the type of the default:
+`--var og=false` is the boolean `false` when `og` is `true` or `false` (the string `"false"` would be true in Liquid),
+`1.5` a number when the default is a number; a default that is a string or `~` gives a string. Objects and lists can
+only be set in the section.
+
 ## steps
 
 `steps` maps step names (lowercase letters, digits and dashes) to steps. Source files enter the steps whose
@@ -306,7 +339,8 @@ entering files that its `match` selects, and the others pass through it unchange
 
 `enabled` can be a Liquid expression, as in `{% if %}`, evaluated once when the workflow file is loaded. It sees
 `os` (`windows`, `linux`, `macos` or `other`), `arch` (`x64`, `arm64`, ...), `env`, the environment variables (a
-missing one is `nil`; names are case insensitive on Windows), and `watch`, true for `douze watch` and `douze serve`:
+missing one is `nil`; names are case insensitive on Windows), `watch`, true for `douze watch` and `douze serve`, and
+`vars` (see "vars"):
 
 ```yaml
 steps:

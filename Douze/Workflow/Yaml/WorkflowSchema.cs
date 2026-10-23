@@ -16,7 +16,7 @@ internal static partial class WorkflowSchema
 {
     public const int MaxStepNameLength = 64;
 
-    public static readonly ImmutableArray<string> TopLevelKeys = ["site", "markdown", "steps"];
+    public static readonly ImmutableArray<string> TopLevelKeys = ["site", "vars", "markdown", "steps"];
 
     public static readonly ImmutableArray<string> SiteKeys = ["content", "data", "includes", "shortcodes", "output", "url", "parallelism", "locales"];
 

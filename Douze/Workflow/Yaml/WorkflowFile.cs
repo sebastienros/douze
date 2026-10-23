@@ -1,5 +1,6 @@
 using Douze.FileSystems;
 using Douze.Markdown;
+using Douze.Nodes;
 
 namespace Douze.Workflow.Yaml;
 
@@ -9,7 +10,8 @@ namespace Douze.Workflow.Yaml;
 /// <param name="Site">The <c>site</c> section; every value is null when it is absent.</param>
 /// <param name="Markdown">The <c>markdown</c> section, or <c>null</c> when it is absent.</param>
 /// <param name="Workflow">The <c>steps</c> section, or <c>null</c> when it is absent (the default workflow applies).</param>
-internal sealed record WorkflowFile(SiteSettings Site, MarkdownOptions? Markdown, WorkflowDefinition? Workflow);
+/// <param name="Vars">The <c>vars</c> section, with the values set by the environment and the command line.</param>
+internal sealed record WorkflowFile(SiteSettings Site, MarkdownOptions? Markdown, WorkflowDefinition? Workflow, NodeObject Vars);
 
 /// <summary>
 /// The <c>site</c> section of a workflow file. A null value is not set.

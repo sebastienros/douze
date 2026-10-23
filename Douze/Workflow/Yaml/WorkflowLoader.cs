@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Douze.Markdown;
 using Douze.FileSystems;
+using Douze.Nodes;
 using Douze.Workflow.Steps;
 using SharpYaml.Model;
 
@@ -41,18 +42,34 @@ internal static partial class WorkflowLoader
 
         if (YamlSource.IsNull(yaml.Root))
         {
-            return new WorkflowFile(site, null, null);
+            return new WorkflowFile(site, null, null, ResolveVars(environment, new NodeObject()));
         }
 
         if (yaml.Root is not YamlMapping root)
         {
-            throw new WorkflowValidationException("a workflow file must be a mapping with 'site', 'markdown' and 'steps'", yaml.Location(yaml.Root!));
+            throw new WorkflowValidationException("a workflow file must be a mapping with 'site', 'vars', 'markdown' and 'steps'", yaml.Location(yaml.Root!));
         }
 
-        foreach (var (key, keyNode, value) in yaml.Entries(root, errors))
+        var entries = yaml.Entries(root, errors).ToList();
+
+        // The variables first: the 'enabled' expressions of the steps see them, wherever the section is.
+        var declared = new NodeObject();
+
+        foreach (var (key, _, value) in entries.Where(x => x.Key == "vars"))
+        {
+            declared = ReadVars(yaml, value, errors);
+        }
+
+        var vars = environment.ResolveVars(declared, errors);
+        environment = environment.WithVars(vars);
+
+        foreach (var (key, keyNode, value) in entries)
         {
             switch (key)
             {
+                case "vars":
+                    break;
+
                 case "site":
                     site = ReadSite(yaml, value, errors);
                     break;
@@ -77,7 +94,35 @@ internal static partial class WorkflowLoader
             throw new WorkflowValidationException([.. errors.OrderBy(x => x.Location?.Line).ThenBy(x => x.Location?.Column)]);
         }
 
-        return new WorkflowFile(site, markdown, workflow);
+        return new WorkflowFile(site, markdown, workflow, vars);
+    }
+
+    /// <summary>
+    /// The variables of a site without a <c>vars</c> section, or without a workflow file: none, so that a
+    /// <c>--var</c>, <c>--env</c> or <c>DOUZE_VARS__</c> is an error.
+    /// </summary>
+    /// <exception cref="WorkflowValidationException">A variable is set.</exception>
+    public static NodeObject ResolveVars(WorkflowEnvironment environment, NodeObject declared)
+    {
+        var errors = new List<WorkflowValidationError>();
+        var vars = environment.ResolveVars(declared, errors);
+        return errors.Count == 0 ? vars : throw new WorkflowValidationException(errors);
+    }
+
+    private static NodeObject ReadVars(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)
+    {
+        if (YamlSource.IsNull(node))
+        {
+            return new NodeObject();
+        }
+
+        if (node is not YamlMapping)
+        {
+            errors.Add(new("'vars' must be a mapping of names to values", yaml.Location(node!)));
+            return new NodeObject();
+        }
+
+        return (NodeObject)yaml.ToNode(node, errors)!;
     }
 
     private static SiteSettings ReadSite(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)

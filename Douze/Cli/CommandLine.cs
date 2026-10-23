@@ -1,5 +1,6 @@
 using System.Globalization;
 using Douze.Workflow;
+using Douze.Workflow.Yaml;
 
 namespace Douze.Cli;
 
@@ -28,6 +29,8 @@ internal sealed class CommandLine
           -s, --source <dir>             source folder (default: .)
           -o, --output <dir>             output folder (default: _site)
           -w, --workflow <file>          workflow file (default: <source>/douze.yml when it exists)
+              --var <name>=<value>       set a variable of the workflow file's 'vars' section
+              --env <name>=<variable>    set a variable from an environment variable, when it is set
           -p, --parallelism <n>          max parallel units (default: processor count)
               --keep-going               report every error instead of stopping the failing step
               --fail-fast                stop everything on the first error
@@ -61,6 +64,7 @@ internal sealed class CommandLine
     public bool NoCache { get; private set; }
     public string? CacheDirectory { get; private set; }
     public int Port { get; private set; } = 8080;
+    public List<VarOverride> Vars { get; } = [];       // --var and --env, in order: the last one of a name wins
 
     /// <exception cref="CommandLineException">The arguments are invalid.</exception>
     public static CommandLine Parse(IReadOnlyList<string> args)
@@ -103,6 +107,8 @@ internal sealed class CommandLine
                 case "-s" or "--source": result.Source = Value(); break;
                 case "-o" or "--output": result.Output = Value(); break;
                 case "-w" or "--workflow": result.Workflow = Value(); break;
+                case "--var": result.Vars.Add(Assignment((name, value) => VarOverride.FromValue(name, value))); break;
+                case "--env": result.Vars.Add(Assignment((name, variable) => VarOverride.FromVariable(name, variable))); break;
                 case "-p" or "--parallelism": result.Parallelism = Positive(); break;
                 case "--keep-going": result.Failure = FailurePolicy.KeepGoing; break;
                 case "--fail-fast": result.Failure = FailurePolicy.FailFast; break;
@@ -142,6 +148,22 @@ internal sealed class CommandLine
             }
 
             return args[++i];
+        }
+
+        VarOverride Assignment(Func<string, string, VarOverride> create)
+        {
+            var option = args[i];
+            var value = Value();
+            var equals = value.IndexOf('=');
+
+            if (equals <= 0 || option == "--env" && equals == value.Length - 1)
+            {
+                throw new CommandLineException(option == "--var"
+                    ? $"option '--var' needs <name>=<value>, not '{value}'"
+                    : $"option '--env' needs <name>=<environment variable>, not '{value}'");
+            }
+
+            return create(value[..equals], value[(equals + 1)..]);
         }
 
         int Positive()
