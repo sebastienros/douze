@@ -132,6 +132,32 @@ public class IncrementalBuilderTests
     }
 
     [Fact]
+    public async Task ShortcodesAreReadAgainOnEveryBuild()
+    {
+        await WriteSiteAsync();
+        await _source.WriteTextFileAsync("/_includes/shortcodes/badge.liquid", "<b>v0</b>");
+        await _source.WriteTextFileAsync("/_includes/shortcodes/note.liquid", "---\nblock: true\n---\n<aside>{{ content }}</aside>");
+        await _source.WriteTextFileAsync("/_content/about.md", "---\ntitle: About\n---\n{% badge %}{% note %}n{% endnote %}");
+        using var session = new TestSession(_source);
+        await session.BuildSuccessfullyAsync();
+
+        // The shortcodes of the previous build are not built-in tags of this one.
+        await _source.WriteTextFileAsync("/_content/posts/a.md", Post("a", 1, "edited"));
+        await session.BuildSuccessfullyAsync(Changes(("/_content/posts/a.md", ChangeKind.Modified)));
+
+        // A page that did not change renders the new shortcode.
+        await _source.WriteTextFileAsync("/_includes/shortcodes/badge.liquid", "<b>v1</b>");
+        await session.BuildSuccessfullyAsync(Changes(("/_includes/shortcodes/badge.liquid", ChangeKind.Modified)));
+        Assert.Contains("<b>v1</b>", await session.Output.ReadAllTextAsync("/about/index.html"));
+
+        // A deleted shortcode is not a tag anymore.
+        await _source.DeleteFileAsync("/_includes/shortcodes/badge.liquid");
+        var result = await session.BuildAsync(Changes(("/_includes/shortcodes/badge.liquid", ChangeKind.Deleted)));
+        Assert.False(result.Build.Succeeded);
+        Assert.Contains(result.Build.Errors, x => x.ToString().Contains("Unknown tag 'badge'"));
+    }
+
+    [Fact]
     public async Task DataEditRendersItsReadersOnly()
     {
         await WriteSiteAsync();

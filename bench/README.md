@@ -450,6 +450,116 @@ contents. Lowering `-p` is the way to use less memory.
 What is left, by size: a compact representation of data nodes (keys shared, small objects without a `Dictionary`,
 repeated strings once) for the 450 MB of data; rendering into UTF-8 blocks instead of a string, for the large object heap
 churn of rendered pages; image variants, memoized as bytes for the whole build (`ImageProcessor._variants`).
+### Images: NetVips or SkiaSharp, buffers or streams, 2026-10-22
+
+Is SkiaSharp lighter than libvips for Douze's image work, can images stream from source file to output file instead of
+going through whole buffers, and what does `ImageProcessor._variants` (every encoded variant kept for the build) cost?
+`bench/Douze.ImageBench` runs both libraries on the same inputs, each run in its own process:
+
+```bash
+# <sources>: PNG and JPEG files, searched recursively; <singles>: a few files run one at a time; <svg>: a 1200x630 SVG
+# whose text contains {{n}}; outputs go under <scratch> and are deleted as it goes.
+bench/image-bench.sh <sources> <singles> <svg> <scratch>
+```
+
+- **Buffer** is Douze's path: the source read into a `byte[]`, a variant encoded into a `byte[]`, hashed, written.
+  libvips as `ImageProcessor` sets it up (`thumbnail`, one thread per operation, no operation cache, JPEG flattened
+  on white, `keep=none`). SkiaSharp 4.153.1: `SKCodec` decoding at the smallest scale not below the target (JPEG n/8,
+  nothing for PNG), to sRGB, then a draw with mipmaps for reductions of 2 or more and a Mitchell cubic otherwise, and
+  its WebP and JPEG encoders at the same quality, without metadata. **+memo** also keeps every encoded variant until
+  the end, as `_variants` does.
+- **Stream**: the source file opened with a 16 KB buffer (`Image.ThumbnailStream`, `SKCodec.Create(Stream)`), the
+  encoder writing to a stream that hashes what it writes into a temporary file, renamed to the hashed name at the end
+  (`HashingFileStream`; `Image.WriteToStream`, `SKPixmap.Encode(SKWStream)`).
+- Measures: managed allocations (`GC.GetTotalAllocatedBytes`), native malloc in use above the start (every malloc zone,
+  polled every 5 ms: an upper bound, since it counts allocated pages that were never touched), libvips' own high water
+  mark (`vips_tracked_get_mem_highwater`) and the peak physical footprint (`/usr/bin/time -l`, which includes the
+  process' baseline: about 33 MB with SkiaSharp loaded, 43 MB with libvips). `MallocStackLogging` and `malloc_history`
+  were not needed: the zone statistics give the peak directly. JIT build, after a warmup pass.
+
+Inputs: the 573 PNG and JPEG files of the target site (132 MB: screenshots, median 112 KB, the largest a 2880x2048 PNG
+of 4.6 MB and a 3706x5559 JPEG of 10 MB), and its social card SVG (a 1200x630 card with an embedded PNG background, a
+gradient and a text pill). Apple M4 Pro (14 cores), loaded by other builds (load average 15 to 25), so walls are
+indicative.
+
+**Per operation** (`-p 1`, 5 repeats; time per operation, then managed allocations per operation / native malloc peak /
+peak footprint):
+
+| Source, variant | vips buffer | vips stream | skia buffer | skia stream |
+|---|---:|---:|---:|---:|
+| 10 MB JPEG 3706x5559 → webp 640 | 128 ms, 10.1 / 24 / 73 MB | 132 ms, 0.1 / 14 / 46 MB | 130 ms, 10.1 / 14 / 66 MB | 124 ms, 0.0 / 12 / 35 MB |
+| 10 MB JPEG → webp 1280 | 242 ms, 10.2 / 48 / 76 MB | 238 ms, 0.2 / 33 / 55 MB | 240 ms, 10.2 / 18 / 103 MB | 238 ms, 0.1 / 27 / 59 MB |
+| 10 MB JPEG → jpeg 1280 | 138 ms, 10.3 / 32 / 85 MB | 146 ms, 0.3 / 21 / 60 MB | 138 ms, 10.3 / 21 / 105 MB | 142 ms, 0.0 / 21 / 55 MB |
+| 4.6 MB PNG 2880x2048 → webp 640 | 62 ms, 4.7 / 24 / 60 MB | 62 ms, 0.1 / 19 / 53 MB | 68 ms, 4.7 / 38 / 78 MB | 58 ms, 0.0 / 38 / 61 MB |
+| 4.6 MB PNG → webp 1280 | 96 ms, 4.7 / 28 / 62 MB | 112 ms, 0.1 / 23 / 55 MB | 104 ms, 4.7 / 43 / 81 MB | 98 ms, 0.0 / 41 / 68 MB |
+| 4.6 MB PNG → jpeg 1280 | 58 ms, 4.7 / 20 / 54 MB | 54 ms, 0.1 / 16 / 46 MB | 66 ms, 4.7 / 48 / 82 MB | 64 ms, 0.0 / 48 / 66 MB |
+| 110 KB PNG (median) → webp 640 | 18 ms, 0.1 / 11 / 44 MB | 12 ms, 0.0 / 12 / 44 MB | 12 ms, 0.1 / 9 / 36 MB | 18 ms, 0.0 / 10 / 37 MB |
+| 110 KB PNG → webp 1280 | 36 ms, 0.1 / 11 / 44 MB | 30 ms, 0.0 / 10 / 46 MB | 46 ms, 0.1 / 18 / 37 MB | 26 ms, 0.0 / 18 / 39 MB |
+| 100 KB JPEG 800 wide → webp 800 | 48 ms, 0.1 / 7 / 46 MB | 42 ms, 0.1 / 10 / 48 MB | 48 ms, 0.1 / 23 / 48 MB | 44 ms, 0.0 / 24 / 49 MB |
+
+**Batch**: the 573 sources to 640 and 1280 wide WebP (1,146 variants, 26 MB), one source per task:
+
+| | Wall | Allocated | Native malloc peak | libvips peak | Peak footprint |
+|---|---:|---:|---:|---:|---:|
+| vips buffer, `-p 4` | 8.7 s | 163 MB | 103 MB | 72 MB | 104 MB |
+| vips buffer+memo, `-p 4` | 8.6 s | 164 MB | 97 MB | 67 MB | 130 MB |
+| vips stream, `-p 4` | 8.6 s | 62 MB | 98 MB | 66 MB | 103 MB |
+| skia buffer, `-p 4` | 8.6 s | 159 MB | 150 MB | | 121 MB |
+| skia buffer+memo, `-p 4` | 8.5 s | 159 MB | 148 MB | | 153 MB |
+| skia stream, `-p 4` | 9.2 s | 43 MB | 184 MB | | 125 MB |
+| vips buffer, `-p 14` | 3.8 s | 164 MB | 207 MB | 132 MB | 125 MB |
+| vips buffer+memo, `-p 14` | 3.7 s | 164 MB | 212 MB | 128 MB | 123 MB |
+| vips stream, `-p 14` | 3.9 s | 63 MB | 178 MB | 122 MB | 111 MB |
+| skia buffer, `-p 14` | 3.8 s | 160 MB | 290 MB | | 139 MB |
+| skia buffer+memo, `-p 14` | 3.6 s | 160 MB | 273 MB | | 173 MB |
+| skia stream, `-p 14` | 3.8 s | 45 MB | 329 MB | | 124 MB |
+
+**Social card SVG to a 1200x630 PNG**, 100 cards (librsvg through libvips; Svg.Skia 5.2.3, a managed SVG reader
+drawing on SkiaSharp):
+
+| | Wall | Allocated | Native malloc peak | Peak footprint |
+|---|---:|---:|---:|---:|
+| vips, `-p 4` | 0.93 s | 170 MB | 79 MB | 100 MB |
+| skia, `-p 4` | 1.52 s | 758 MB | 46 MB | 180 MB |
+| vips, `-p 14` | 0.53 s | 170 MB | 213 MB | 230 MB |
+| skia, `-p 14` | 0.68 s | 763 MB | 113 MB | 282 MB |
+
+Outputs: the buffer and stream paths of a library write byte identical files. Between the libraries, the WebP variants
+are 5% smaller with SkiaSharp, 9 of 1,052 are one pixel shorter (another rounding of the height), and the pixels
+differ: PSNR median 37.6 dB, lowest 27.6 dB on screenshots of console text, which SkiaSharp's mipmapped reduction
+renders softer than libvips' lanczos3. The cards match closely (42.7 dB) and are 12% larger with SkiaSharp.
+
+**The variant memo on the target site** (`douze -s . -o <out> --no-cache --plain`, native AOT with the Satori GC, on
+the memory budget branch, b6f296c): `_variants` ends the build with 430 variants holding **19.6 MB**, against a peak
+footprint of 4.8 to 5.1 GiB; the social image rasters (`_rasters`) hold 29 backgrounds, 88 MB, within their 256 MB
+budget. A prototype that memoizes only the hash, length and size, gives the bytes to the first page that asks and
+gives the other pages content that encodes the variant again if it is read (`write` and the cache compare hashes, so
+it is read only when such a page reaches them first) changed nothing measurable, and encoded 8 to 108 variants twice
+per build:
+
+| Build (interleaved) | Run 1 | Run 2 | Run 3 |
+|---|---:|---:|---:|
+| Head: memo with bytes | 30.6 s, 5.09 GiB | 28.5 s, 4.77 GiB | 29.9 s, 4.89 GiB |
+| Memo without bytes | 36.9 s, 4.85 GiB (108 encoded again) | 29.5 s, 5.02 GiB (9) | 29.0 s, 5.10 GiB (8) |
+
+**Recommendation.**
+
+- **Stay on NetVips.** SkiaSharp is no lighter: the same time on variants (both libraries spend it in libjpeg-turbo,
+  libpng and libwebp), more native memory on PNG sources (it decodes the whole image, where libvips' sequential
+  `thumbnail` keeps a few lines: 38 to 48 MB against 16 to 24 MB on the 2880x2048 PNG), 1.6 times slower and 4.5
+  times the managed allocations on SVG, and no text layout: the social images' Pango blocks (wrapping, alignment,
+  font files) would have to be rebuilt on HarfBuzzSharp. Switching would also change every image the sites publish.
+- **Don't stream.** It is byte identical and saves the source and the variant buffers (100 MB of managed allocations
+  over the 573 sources, 26 MB of footprint on the 10 MB JPEG, 1 to 14 MB on the batch), but the target site's image
+  work is a few hundred MB of allocations in a build that peaks at about 5 GB: the cost is elsewhere. In Douze it would
+  also mean variants bypassing `FileContent` and `write` (an output written by the image step, outside the cache's
+  blobs), which the engine is not built for. What is cheap is done: `ImageSources.ReadAsync` reads a source once into
+  an array of its length (it went through a `MemoryStream` and `ToArray`, two copies on every render that uses an
+  image, and a third in `social-image`).
+- **Keep the memo as it is.** 20 MB is 0.4% of the peak, and the memo without bytes needs a second encode whenever a
+  page that did not take the bytes reaches `write` first; the prototype is not merged. If the memo ever matters (a
+  site with thousands of large variants), the better fix is a `FileContent` that reads the written output file instead
+  of encoding again.
 
 ## Findings
 

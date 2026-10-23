@@ -71,6 +71,13 @@ internal sealed class ShortcodeRegistry
     {
         var registry = new ShortcodeRegistry(folder);
 
+        foreach (var name in parser.ShortcodeTags)
+        {
+            parser.RegisteredTags.Remove(name);
+        }
+
+        parser.ShortcodeTags.Clear();
+
         if (folder.IsEmpty || !(await source.GetDirectoryEntryAsync(folder)).Exists)
         {
             return registry;
@@ -149,6 +156,7 @@ internal sealed class ShortcodeRegistry
         foreach (var shortcode in pending)
         {
             var name = shortcode.Name;
+            parser.ShortcodeTags.Add(name);
 
             if (shortcode.Block)
             {

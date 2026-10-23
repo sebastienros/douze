@@ -38,6 +38,12 @@ internal sealed class DouzeParser : FluidParser
     /// <c>{% tag value | filter: x %}</c>: an expression with filters, and the position of the tag.
     /// </summary>
     public Parser<TagExpression> TagExpression { get; }
+
+    /// <summary>
+    /// The names of the shortcode tags registered on this parser. Watch mode scans the shortcodes again on the parser of
+    /// the previous build, which removes these first: they are not built-in tags, and a deleted shortcode is no tag.
+    /// </summary>
+    public HashSet<string> ShortcodeTags { get; } = new(StringComparer.Ordinal);
 }
 
 internal sealed record TagArguments(IReadOnlyList<FilterArgument> Arguments, TagPosition Position);
