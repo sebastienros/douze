@@ -47,6 +47,15 @@ public sealed class DoctorCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task AnUnknownToolIsAWorkflowError()
+    {
+        await WriteWorkflowAsync("  search: { inputs: \"**\", run: \"{{ tool }}\", mode: batch, tool: pagefnd }\n");
+
+        Assert.Equal(ExitCodes.Usage, (await DoctorAsync()).ExitCode);
+        Assert.Equal(ExitCodes.Usage, (await InstallAsync()).ExitCode);
+    }
+
+    [Fact]
     public void ParsesTheCommands()
     {
         Assert.Equal(Command.Doctor, CommandLine.Parse(["doctor", "-s", "site"]).Command);

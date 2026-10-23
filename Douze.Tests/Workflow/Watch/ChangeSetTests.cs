@@ -87,13 +87,56 @@ public class ChangeSetTests
 
         // A file outside the source folder (a workflow file) is reported by its full path.
         var outside = Path.Combine(Path.GetTempPath(), "douze.yml");
+        watcher.WatchFile(outside);
         watcher.Report(ChangeKind.Modified, outside);
+
+        // Any other path outside the source folder is dropped.
+        watcher.Report(ChangeKind.Modified, Path.Combine(Path.GetTempPath(), "other.yml"));
 
         var batch = await watcher.WaitAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
 
         Assert.Equal(
             new[] { "/index.md", outside.Replace(Path.DirectorySeparatorChar, '/') }.Order(StringComparer.Ordinal),
             batch.Changes.Select(x => x.Path.FullName).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task PathsWithDotsNeverThrow()
+    {
+        using var watcher = new FileWatcher(Root, _ => false, TimeSpan.FromMilliseconds(50), start: false);
+        var ct = TestContext.Current.CancellationToken;
+
+        // Names with two dots: rsync's temporary file of a dot file, a range.
+        watcher.Report(ChangeKind.Added, Disk("/_data/..gitignore.Xb3k9"));
+        watcher.ReportRename(Disk("/_data/..gitignore.Xb3k9"), Disk("/_data/.gitignore"));
+        watcher.Report(ChangeKind.Modified, Disk("/_content/v1..v2.md"));
+
+        // ".." segments are resolved; one that leaves the source folder is outside it.
+        watcher.Report(ChangeKind.Modified, Disk("/_content/posts/../index.md"));
+        watcher.Report(ChangeKind.Modified, Disk("/../elsewhere/index.md"));
+
+        var batch = await watcher.WaitAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        Assert.False(batch.Rescan);
+        Assert.Equal(
+            [("/_content/index.md", ChangeKind.Modified), ("/_content/v1..v2.md", ChangeKind.Modified), ("/_data/..gitignore.Xb3k9", ChangeKind.Deleted), ("/_data/.gitignore", ChangeKind.Added)],
+            batch.Changes.Select(x => (x.Path.FullName, x.Kind)).Order());
+
+        // A path that can't be mapped asks for a rescan.
+        watcher.Report(ChangeKind.Modified, "");
+        batch = await watcher.WaitAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.True(batch.Rescan);
+    }
+
+    [Fact]
+    public void PathsRejectParentSegmentsOnly()
+    {
+        Assert.Equal("/a/..b/c..d/e..", new FPath("/a/..b/c..d/e..").FullName);
+        Assert.Equal("/a/b...", new FPath("/a\\b...").FullName);
+        Assert.Throws<ArgumentException>(() => new FPath("/a/../b"));
+        Assert.Throws<ArgumentException>(() => new FPath("../b"));
+        Assert.Throws<ArgumentException>(() => new FPath("/a/.."));
+        Assert.Throws<ArgumentException>(() => new FPath("a\\..\\b"));
     }
 
     [Fact]

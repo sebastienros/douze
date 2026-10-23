@@ -9,7 +9,8 @@ namespace Douze.Workflow.Watch;
 /// many). Paths are virtual (<c>/_content/index.md</c>); the paths <c>ignore</c> rejects (the output and cache folders
 /// inside the source folder, <c>.git</c>) are dropped, so that writing the site does not start another build. A file
 /// outside the source folder (a workflow file given with <c>--workflow</c>) can be watched too: it is reported by its
-/// full disk path.
+/// full disk path; any other path outside the source folder is dropped. The callbacks of the watchers never throw: an
+/// event whose path can't be mapped asks for a rescan.
 /// </summary>
 internal sealed class FileWatcher : IDisposable
 {
@@ -18,7 +19,9 @@ internal sealed class FileWatcher : IDisposable
     private readonly string _root;
     private readonly Func<FPath, bool> _ignore;
     private readonly TimeSpan _debounce;
+    private readonly bool _start;
     private readonly List<FileSystemWatcher> _watchers = [];
+    private readonly HashSet<string> _files = new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
     private readonly Timer _timer;
     private readonly Channel<ChangeSet> _batches = Channel.CreateUnbounded<ChangeSet>(new UnboundedChannelOptions { SingleReader = true });
@@ -33,6 +36,7 @@ internal sealed class FileWatcher : IDisposable
         _root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         _ignore = ignore;
         _debounce = debounce;
+        _start = start;
         _timer = new Timer(_ => Flush());
 
         if (start)
@@ -47,7 +51,16 @@ internal sealed class FileWatcher : IDisposable
     public void WatchFile(string path)
     {
         var fullPath = Path.GetFullPath(path);
-        Watch(Path.GetDirectoryName(fullPath)!, Path.GetFileName(fullPath));
+
+        lock (_lock)
+        {
+            _files.Add(fullPath);
+        }
+
+        if (_start)
+        {
+            Watch(Path.GetDirectoryName(fullPath)!, Path.GetFileName(fullPath));
+        }
     }
 
     private void Watch(string directory, string? filter)
@@ -91,7 +104,13 @@ internal sealed class FileWatcher : IDisposable
 
     internal void Report(ChangeKind kind, string fullPath)
     {
-        if (ToVirtual(fullPath) is not { } path)
+        if (!TryToVirtual(fullPath, out var mapped))
+        {
+            ReportLost();
+            return;
+        }
+
+        if (mapped is not { } path)
         {
             return;
         }
@@ -106,8 +125,11 @@ internal sealed class FileWatcher : IDisposable
 
     internal void ReportRename(string oldFullPath, string newFullPath)
     {
-        var from = ToVirtual(oldFullPath);
-        var to = ToVirtual(newFullPath);
+        if (!TryToVirtual(oldFullPath, out var from) | !TryToVirtual(newFullPath, out var to))
+        {
+            ReportLost();
+            return;
+        }
 
         if (from == null && to == null)
         {
@@ -164,19 +186,49 @@ internal sealed class FileWatcher : IDisposable
     }
 
     /// <summary>
-    /// The virtual path of a disk path of the source folder, or its full path for a file outside it; null when ignored.
+    /// The virtual path of a disk path of the source folder, or its full path for a watched file outside it; null when
+    /// ignored (the source folder itself, another path outside it). False when the path can't be mapped.
     /// </summary>
-    private FPath? ToVirtual(string fullPath)
+    private bool TryToVirtual(string? fullPath, out FPath? path)
     {
-        fullPath = Path.TrimEndingDirectorySeparator(fullPath);
+        path = null;
 
-        if (!fullPath.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        try
         {
-            return fullPath == _root ? (FPath?)null : new FPath(fullPath.Replace(Path.DirectorySeparatorChar, '/'));
-        }
+            if (string.IsNullOrEmpty(fullPath))
+            {
+                return false;
+            }
 
-        var path = new FPath(fullPath[_root.Length..].Replace(Path.DirectorySeparatorChar, '/'));
-        return _ignore(path) ? (FPath?)null : path;
+            // Resolves the "." and ".." segments an event may carry.
+            fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(fullPath));
+
+            if (!fullPath.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                bool watched;
+
+                lock (_lock)
+                {
+                    watched = _files.Contains(fullPath);
+                }
+
+                if (watched)
+                {
+                    path = new FPath(fullPath.Replace(Path.DirectorySeparatorChar, '/'));
+                }
+
+                return true;
+            }
+
+            var relative = new FPath(fullPath[_root.Length..].Replace(Path.DirectorySeparatorChar, '/'));
+            path = _ignore(relative) ? (FPath?)null : relative;
+            return true;
+        }
+        catch (Exception)
+        {
+            path = null;
+            return false;
+        }
     }
 
     public void Dispose()
