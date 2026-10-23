@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -24,9 +25,9 @@ internal readonly record struct Token(int Start, int End, TokenStyle[] Styles);
 internal sealed partial class CodeTokenizer
 {
     /// <summary>
-    /// The longest a line is tokenized for; the rest of a line that takes longer keeps the style of where it stopped.
+    /// The longest a line is tokenized for by default (<see cref="CodeTokenizer(IEnumerable{GrammarInfo}, IReadOnlyList{CodeTheme}, TimeSpan?)"/>).
     /// </summary>
-    private static readonly TimeSpan LineTimeLimit = TimeSpan.FromMilliseconds(500);
+    internal static readonly TimeSpan DefaultLineTimeLimit = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// The most registries of a language at once. Each compiles the regexes of its grammars in Oniguruma's native heap,
@@ -42,12 +43,19 @@ internal sealed partial class CodeTokenizer
     private readonly Dictionary<string, GrammarInfo> _byScope = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, RegistryPool> _pools = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<CodeTheme> _themes;
+    private readonly TimeSpan _lineTimeLimit;
 
     /// <param name="grammars">The grammars, the first one of a name or scope winning.</param>
     /// <param name="themes">The themes tokens are styled in.</param>
-    public CodeTokenizer(IEnumerable<GrammarInfo> grammars, IReadOnlyList<CodeTheme> themes)
+    /// <param name="lineTimeLimit">
+    /// The longest a line is tokenized for (<see cref="DefaultLineTimeLimit"/>). A line that takes longer fails rather
+    /// than keeping the style of where it stopped: where a line stops depends on the load of the machine (a registry
+    /// compiles its rules on its first lines, while other units run), and a build must not.
+    /// </param>
+    public CodeTokenizer(IEnumerable<GrammarInfo> grammars, IReadOnlyList<CodeTheme> themes, TimeSpan? lineTimeLimit = null)
     {
         _themes = themes;
+        _lineTimeLimit = lineTimeLimit ?? DefaultLineTimeLimit;
 
         foreach (var grammar in grammars)
         {
@@ -130,7 +138,16 @@ internal sealed partial class CodeTokenizer
                     continue;
                 }
 
-                var tokenized = tmGrammar.TokenizeLine(line, state, LineTimeLimit);
+                var started = Stopwatch.GetTimestamp();
+                var tokenized = tmGrammar.TokenizeLine(line, state, _lineTimeLimit);
+
+                // A line stops early only once past the limit (TextMateSharp does not expose its flag, and pads its
+                // tokens to the end of the line).
+                if (Stopwatch.GetElapsedTime(started) >= _lineTimeLimit)
+                {
+                    throw new DouzeException($"line {i + 1} of a '{language}' code block took more than {_lineTimeLimit.TotalSeconds:0.###} s to highlight");
+                }
+
                 state = tokenized.RuleStack;
 
                 foreach (var token in tokenized.Tokens)
@@ -158,12 +175,6 @@ internal sealed partial class CodeTokenizer
                     {
                         tokens.Add(new Token(start, end, styles));
                     }
-                }
-
-                // A line that took too long ends with the style of where it stopped.
-                if (tokens.Count > 0 && tokens[^1].End < line.Length)
-                {
-                    tokens[^1] = tokens[^1] with { End = line.Length };
                 }
             }
 

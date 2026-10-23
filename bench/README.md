@@ -728,11 +728,21 @@ time.
    input's content, so a rebuild from the cache still holds the contents of what reaches the indexer; the Satori GC
    peaks higher than the standard GC on the same build (17 to 21 GB against 10 to 14 GB before this change).
 
-14. **Some pages of the target site differ between two builds of the same binary.** Seen while comparing outputs by hash
-   ("Memory of the target site"): besides `rss.xml` (dated now), a few locale copies (8 `hi/` pages in two builds of
-   ca78c8d, `zh-cn/` and `uk/` pages in others) and a few API reference pages, which flip from one build to the next:
-   TypeScript members of `aspire.hosting.azure.provisioning.cognitiveservices` rendered with or without `readonly` and
-   `get · set`, and some C# package pages (`communitytoolkit.aspire.hosting.ngrok`, `.ollama`, `aspire.hosting.documentdb`).
-   The locale copies are likely the variant leader race of finding 11 (a page that reads a key only some copies have).
-   The API pages are not variants: they read shared data, so something that depends on timing (an index built
-   concurrently, or which of two equal keys a lookup returns) decides their content. Not investigated.
+14. *Fixed: the arguments of Fluid's filters, `CodeTokenizer`'s time limit.* **Some pages of the target site differed
+   between two clean builds of the same binary** (about one build in three at `-p 14`, a few pages each: locale copies,
+   API reference pages, a page with a shell code block). Two causes, neither in the scheduler:
+   - *Fluid cached the arguments of a filter that were not literals.* A filter call caches its arguments when they are
+     all literals, but the flag was a read then a write on every evaluation without cached arguments: when the first
+     renders of a template run on several threads at once, one could write `true` back after another wrote `false`,
+     and that one cached its arguments for every later render. On the target site `dirs | slice: 0, n` (the common
+     source folder of a C# package page) and `s.name | slice: 3, s.name.size` (the setters of a TypeScript handle:
+     `readonly`, `get · set`) took another page's values; the locale copies that differed were most likely the same
+     race in the templates they share (they did not differ again with the fix). Fixed in Fluid
+     (sebastienros/fluid#1067, in 3.0.0-preview-789).
+   - *A highlighted line stopped at 500 ms.* `CodeTokenizer` gave the rest of a line that took longer the style of
+     where it stopped, and how long a line takes depends on the load of the machine: a new registry compiles its rules
+     on its first lines while the other units run (`aspire add redis` came out as one token in some builds). The
+     limit is now 30 s, and a line that reaches it fails the build instead of being styled differently.
+
+   With both, six clean builds in a row at `-p 14` gave the same bytes for all 60,036 files but `rss.xml` (dated
+   now). The variant leader race of finding 11 did not show: the locale copies that differed were the Fluid race.

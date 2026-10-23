@@ -98,6 +98,17 @@ public class CodeTokenizerTests
         Assert.True(tokens[0].Count > 3);
     }
 
+    [Fact]
+    public void ALineThatTakesLongerThanTheLimitFails()
+    {
+        // Where a line stops depends on the load of the machine: its tokens must not.
+        var theme = CodeTheme.Load("github-dark", TextMateBundle.Default.GetTheme("github-dark")!, 0);
+        var tokenizer = new CodeTokenizer(TextMateBundle.Default.Grammars, [theme], TimeSpan.FromMilliseconds(1));
+
+        var error = Assert.Throws<DouzeException>(() => tokenizer.Tokenize(string.Concat(Enumerable.Repeat("aspire add \"redis\" $HOME ", 20_000)), "bash"));
+        Assert.Contains("'bash' code block", error.Message);
+    }
+
     private sealed class TokenComparer : IEqualityComparer<Token>
     {
         public static readonly TokenComparer Instance = new();
