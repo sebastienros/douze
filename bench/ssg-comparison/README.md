@@ -73,7 +73,7 @@ only `site.url`):
 - `_includes/base.liquid`: the page shell, with eleventy-base-blog's `index.css` inlined, a navigation list from
   `_data/nav.yml` with `aria-current`, and the metadata of `_data/metadata.json`.
 - `_includes/home.liquid` (message box, its CSS inlined) and `_includes/post.liquid`: title, date, tags, content, and
-  links to the previous and next posts, found by a Liquid loop over `collections.posts`.
+  links to the previous and next posts, found with the `previous_item` and `next_item` filters.
 - `_content/blog/blog.json`: every post gets the `posts` tag and the post layout.
 - `index.html` (the 3 latest posts and a link to the archive), `blog.html` (every post), `about.md`, `tags.html`,
   `404.md`, `feed/feed.xml.liquid` (Atom, 10 latest posts) and `sitemap.xml.liquid`.
