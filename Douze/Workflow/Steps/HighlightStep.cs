@@ -171,6 +171,7 @@ internal sealed partial class HighlightStep : Step, IMapStep
     public override async ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
     {
         _build = context;
+        _unknownLanguages.Clear();
         var bundle = TextMateBundle.Default;
         var keyParts = new List<string> { Version, bundle.Version, _minContrast.ToString(System.Globalization.CultureInfo.InvariantCulture) };
 
