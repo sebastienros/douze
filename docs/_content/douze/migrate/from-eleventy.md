@@ -39,8 +39,8 @@ rewritten.
 | `tags`, `collections.all`, `collections.<tag>` | the same ([Collections](../guide/collections.md)) |
 | `addCollection` | `where_exp`, `sort_by`, `group_by_exp` on `collections.all` |
 | `eleventyExcludeFromCollections` | none; `permalink: false` removes a page from the build and the collections |
-| Collection item `post.url`, `post.data.title` | `post.data.url` (with `index.html`), `post.data.title` |
-| `post.date` | `post.data.date` (front matter), `post.data.page.date` (file time) |
+| Collection item `post.url`, `post.data.title` | `post.url` (with `index.html`), `post.data.title` |
+| `post.date`, `post.inputPath` | the same: `post.date` is the front matter `date`, else the file time |
 | `post.content`, `post.templateContent` | `post.content` with a `collect` step that sets `content: true` |
 | `page.url` | `url`, which ends with `index.html` |
 | `page.date` (front matter `date`, else the file's creation time) | `date` is the front matter value; `page.date` is always the file's modification time |
@@ -49,7 +49,7 @@ rewritten.
 | `pagination` (`data`, `size`, `alias`, `resolve: values`) | the same ([Pagination](../guide/pagination.md)) |
 | `pagination.href.next`, `pagination.href.previous` | `pagination.page.next.href`, `pagination.page.previous.href` |
 | `pagination.filter`, `reverse`, `before`, `addAllPagesToCollections` | none |
-| `getNextCollectionItem`, `getPreviousCollectionItem` | a loop that compares `p.data.url` with `url` (below) |
+| `getNextCollectionItem`, `getPreviousCollectionItem` | a loop that compares `p.url` with `url` (below) |
 | Syntax highlighting plugin | the [`highlight` step](../guide/syntax-highlighting.md) |
 | Image plugin | the `image` tag and the image steps ([Images](../guide/images.md)) |
 | RSS plugin | a `feed.xml.liquid` template ([Add an RSS feed](../recipes/rss.md)) |
@@ -121,9 +121,9 @@ The next post in a layout, as `getNextCollectionItem` gives it (`forloop.index` 
 
 ```liquid
 {%- for p in collections.posts %}
-  {%- if p.data.url == url %}{% assign next = collections.posts[forloop.index] %}{% endif %}
+  {%- if p.url == url %}{% assign next = collections.posts[forloop.index] %}{% endif %}
 {%- endfor %}
-{%- if next %}<a href="{{ next.data.url | replace: 'index.html', '' }}">{{ next.data.title }}</a>{% endif %}
+{%- if next %}<a href="{{ next.url | replace: 'index.html', '' }}">{{ next.data.title }}</a>{% endif %}
 ```
 
 ### 3. Keep the data files
@@ -139,7 +139,7 @@ Convert `.11tydata.js` and `_data/*.js` files to JSON or YAML, or have a script 
 
 ### 4. Update collection loops and pagination
 
-Items of `collections` have their front matter and `url` under `data`, and pagination links are under
+Items of `collections` have their front matter under `data` (`url`, `date` and `inputPath` are also at their root), and pagination links are under
 `pagination.page`:
 
 ```liquid title="src/blog.html"

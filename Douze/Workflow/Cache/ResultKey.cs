@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Douze.FileSystems;
 
 namespace Douze.Workflow.Cache;
 
@@ -16,14 +17,16 @@ internal static class ResultKey
     /// metadata of its inputs, such as <c>collect</c>), the content hashes of the inputs are left out.
     /// <paramref name="dates"/>, in the order of <paramref name="inputs"/>, are the dates of the source files the inputs
     /// come from (<see cref="VirtualFile.LastWriteTimeUtc"/>): a step can read them (<c>page.date</c>), and a file can
-    /// change its date without changing its content.
+    /// change its date without changing its content. <paramref name="sources"/>, in the same order, are their source
+    /// paths (<see cref="VirtualFile.SourcePath"/>), which a step can read too (<c>inputPath</c> of <c>collect</c>) and
+    /// which can change without changing the path of the input.
     /// </summary>
-    public static Hash128 Compute(StepDefinition definition, ImmutableArray<FileRef> inputs, Hash128 commandVersion, bool contents = true, IReadOnlyList<DateTime?>? dates = null)
+    public static Hash128 Compute(StepDefinition definition, ImmutableArray<FileRef> inputs, Hash128 commandVersion, bool contents = true, IReadOnlyList<DateTime?>? dates = null, IReadOnlyList<FPath?>? sources = null)
     {
         var order = Enumerable.Range(0, inputs.Length).ToArray();
         Array.Sort(order, (a, b) => inputs[a].Path.CompareTo(inputs[b].Path));
 
-        var hashes = new Hash128[inputs.Length * 4 + 3];
+        var hashes = new Hash128[inputs.Length * 5 + 3];
         var i = 0;
 
         hashes[i++] = Hash128.OfText(definition.Name);
@@ -36,6 +39,7 @@ internal static class ResultKey
             hashes[i++] = contents ? input.ContentHash : Hash128.Empty;
             hashes[i++] = input.MetadataHash;
             hashes[i++] = dates?[index] is { } date ? new Hash128((ulong)date.Ticks, (ulong)date.Kind) : Hash128.Empty;
+            hashes[i++] = sources?[index] is { } source ? Hash128.OfText(source.FullName) : Hash128.Empty;
         }
 
         hashes[i++] = commandVersion;

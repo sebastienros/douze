@@ -1080,7 +1080,9 @@ HTML (`feed.xml`) is kept as is.
 `permalink` so both produce identical paths.
 
 **`collect`** (reduce, default match: `**/*.html`, `**/*.md`). Builds `collections.all` and `collections.<tag>`
-from the sorted input: each item is `NodeObject { ["data"] = new NodeValue<Metadata>(file.Metadata) }`,
+from the sorted input: each item is `NodeObject { ["data"] = new NodeValue<Metadata>(file.Metadata) }` plus the
+resolved `date`, the `url` and the `inputPath` (source path) at its root, for filters that take a member name
+(`sort: 'date'`); the source paths of the inputs are part of the result key,
 items are sorted by date (front matter `date`, else `page.date`, resolved through scopes), then by
 path (ordinal; the path entering the step, the output path in the default workflow), exactly as today.
 `tags` resolve through the scopes too (a folder can tag its pages), and a tag listed twice adds the

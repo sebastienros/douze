@@ -37,7 +37,11 @@ A page's own `tags` replace the folder's: `second.md` above is in `post` and `ne
 | `collections.<tag>` | the pages that have the tag |
 | `collections.urls` | the same pages by url, without `index.html`: `collections.urls["/blog/first/"]` |
 
-Each item is `{ data }`, where `data` is the page's data: `post.data.title`, `post.data.url`, `post.data.page.date`.
+Each item is `{ data, date, url, inputPath }`, where `data` is the page's data (`post.data.title`,
+`post.data.page.date`), `date` the date the collections are sorted by (front matter `date`, else `page.date`), `url`
+the page's url (with `index.html`) and `inputPath` its source path (`/posts/first.md`). Liquid filters take a member
+name, not a path like `data.date`, so filter and sort on these: `collections.post | sort: 'date' | reverse`,
+`collections.all | where: 'url', url`.
 Items do not hold the page's content (see [Content in collections](#content-in-collections)).
 
 ```liquid title="_content/index.html"

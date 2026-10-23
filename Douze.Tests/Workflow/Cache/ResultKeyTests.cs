@@ -64,6 +64,15 @@ public class ResultKeyTests
     }
 
     [Fact]
+    public void ChangesWithTheSourcePathOfAnInput()
+    {
+        ImmutableArray<FileRef> inputs = [Ref("/a/index.html"), Ref("/b.html")];
+
+        Assert.NotEqual(ResultKey.Compute(Markdown, inputs, Hash128.Empty, sources: [new FPath("/a.md"), null]), ResultKey.Compute(Markdown, inputs, Hash128.Empty, sources: [new FPath("/a.html"), null]));
+        Assert.Equal(ResultKey.Compute(Markdown, inputs, Hash128.Empty, sources: [new FPath("/a.md"), null]), ResultKey.Compute(Markdown, [Ref("/b.html"), Ref("/a/index.html")], Hash128.Empty, sources: [null, new FPath("/a.md")]));
+    }
+
+    [Fact]
     public void ChangesWithCommandVersion()
     {
         ImmutableArray<FileRef> inputs = [Ref("/a.md")];
