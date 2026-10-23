@@ -120,7 +120,7 @@ internal sealed class VirtualFile
 
         return new VirtualFile(
             path,
-            FileContent.FromFile(fs, path, info.Length),
+            FileContent.FromFile(fs, path),
             new Metadata(new NodeObject(), path.GetDirectory()),
             contentType: null,
             Provenance.Source,

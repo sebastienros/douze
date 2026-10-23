@@ -41,13 +41,13 @@ internal abstract class FileContent
     /// <summary>
     /// Creates content that reads the file once, on first access, and then retains its bytes.
     /// </summary>
-    public static FileContent FromFile(IFileSystem fs, FPath path, long length) => new LazyFileContent(fs, path, length, IsTextPath(path), null, null);
+    public static FileContent FromFile(IFileSystem fs, FPath path) => new LazyFileContent(fs, path, IsTextPath(path), null, null);
 
     /// <summary>
     /// Creates content that reads the file once, on first access. <paramref name="hash"/> is its hash when known (the
     /// file did not change since a previous build); otherwise <paramref name="hashed"/> receives it once computed.
     /// </summary>
-    public static FileContent FromFile(IFileSystem fs, FPath path, long length, Hash128? hash, Action<Hash128>? hashed) => new LazyFileContent(fs, path, length, IsTextPath(path), hash, hashed);
+    public static FileContent FromFile(IFileSystem fs, FPath path, Hash128? hash, Action<Hash128>? hashed) => new LazyFileContent(fs, path, IsTextPath(path), hash, hashed);
 
     /// <summary>
     /// Creates content whose hash and length are known and whose bytes <paramref name="load"/> reads on first access:
@@ -297,17 +297,15 @@ internal abstract class FileContent
     {
         private readonly IFileSystem _fileSystem;
         private readonly FPath _path;
-        private readonly long _lengthHint;
         private readonly Lazy<Task<byte[]>> _bytes;
         private readonly Action<Hash128>? _onHashed;
         private string? _text;
 
-        public LazyFileContent(IFileSystem fileSystem, FPath path, long lengthHint, bool isText, Hash128? hash, Action<Hash128>? hashed)
+        public LazyFileContent(IFileSystem fileSystem, FPath path, bool isText, Hash128? hash, Action<Hash128>? hashed)
             : base(hash)
         {
             _fileSystem = fileSystem;
             _path = path;
-            _lengthHint = lengthHint;
             _onHashed = hashed;
             IsText = isText;
             _bytes = new Lazy<Task<byte[]>>(LoadAsync, LazyThreadSafetyMode.ExecutionAndPublication);
@@ -361,10 +359,7 @@ internal abstract class FileContent
 
         private async Task<byte[]> LoadAsync()
         {
-            await using var stream = await _fileSystem.OpenFileAsync(_path);
-            using var memory = new MemoryStream(_lengthHint > 0 && _lengthHint < int.MaxValue ? (int)_lengthHint : 0);
-            await stream.CopyToAsync(memory);
-            return memory.ToArray();
+            return await _fileSystem.ReadFileAsync(_path);
         }
     }
 

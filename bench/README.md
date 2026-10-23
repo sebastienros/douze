@@ -561,6 +561,64 @@ per build:
   site with thousands of large variants), the better fix is a `FileContent` that reads the written output file instead
   of encoding again.
 
+### Small Markdown posts: the SSG comparison's blog, 2026-10-23
+
+`bench/ssg-comparison` builds a blog of 250 to 4000 posts of about 1 KB (the Douze version of eleventy-base-blog), so
+fixed and per-file costs dominate. Profiled with `--trace --trace-units`, the Time Profiler (`xctrace`) on the native
+AOT binary on macOS, and `strace -c` and a file system micro-benchmark in the Linux container of the comparison. Before
+and after: `bench/ssg-comparison/README.md` (4000 posts, clean build: 0.61 to 0.37 s in Docker under load, 0.54 to
+0.37 s with the first change on a quiet machine; macOS: 0.74 to 0.59 s).
+
+Where a clean 4000-post build went, before: startup and the cache-less setup 15 ms; scanning and reading the sources,
+front matter and permalinks 45 to 130 ms (the scan is bound by opening files, not by parsing: 40 ms of CPU in all);
+`collect` 5 ms; then render, Markdown, layout and write streaming together. Of the units' CPU, layout took 3.4 s (the
+previous and next loop, finding 15), write 5 to 10 s, Liquid, Markdown and paginate under 0.2 s in all. Once the loop is
+gone, the writes are the critical path (finding 16).
+
+Measured and not adopted:
+
+- **`OptimizationPreference=Speed`** for the native AOT compiler: within noise on the clean build (Docker: 0.316 against
+  0.315 s, macOS: 0.582 against 0.625 s with a spread of 0.05 s) and the warm rebuild (0.147 against 0.148 s), for a
+  binary 1 MB larger. The build is bound by the file system and the scheduling, not by code generation.
+- **Opening and writing with libc directly** (`open`, `write`, `close` instead of .NET's `File.OpenHandle`, which adds
+  `fstat`, `fstatfs`, `flock` twice, `ftruncate`): 157 against 183 ms for 4000 files in their own folders at 4 threads
+  in Docker, 233 against 247 ms on macOS. Not worth platform-specific interop. Disabling .NET's file locking globally
+  (`System.IO.DisableFileLocking`) would remove the same calls, but the build cache and the tool installer rely on
+  `FileShare.None` locks between processes.
+- **Fewer folders.** Writing 4000 files to one folder takes 25 ms against 170 ms with a folder per page (Docker): the
+  `mkdir` is most of the cost. The folder per page is what pretty urls need, so it stays.
+
+### Docs-heavy pages: highlighted fences, headings, sidebar, 2026-10-23
+
+The docs-heavy scenario of the SSG comparison (on the docs-site branch: `run-docs-heavy.sh`, `scenarios/docs-heavy/`):
+pages of 6 to 10 KB with 3 to 6 fences in 7 languages (bash, ts, html, json, yaml, js, csharp; every fence unique),
+heading ids, a 50-page sidebar and a TOC, highlighted with one theme. Its runs: Douze 1.08, 3.09 and 12.4 s for 1000,
+4000 and 16,000 pages, Hugo 0.41, 1.31 and 5.7 s, Eleventy and Astro (Shiki) 6.9 and 16.8 s at 4000.
+
+At 4000 pages (17,892 fences, 266,941 code lines), the Time Profiler gives highlight 87% of the CPU, and Oniguruma's
+`onig_search` alone 75%: TextMateSharp's line tokenizer searching each pattern of the current rule from the current
+position. That is 1.5 ms of CPU per fence, 100 µs per code line. Onigwrap converts offsets with
+`Encoding.Unicode.GetByteCount` on every search (5% of the build's CPU, where `2 * chars` would do). Next: write 3.5%,
+the GC 3%, `CodeBlockBuilder` 3%, Markdown, Liquid and layout under 2% each, `headings` 50 µs per page. Units use 9 to 10
+cores out of 14 in Docker, as Hugo does.
+
+- **More registries per language does not help**: `MaxRegistriesPerLanguage` at 8 or 14 instead of 4 gives the same
+  time (3.4 to 4.2 s on macOS under load, either way) for 1.1 to 1.3 GB of peak RSS instead of 0.76 GB.
+- **The write and read changes of findings 16 and 17 are neutral here** (Docker, interleaved runs at 4000 pages: 2.98
+  to 3.12 s with and without the read change, the same as the scenario's own run).
+- **Memory at 16,000 pages**: peak RSS 1.6 GB on Linux (sampled `VmRSS`), 1.45 to 1.5 GB on macOS, 12.6 to 13.8 s on
+  macOS, linear from 4000 pages. The 12.4 to 21.3 s spread of the scenario's runs is not memory (the VM has 7.7 GB);
+  the host was loaded by other builds (load average 9 to 40 during these measurements).
+
+Speculative, not done:
+
+- **Onigwrap's offsets** (`2 * chars` instead of `GetByteCount`, a reused region instead of a `Region` per search):
+  about 5%, a change to a third party package (TextMateSharp's Onigwrap).
+- **A memo of tokenized fences per build**, keyed by grammar and code: nothing here (every fence is unique), but real
+  documentation repeats its install and setup snippets; tokens of every fence would stay in memory until the build ends.
+- **A faster tokenizer than TextMate grammars** (Hugo's Chroma lexers are hand-written regex tables): the 2.3x gap to
+  Hugo is the regex engine, not Douze's pipeline. Shiki-compatible output is the reason for TextMate.
+
 ## Findings
 
 Measured on the engine of phase 1b. None of these are fixed here (phase B owns only `bench/`); they feed phase 5.
@@ -746,3 +804,24 @@ time.
 
    With both, six clean builds in a row at `-p 14` gave the same bytes for all 60,036 files but `rss.xml` (dated
    now). The variant leader race of finding 11 did not show: the locale copies that differed were the Fluid race.
+
+15. *Fixed: the `previous_item` and `next_item` filters.* **A Liquid loop over a collection on every page is O(n²).**
+   The SSG comparison's post layout found its previous and next posts by looping over `collections.posts` until its own
+   url: 3.4 s of CPU at 4000 posts, a third of the wall time. The filters index a collection by url once (published
+   nodes never change) and return a neighbor; the page depends on its own item and the neighbor instead of the whole
+   collection, so changing a post's title renders 3 pages instead of all of them (0.41 to 0.18 s at 4000 posts). The
+   cost: a warm rebuild with nothing changed checks 4000 dependency sets instead of one shared set (0.093 to 0.122 s).
+
+16. *Fixed: `PhysicalFileSystem.WriteFileAsync`.* **Writing outputs with every core is slower than with four.** Creating
+   a folder and a file per page contends in the kernel (the parent folder's lock, the journal): 4000 pages in their own
+   folders take 170 ms on 1 to 4 threads and 300 ms on 14 in Docker, 250 against 630 ms on macOS. `write` units filled
+   the 14 threads of the build. Output files are now written 4 at a time (`MaxConcurrentWrites`), synchronously (an
+   asynchronous `FileStream` on Unix is the same blocking call from another thread pool item), and each folder is
+   created once. 4000 posts, clean build: 0.359 to 0.330 s in Docker, 0.73 to 0.63 s on macOS. A cap of 2 measured the
+   same as 4 in Docker; 4 is better on macOS.
+
+17. *Fixed: `IFileSystem.ReadFileAsync`.* **Sources were read through an asynchronous stream and a `MemoryStream`**: an
+   existence check, a thread pool hop per read, two copies. They are read with `File.ReadAllBytes`. A few ms at 4000
+   posts in Docker (0.330 to 0.325 s), within noise on macOS. Left: opening 4000 sources still takes most of the 45 to
+   130 ms before the first page renders, on macOS especially; the scan could read them with fewer threads too, which
+   was not measured.

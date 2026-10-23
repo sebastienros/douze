@@ -17,6 +17,7 @@ internal static class LiquidOptions
         OutputFilters.Register(builder);
         LocaleFilters.Register(builder);
         NavigationFilters.Register(builder);
+        CollectionFilters.Register(builder);
 
         builder = builder
             .WithJsonSerializerOptions(DouzeJsonContext.Default.Options)

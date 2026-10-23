@@ -38,6 +38,8 @@ the includes folder, with `.liquid` as the default extension.
 | [`locale_url`](#locale_url) | Locales | A url in another locale. |
 | [`locale_of`](#locale_of) | Locales | The locale of a url. |
 | [`locale_pages`](#locale_pages) | Locales | Every page of every locale. |
+| [`previous_item`](#previous_item-and-next_item) | Collections | The item before a page in a collection. |
+| [`next_item`](#previous_item-and-next_item) | Collections | The item after a page in a collection. |
 | [`nav_active`](#nav_active) | Navigation | The sidebar with the current item marked. |
 | [`nav_prev_next`](#nav_prev_next) | Navigation | The previous and next items. |
 | [`nav_breadcrumbs`](#nav_breadcrumbs) | Navigation | The items from the top to the current one. |
@@ -271,6 +273,20 @@ Every page the site serves in every locale, as `{ locale, lang, url, fallback, d
 collection item with its locale, and with `site.locales.fallback`, for a page of the default locale under the locale
 root, one entry per locale that has no page at that url (`fallback: true`, with the default locale page's data). In the
 order of the items, each followed by its fallbacks. For sitemaps.
+
+### previous_item and next_item
+
+```liquid
+{% assign previous_post = collections.posts | previous_item %}
+{% assign next_post = collections.posts | next_item %}
+{% if previous_post %}<a href="{{ previous_post.data.url }}">{{ previous_post.data.title }}</a>{% endif %}
+```
+
+The item before or after the page in a collection, found by `data.url` (urls compared without `index.html`). The
+argument is the url to look for, the page's `url` by default. Nil at the ends of the collection and for a url that is
+not in it. A collection is indexed once by url, so a layout that uses them on every post stays linear, unlike a loop
+over the collection. The page depends on its own item and on the neighbor, not on the whole collection: editing
+another post does not render it again.
 
 ### nav_active
 

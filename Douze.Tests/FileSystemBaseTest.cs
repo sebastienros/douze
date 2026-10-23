@@ -44,6 +44,29 @@ public abstract class FilesystemBaseTest : IDisposable
     }
 
     [Fact]
+    public async Task WritesAndReadsWholeFiles()
+    {
+        await _fs.WriteFileAsync("a/b/c.html", "<p>one</p>"u8.ToArray());
+        await _fs.WriteFileAsync("a/b/d.html", "two"u8.ToArray());
+        await _fs.WriteFileAsync("a/b/c.html", "1"u8.ToArray());
+
+        Assert.Equal("1"u8.ToArray(), await _fs.ReadFileAsync("a/b/c.html"));
+        Assert.Equal("two", await _fs.ReadAllTextAsync("a/b/d.html"));
+    }
+
+    [Fact]
+    public async Task WritesAgainToADeletedDirectory()
+    {
+        await _fs.WriteFileAsync("a/b/c.html", "1"u8.ToArray());
+        await _fs.DeleteFileAsync("a/b/c.html");
+        Assert.True(await _fs.DeleteDirectoryIfEmptyAsync("a/b/"));
+
+        await _fs.WriteFileAsync("a/b/c.html", "2"u8.ToArray());
+
+        Assert.Equal("2"u8.ToArray(), await _fs.ReadFileAsync("a/b/c.html"));
+    }
+
+    [Fact]
     public async Task FileEntriesShouldHaveAbsolutePaths()
     {
         (await _fs.CreateFileAsync("a/b/c")).Dispose();

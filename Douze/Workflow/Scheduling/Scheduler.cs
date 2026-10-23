@@ -102,16 +102,16 @@ internal sealed class Scheduler
 
             if (cache == null)
             {
-                content = FileContent.FromFile(source, path, length);
+                content = FileContent.FromFile(source, path);
             }
             else if (cache.TryGetSourceHash(path, length, date, out var hash))
             {
                 cache.PutSource(path, length, date, hash);
-                content = FileContent.FromFile(source, path, length, hash, null);
+                content = FileContent.FromFile(source, path, hash, null);
             }
             else
             {
-                content = FileContent.FromFile(source, path, length, null, hash => cache.PutSource(path, length, date, hash));
+                content = FileContent.FromFile(source, path, null, hash => cache.PutSource(path, length, date, hash));
             }
 
             files[i] = VirtualFile.FromSource(path, content, date);

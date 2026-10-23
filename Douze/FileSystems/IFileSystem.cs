@@ -7,6 +7,17 @@ public interface IFileSystem
     /// </summary>
     ValueTask<Stream> OpenFileAsync(FPath path);
 
+    /// <summary>
+    /// Reads a whole file.
+    /// </summary>
+    async ValueTask<byte[]> ReadFileAsync(FPath path)
+    {
+        await using var stream = await OpenFileAsync(path);
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory);
+        return memory.ToArray();
+    }
+
     ValueTask<FileEntry> GetFileEntryAsync(FPath path);
 
     ValueTask<DirectoryEntry> GetDirectoryEntryAsync(FPath path);
@@ -22,6 +33,15 @@ public interface IFileSystem
     /// Creates or truncates a file, and its directory when it does not exist.
     /// </summary>
     ValueTask<Stream> CreateFileAsync(FPath path);
+
+    /// <summary>
+    /// Creates or truncates a file with <paramref name="content"/>, and its directory when it does not exist.
+    /// </summary>
+    async ValueTask WriteFileAsync(FPath path, ReadOnlyMemory<byte> content)
+    {
+        await using var stream = await CreateFileAsync(path);
+        await stream.WriteAsync(content);
+    }
 
     ValueTask CreateDirectoryAsync(FPath path);
 
