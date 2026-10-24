@@ -47,11 +47,13 @@ static int FilterUpper()
 static int FilterCount(string folder)
 {
     var text = ReadStdin();
-    var marker = Path.Combine(folder, $"{Environment.ProcessId}.running");
+    // Not the process id: Windows reuses them quickly, so two processes of the same run could share files.
+    var id = Guid.NewGuid().ToString("N");
+    var marker = Path.Combine(folder, $"{id}.running");
     File.WriteAllText(marker, "");
     Thread.Sleep(300);
     var count = Directory.GetFiles(folder, "*.running").Length;
-    File.AppendAllText(Path.Combine(folder, $"{Environment.ProcessId}.count"), count.ToString());
+    File.WriteAllText(Path.Combine(folder, $"{id}.count"), count.ToString());
     File.Delete(marker);
     WriteStdout(text.ToUpperInvariant());
     return 0;
