@@ -631,6 +631,14 @@ Tint:
 | Tint | 18.5 s, 17.7 s | 158 s, 155 s | 6.8 s, 6.1 s | 14.5, 15.5 GB |
 | Tint, C#, TypeScript, HTML and JSON as kernels | 20.6 s, 18.8 s | 159 s, 157 s | 6.7 s, 6.3 s | 14.3, 14.2 GB |
 
+The peak RSS of that table is the workflow's, not the engine's: aspire.dev then had one `highlight-chrome` step (the
+code of the chrome, highlighted after the layouts) that needed both `layout` and `api-layout`. A step that reads scopes
+waits for every reduce step upstream of it, so the API pages piled up unbounded in front of it while the articles'
+`hover-typescript` and collections ran: the barrier `write` no longer has (finding of 2026-10-22 above). With one chrome
+step per branch, each waiting only for its own branch's reduce steps, the peak is back to what that finding measured:
+TextMateSharp 33.3 s, 6.9 GB RSS (5.5 GB footprint); Tint 18.7 and 19.9 s, 7.2 and 8.0 GB RSS (5.8 and 6.5 GB). A step
+that joins branches pays for the reduce steps of all of them.
+
 Kernels (`DouzeKernelGrammars`) gain nothing measurable here, as Tint measures (3 to 4% on large C# files), for 5 MB
 more binary: they stay opt-in. The pages are byte-identical with and without kernels. Against TextMateSharp, VS Code's
 grammars, which now win over tm-grammars', change YAML (`: ` is one token) and dotenv (numbers are not colored); C#,
