@@ -54,7 +54,9 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     private volatile PackFile? _writer;
 
     private readonly ConcurrentDictionary<BlobId, BlobEntry> _written = new();
-    private readonly ConcurrentDictionary<BlobId, byte> _writing = new();
+    // The blobs being written by this build, with the task of their writer: a blob is written once, and the other puts
+    // of it wait for that write (WriteOnce).
+    private readonly ConcurrentDictionary<BlobId, Task> _writing = new();
     private ConcurrentDictionary<Hash128, byte> _reused;
     private readonly ConcurrentDictionary<Hash128, CachedUnit> _put = new();
     private readonly ConcurrentDictionary<Hash128, DependencySet> _dependencies = new();
@@ -279,9 +281,10 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
         var hash = Hash128.Of(value);
         var id = new BlobId(BlobKind.Content, hash);
 
-        if (!Exists(id) && _writing.TryAdd(id, 0))
+        if (!Exists(id))
         {
-            Append(id, value, []);
+            var bytes = value.ToArray();
+            WriteOnce(id, () => Append(id, bytes, []));
         }
 
         _memos[key] = (owner, hash);
@@ -321,11 +324,11 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
         {
             var id = new BlobId(BlobKind.Content, contentHash);
 
-            if (!Exists(id) && _writing.TryAdd(id, 0))
+            await WriteOnceAsync(id, async () =>
             {
                 using var bytes = await file.Content.RentBytesAsync(ct);
                 Append(id, bytes.Memory.Span, []);
-            }
+            });
         }
 
         if (!inputs.Any(x => x.MetadataHash == metadataHash))
@@ -491,43 +494,106 @@ internal sealed class BuildCache : IDisposable, INodeStore, INodeSource
     {
         var id = new BlobId(BlobKind.Node, hash);
 
-        if (Exists(id) || !_writing.TryAdd(id, 0))
+        WriteOnce(id, () =>
         {
-            return;
-        }
+            var children = new ChildCollector(this);
+            using var memory = new MemoryStream();
 
-        var children = new ChildCollector(this);
-        using var memory = new MemoryStream();
+            using (var writer = new BinaryWriter(memory, Encoding.UTF8, leaveOpen: true))
+            {
+                NodeSerializer.Write(writer, node, children);
+            }
 
-        using (var writer = new BinaryWriter(memory, Encoding.UTF8, leaveOpen: true))
-        {
-            NodeSerializer.Write(writer, node, children);
-        }
-
-        Append(id, memory.GetBuffer().AsSpan(0, (int)memory.Length), children.ToArray());
+            Append(id, memory.GetBuffer().AsSpan(0, (int)memory.Length), children.ToArray());
+        });
     }
 
     public void PutMetadata(Metadata metadata)
     {
         var id = new BlobId(BlobKind.Metadata, metadata.Hash);
 
-        if (Exists(id) || !_writing.TryAdd(id, 0))
+        WriteOnce(id, () =>
+        {
+            var children = new ChildCollector(this);
+            using var memory = new MemoryStream();
+
+            using (var writer = new BinaryWriter(memory, Encoding.UTF8, leaveOpen: true))
+            {
+                NodeSerializer.WriteMetadata(writer, metadata, children);
+            }
+
+            Append(id, memory.GetBuffer().AsSpan(0, (int)memory.Length), children.ToArray());
+        });
+    }
+
+    private bool Exists(BlobId id) => _previous.Blobs.ContainsKey(id) || _written.ContainsKey(id);
+
+    /// <summary>
+    /// Writes the blob <paramref name="id"/> unless it exists: the first put of a blob writes it, and the others wait
+    /// for that write, so that a blob is readable as soon as any put of it returns (the caller records a reference to it
+    /// right after: a unit's outputs, a memo, a node's children, which other units read). When the write fails, the
+    /// puts that waited for it fail too, and a later put writes the blob again.
+    /// </summary>
+    private void WriteOnce(BlobId id, Action write)
+    {
+        if (Exists(id))
         {
             return;
         }
 
-        var children = new ChildCollector(this);
-        using var memory = new MemoryStream();
+        var mine = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writing = _writing.GetOrAdd(id, mine.Task);
 
-        using (var writer = new BinaryWriter(memory, Encoding.UTF8, leaveOpen: true))
+        if (writing != mine.Task)
         {
-            NodeSerializer.WriteMetadata(writer, metadata, children);
+            writing.GetAwaiter().GetResult();
+            return;
         }
 
-        Append(id, memory.GetBuffer().AsSpan(0, (int)memory.Length), children.ToArray());
+        try
+        {
+            write();
+            mine.SetResult();
+        }
+        catch (Exception e)
+        {
+            _writing.TryRemove(new KeyValuePair<BlobId, Task>(id, mine.Task));
+            mine.SetException(e);
+            throw;
+        }
     }
 
-    private bool Exists(BlobId id) => _previous.Blobs.ContainsKey(id) || _written.ContainsKey(id);
+    /// <summary>
+    /// <see cref="WriteOnce"/> for a write that awaits (the content of an output file).
+    /// </summary>
+    private async ValueTask WriteOnceAsync(BlobId id, Func<ValueTask> write)
+    {
+        if (Exists(id))
+        {
+            return;
+        }
+
+        var mine = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writing = _writing.GetOrAdd(id, mine.Task);
+
+        if (writing != mine.Task)
+        {
+            await writing;
+            return;
+        }
+
+        try
+        {
+            await write();
+            mine.SetResult();
+        }
+        catch (Exception e)
+        {
+            _writing.TryRemove(new KeyValuePair<BlobId, Task>(id, mine.Task));
+            mine.SetException(e);
+            throw;
+        }
+    }
 
     private void Append(BlobId id, ReadOnlySpan<byte> data, ImmutableArray<BlobId> children)
     {
