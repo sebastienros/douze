@@ -19,7 +19,7 @@ namespace Douze.Workflow.Steps;
 /// and the twoslash popups of the fences that a code hover step annotated (<c>data-twoslash</c>).
 /// </summary>
 /// <remarks>
-/// <para>The grammars of Tint (<see cref="CodeGrammar.Tint"/>: VS Code's, some compiled to regex kernels), then the
+/// <para>The grammars of Tint (<see cref="CodeGrammar.Tint"/>: VS Code's), then the
 /// grammars and themes of the tm-grammars and tm-themes packages are bundled (<see cref="TextMateBundle"/>);
 /// <c>grammars</c> and <c>themes</c> add files of the source folder, which win over the bundled ones. A token's style in each theme is a CSS variable of
 /// the theme's index (<c>--0</c>, <c>--1</c>...), so that a stylesheet switches themes.</para>
@@ -201,8 +201,8 @@ internal sealed partial class HighlightStep : Step, IMapStep
             keyParts.Add(theme.Hash);
         }
 
-        // Grammars: the site's first, so that they win over bundled ones of the same name or scope, then Tint's (the
-        // kernel compiled ones of this build, then Tint.Grammars), then those of tm-grammars.
+        // Grammars: the site's first, so that they win over bundled ones of the same name or scope, then Tint's
+        // (Tint.Grammars), then those of tm-grammars.
         var grammars = new List<CodeGrammar>();
 
         foreach (var (name, path) in _grammarFiles)

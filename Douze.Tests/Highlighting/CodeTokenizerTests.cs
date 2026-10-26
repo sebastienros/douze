@@ -113,22 +113,6 @@ public class CodeTokenizerTests
     }
 
     [Fact]
-    public void KernelGrammarsWinAndTokenizeAsInterpretedOnes()
-    {
-        var theme = CodeTheme.Load("github-dark", TextMateBundle.Default.GetTheme("github-dark")!, 0);
-        var kernels = new CodeTokenizer([CodeGrammar.FromTint(KernelJsonGrammar.Instance), .. CodeGrammar.Tint, .. TextMateBundle.Default.Grammars], [theme]);
-        var interpreted = new CodeTokenizer([.. CodeGrammar.Tint, .. TextMateBundle.Default.Grammars], [theme]);
-        var code = "{\n  \"name\": \"aspire\", // a comment\n  \"ports\": [5000, 5001.5, true, null],\n  \"nested\": { \"a\": \"b\\n\" }\n}";
-
-        Assert.Same(KernelJsonGrammar.Instance, kernels.Find("json")!.Source());
-        Assert.Equal(
-            interpreted.Tokenize(code, "json").SelectMany(x => x).Select(Describe),
-            kernels.Tokenize(code, "json").SelectMany(x => x).Select(Describe));
-
-        static string Describe(Token token) => $"{token.Start}-{token.End} {token.Styles[0].Color} {token.Styles[0].FontStyle}";
-    }
-
-    [Fact]
     public void SiteGrammarsWinOverTint()
     {
         var site = new CodeGrammar("csharp", "source.cs", [], [], [], () => Tint.Grammars.TintGrammars.Json);

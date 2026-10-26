@@ -59,10 +59,8 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
   registry.
 - `Douze/Highlighting/`: the `highlight` step's engine (`Workflow/Steps/HighlightStep.cs`). `TextMateBundle` reads the
   bundled grammars and themes (`textmate.zip`, written by `scripts/update-textmate.cs`: tm-grammars and tm-themes at the
-  versions of Shiki); `CodeGrammar` is a grammar of the step, `CodeGrammar.Tint` those of Tint (the kernel compiled ones
-  of the build, `KernelGrammars`, generated from Tint.Grammars.Sources when `DouzeKernelGrammars` lists them, then
-  Tint.Grammars); `CodeTokenizer` tokenizes with Tint (the first grammar of a scope wins: site files, kernels,
-  Tint.Grammars, tm-grammars; one Tint registry per language, whose tokenizers are pooled: a tokenizer is used by one
+  versions of Shiki); `CodeGrammar` is a grammar of the step, `CodeGrammar.Tint` those of Tint.Grammars;
+  `CodeTokenizer` tokenizes with Tint (the first grammar of a scope wins: site files, Tint.Grammars, tm-grammars; one Tint registry per language, whose tokenizers are pooled: a tokenizer is used by one
   thread at a time) and styles tokens in every theme at once;
   `CodeTheme` normalizes themes and resolves styles with vscode-textmate's rule trie, `Color` is the contrast arithmetic;
   `CodeMeta` parses fence metas, `CodeBlockBuilder` builds the block model (frames, markers, sections, twoslash nodes)
