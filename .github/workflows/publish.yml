@@ -1,8 +1,8 @@
 name: Publish
 
-# A v* tag publishes the tool packages to nuget.org and a GitHub Release with an archive per platform and the install
-# scripts. Running the workflow by hand is a dry run: it builds and tests the same files, uploads them as artifacts of
-# the run, and publishes nothing.
+# A v* tag publishes the tool packages to nuget.org and attaches an archive per platform and the install scripts to the
+# tag's GitHub Release, which the maintainer creates with the tag. Running the workflow by hand is a dry run: it builds
+# and tests the same files, uploads them as artifacts of the run, and publishes nothing.
 
 permissions:
   contents: read
@@ -119,12 +119,9 @@ jobs:
         name: release
         path: release
 
-    - name: Create the GitHub Release
+    # The release exists already: the maintainer creates it with its tag, which starts this workflow. Assets of the same
+    # name are replaced, so that a re-run of this job replaces them.
+    - name: Attach the assets to the GitHub Release
       env:
         GH_TOKEN: ${{ github.token }}
-        VERSION: ${{ needs.packages.outputs.version }}
-      run: |
-        set -euo pipefail
-        prerelease=""
-        case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
-        gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "douze $VERSION" --generate-notes $prerelease
+      run: gh release upload "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --clobber
