@@ -325,6 +325,31 @@ public sealed class BuildCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task ABlobIsReadableOnceAnyPutOfItReturns()
+    {
+        // Units that store the same value at once (the highlight step's memo of a snippet every page has): one writes the
+        // blob, and the others must not return before it is written, or a read right after finds no blob.
+        using var cache = Open();
+        var value = new byte[1024 * 1024];
+        new Random(1).NextBytes(value);
+
+        for (var round = 0; round < 50; round++)
+        {
+            value[0] = (byte)round;
+            var blob = value.ToArray();
+
+            await Parallel.ForAsync(0, 8, Ct, (unit, _) =>
+            {
+                var key = Hash128.OfText($"{round} {unit}");
+                cache.PutMemo("highlight", key, blob);
+                Assert.True(cache.TryGetMemo("highlight", key, out var read));
+                Assert.Equal(blob.Length, read.Length);
+                return ValueTask.CompletedTask;
+            });
+        }
+    }
+
+    [Fact]
     public void Memos()
     {
         var a = Hash128.OfText("a");
