@@ -25,8 +25,11 @@ Each fence is replaced by the output of the block template. The code is tokenize
 is a `<span style="--0:#color;--1:#color">`, one CSS variable per theme by its index (with `--0fs`, `--0fw` and
 `--0td` for italic, bold and text decorations), so that a stylesheet switches themes without another render.
 
-- Grammars: every grammar of [tm-grammars](https://github.com/shikijs/textmate-grammars-themes) is bundled, and
-  `grammars` adds files of the source folder (they win over bundled grammars of the same name). `aliases` maps fence
+- Grammars: the grammars of VS Code ([Tint.Grammars](https://github.com/sebastienros/tint)) and every grammar of
+  [tm-grammars](https://github.com/shikijs/textmate-grammars-themes) are bundled, and `grammars` adds files of the
+  source folder (they win over bundled grammars of the same name). A language VS Code has (C#, TypeScript, JSON,
+  shell...) is tokenized with VS Code's grammar, the others (Bicep, TOML, HTTP...) with tm-grammars'; fence names are
+  those of tm-grammars (`cs`, `bash`, `ts`...) and VS Code's language ids. `aliases` maps fence
   languages to grammar names. `text`, `txt`, `plain` and `plaintext` are plain text. A fence whose language no
   grammar knows is plain text too, with one warning per build that lists the languages and their fence counts.
 - Code: lines are trimmed at their end and blank lines around the code are removed; `tab-width` replaces tabs first.
@@ -97,8 +100,8 @@ with a copy button, and the twoslash classes of other renderers (`twoslash-hover
 
 ## Requirements
 
-None to install: the grammars, the themes and Oniguruma (a native library next to `douze`, like libvips) ship with
-Douze.
+None to install: the grammars, the themes and the tokenizer ([Tint](https://github.com/sebastienros/tint), managed
+code) ship with Douze.
 
 ## Caching
 

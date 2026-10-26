@@ -1,13 +1,38 @@
 using System.IO.Compression;
 using System.Text.Json;
+using Tint.Grammars;
+using Tint.Loading;
 
 namespace Douze.Highlighting;
 
 /// <summary>
 /// A TextMate grammar the highlighter knows: its name, the other names fences may use for it, its root scope, the
-/// languages it embeds (loaded with it) and the scopes it is injected into when it is an injection grammar.
+/// languages it embeds and the scopes it is injected into when it is an injection grammar. <paramref name="Source"/>
+/// gives the grammar itself, read on first use. An injection grammar of Tint (<paramref name="AlwaysInject"/>) applies
+/// to every language, as in VS Code; one of tm-grammars only to the languages that embed it, as in Shiki.
 /// </summary>
-internal sealed record GrammarInfo(string Name, string ScopeName, string? DisplayName, IReadOnlyList<string> Aliases, IReadOnlyList<string> Embedded, IReadOnlyList<string> InjectTo, Func<byte[]> Load);
+internal sealed record CodeGrammar(string Name, string ScopeName, IReadOnlyList<string> Aliases, IReadOnlyList<string> Embedded, IReadOnlyList<string> InjectTo, Func<IGrammarSource> Source, bool AlwaysInject = false)
+{
+    /// <summary>
+    /// The grammars of Tint, in the order they win over each other and over the grammars of <see cref="TextMateBundle"/>:
+    /// those compiled to regex kernels in this build (<see cref="KernelGrammars"/>, opted in with the
+    /// <c>DouzeKernelGrammars</c> property), then the VS Code grammars of Tint.Grammars.
+    /// </summary>
+    public static IReadOnlyList<CodeGrammar> Tint { get; } = [.. KernelGrammars.All.Concat(global::Tint.Grammars.TintGrammars.All).Select(FromTint)];
+
+    /// <summary>
+    /// A grammar of Tint, named by its language, or by its scope when it has none (injection grammars, grammars only
+    /// included by others).
+    /// </summary>
+    public static CodeGrammar FromTint(IGrammarSource source) =>
+        new(source.Info.LanguageId ?? source.ScopeName, source.ScopeName, [], [], source.Info.InjectTo, () => source, AlwaysInject: true);
+
+    /// <summary>
+    /// A grammar read from TextMate JSON, with the scopes it is injected into.
+    /// </summary>
+    public static IGrammarSource Load(byte[] json, IReadOnlyList<string> injectTo) =>
+        GrammarLoader.Load(json, DocumentFormat.Json, injectTo.Count == 0 ? null : new GrammarInfo { InjectTo = injectTo });
+}
 
 /// <summary>
 /// The TextMate grammars and themes bundled with Douze (<c>textmate.zip</c>, written by
@@ -22,7 +47,7 @@ internal sealed class TextMateBundle
 
     private readonly Archive _archive;
 
-    private TextMateBundle(Archive archive, IReadOnlyList<GrammarInfo> grammars, IReadOnlyList<(string Name, string Type)> themes, string version)
+    private TextMateBundle(Archive archive, IReadOnlyList<CodeGrammar> grammars, IReadOnlyList<(string Name, string Type)> themes, string version)
     {
         _archive = archive;
         Grammars = grammars;
@@ -38,7 +63,7 @@ internal sealed class TextMateBundle
     /// <summary>
     /// The grammars, then the injection grammars.
     /// </summary>
-    public IReadOnlyList<GrammarInfo> Grammars { get; }
+    public IReadOnlyList<CodeGrammar> Grammars { get; }
 
     /// <summary>
     /// The names and types (<c>dark</c>, <c>light</c>) of the themes.
@@ -62,7 +87,7 @@ internal sealed class TextMateBundle
         var archive = new Archive(new ZipArchive(stream, ZipArchiveMode.Read));
         using var manifest = JsonDocument.Parse(archive.Read("manifest.json")!);
         var root = manifest.RootElement;
-        var grammars = new List<GrammarInfo>();
+        var grammars = new List<CodeGrammar>();
         var themes = new List<(string, string)>();
 
         foreach (var list in new[] { "grammars", "injections" })
@@ -71,14 +96,15 @@ internal sealed class TextMateBundle
             {
                 var name = item.GetProperty("name").GetString()!;
                 var path = $"grammars/{name}.json";
-                grammars.Add(new GrammarInfo(
+                var injectTo = Strings(item, "injectTo");
+                var source = new Lazy<IGrammarSource>(() => CodeGrammar.Load(archive.Read(path)!, injectTo));
+                grammars.Add(new CodeGrammar(
                     name,
                     item.GetProperty("scopeName").GetString()!,
-                    item.TryGetProperty("displayName", out var display) ? display.GetString() : null,
                     Strings(item, "aliases"),
                     Strings(item, "embedded"),
-                    Strings(item, "injectTo"),
-                    () => archive.Read(path)!));
+                    injectTo,
+                    () => source.Value));
             }
         }
 

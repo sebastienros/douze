@@ -1,13 +1,6 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using TextMateSharp.Grammars;
-using TextMateSharp.Internal.Grammars.Parser;
-using TextMateSharp.Internal.Types;
-using TextMateSharp.Registry;
-using TextMateSharp.Themes;
+using Tint;
+using Tint.Grammars;
 
 namespace Douze.Highlighting;
 
@@ -17,31 +10,24 @@ namespace Douze.Highlighting;
 internal readonly record struct Token(int Start, int End, TokenStyle[] Styles);
 
 /// <summary>
-/// Tokenizes code with TextMate grammars (TextMateSharp, on Oniguruma), and styles the tokens in every theme at once:
-/// a line is tokenized once, each token's style is resolved from its scopes in each theme, and adjacent tokens with
-/// the same styles merge. A language is tokenized by registries of its own (its grammar, the grammars it embeds and the
-/// injections into them), rented from a pool: one grammar is not used by two threads at once.
+/// Tokenizes code with TextMate grammars (Tint, on GregsEx), and styles the tokens in every theme at once: a line is
+/// tokenized once, each token's style is resolved from its scopes in each theme, and adjacent tokens with the same
+/// styles merge. A language has a registry of its own (every grammar, and the injection grammars that apply to it),
+/// whose compiled grammar its tokenizers share; a tokenizer is used by one thread at a time, rented from a pool.
 /// </summary>
-internal sealed partial class CodeTokenizer
+internal sealed class CodeTokenizer
 {
     /// <summary>
-    /// The longest a line is tokenized for by default (<see cref="CodeTokenizer(IEnumerable{GrammarInfo}, IReadOnlyList{CodeTheme}, TimeSpan?)"/>).
+    /// The longest a line is tokenized for by default (<see cref="CodeTokenizer(IEnumerable{CodeGrammar}, IReadOnlyList{CodeTheme}, TimeSpan?)"/>).
     /// </summary>
     internal static readonly TimeSpan DefaultLineTimeLimit = TimeSpan.FromSeconds(30);
 
-    /// <summary>
-    /// The most registries of a language at once. Each compiles the regexes of its grammars in Oniguruma's native heap,
-    /// tens of MB for the large grammars, which the GC does not see: one per parallel unit was 800 MB at 14 units on a
-    /// large site. A unit waits for a registry of its language when they are all in use; tokenizing is a small part of a
-    /// unit.
-    /// </summary>
-    internal const int MaxRegistriesPerLanguage = 4;
-
     private static readonly HashSet<string> PlainLanguages = new(["", "plaintext", "txt", "text", "plain", "ansi"], StringComparer.Ordinal);
 
-    private readonly Dictionary<string, GrammarInfo> _byName = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, GrammarInfo> _byScope = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, RegistryPool> _pools = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _scopeByName = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CodeGrammar> _byScope = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<string>> _embeddedByName = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<Language>> _languages = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<CodeTheme> _themes;
     private readonly TimeSpan _lineTimeLimit;
 
@@ -49,10 +35,10 @@ internal sealed partial class CodeTokenizer
     /// <param name="themes">The themes tokens are styled in.</param>
     /// <param name="lineTimeLimit">
     /// The longest a line is tokenized for (<see cref="DefaultLineTimeLimit"/>). A line that takes longer fails rather
-    /// than keeping the style of where it stopped: where a line stops depends on the load of the machine (a registry
-    /// compiles its rules on its first lines, while other units run), and a build must not.
+    /// than keeping the style of where it stopped: where a line stops depends on the load of the machine, and a build
+    /// must not.
     /// </param>
-    public CodeTokenizer(IEnumerable<GrammarInfo> grammars, IReadOnlyList<CodeTheme> themes, TimeSpan? lineTimeLimit = null)
+    public CodeTokenizer(IEnumerable<CodeGrammar> grammars, IReadOnlyList<CodeTheme> themes, TimeSpan? lineTimeLimit = null)
     {
         _themes = themes;
         _lineTimeLimit = lineTimeLimit ?? DefaultLineTimeLimit;
@@ -61,16 +47,22 @@ internal sealed partial class CodeTokenizer
         {
             _byScope.TryAdd(grammar.ScopeName, grammar);
 
+            // The languages a name embeds, whichever grammar of that name wins its scope.
+            if (grammar.Embedded.Count > 0)
+            {
+                _embeddedByName.TryAdd(grammar.Name, [.. grammar.Embedded]);
+            }
+
             if (grammar.InjectTo.Count > 0)
             {
                 continue;
             }
 
-            _byName.TryAdd(grammar.Name, grammar);
+            _scopeByName.TryAdd(grammar.Name, grammar.ScopeName);
 
             foreach (var alias in grammar.Aliases)
             {
-                _byName.TryAdd(alias, grammar);
+                _scopeByName.TryAdd(alias, grammar.ScopeName);
             }
         }
     }
@@ -84,9 +76,10 @@ internal sealed partial class CodeTokenizer
     public static bool IsPlain(string language) => PlainLanguages.Contains(language);
 
     /// <summary>
-    /// The grammar of a language name or alias, or null.
+    /// The grammar of a language name or alias, or null: the first grammar of the scope that name refers to.
     /// </summary>
-    public GrammarInfo? Find(string language) => _byName.GetValueOrDefault(language);
+    public CodeGrammar? Find(string language) =>
+        _scopeByName.TryGetValue(language, out var scope) ? _byScope[scope] : null;
 
     /// <summary>
     /// The tokens of each line of <paramref name="code"/> (lines split on <c>\n</c>), in the language's grammar; one
@@ -110,22 +103,19 @@ internal sealed partial class CodeTokenizer
             return result;
         }
 
-        var pool = _pools.GetOrAdd(grammar.Name, _ => new RegistryPool());
-        pool.Slots.Wait();
+        var target = _languages.GetOrAdd(grammar.ScopeName, scope => new Lazy<Language>(() => CreateLanguage(scope, language))).Value;
 
-        Registry? registry = null;
+        if (!target.Tokenizers.TryTake(out var rented))
+        {
+            rented = new RentedTokenizer(target.Registry.CreateTokenizer(grammar.ScopeName));
+            rented.Tokenizer.TimeBudget = _lineTimeLimit;
+        }
+
         var reusable = false;
 
         try
         {
-            if (!pool.Registries.TryTake(out registry))
-            {
-                registry = new Registry(new Locator(this, grammar));
-            }
-
-            var tmGrammar = registry.LoadGrammar(grammar.ScopeName)
-                ?? throw new DouzeException($"the grammar of '{language}' ({grammar.ScopeName}) could not be loaded");
-            IStateStack? state = null;
+            var state = StateStack.Initial;
 
             for (var i = 0; i < lines.Length; i++)
             {
@@ -138,34 +128,24 @@ internal sealed partial class CodeTokenizer
                     continue;
                 }
 
-                var started = Stopwatch.GetTimestamp();
-                var tokenized = tmGrammar.TokenizeLine(line, state, _lineTimeLimit);
+                var tokenized = rented.Tokenizer.TokenizeLine(line, state, out state);
 
-                // A line stops early only once past the limit (TextMateSharp does not expose its flag, and pads its
-                // tokens to the end of the line).
-                if (Stopwatch.GetElapsedTime(started) >= _lineTimeLimit)
+                if (rented.Tokenizer.StoppedEarly)
                 {
                     throw new DouzeException($"line {i + 1} of a '{language}' code block took more than {_lineTimeLimit.TotalSeconds:0.###} s to highlight");
                 }
 
-                state = tokenized.RuleStack;
-
-                foreach (var token in tokenized.Tokens)
+                foreach (var token in tokenized)
                 {
-                    var start = Math.Min(token.StartIndex, line.Length);
-                    var end = Math.Min(token.EndIndex, line.Length);
+                    var start = Math.Min(token.Start, line.Length);
+                    var end = Math.Min(token.End, line.Length);
 
                     if (end <= start)
                     {
                         continue;
                     }
 
-                    var styles = new TokenStyle[_themes.Count];
-
-                    for (var t = 0; t < styles.Length; t++)
-                    {
-                        styles[t] = _themes[t].Resolve(token.Scopes);
-                    }
+                    var styles = rented.Styles(token.Scopes, _themes);
 
                     if (tokens.Count > 0 && tokens[^1].End == start && tokens[^1].Styles.AsSpan().SequenceEqual(styles))
                     {
@@ -182,154 +162,99 @@ internal sealed partial class CodeTokenizer
         }
         finally
         {
-            // A registry that failed may be left half compiled.
+            // A tokenizer that failed is not reused.
             if (reusable)
             {
-                pool.Registries.Add(registry!);
+                target.Tokenizers.Add(rented);
             }
-
-            pool.Slots.Release();
         }
 
         return result;
     }
 
     /// <summary>
-    /// The registries of a language: at most <see cref="MaxRegistriesPerLanguage"/>, each used by one thread at a time.
+    /// The registry of a language: every grammar (each scope's first, read when the language includes it), and the
+    /// injection grammars that apply to it: Tint's, and those of tm-grammars into the languages it embeds.
     /// </summary>
-    private sealed class RegistryPool
+    private Language CreateLanguage(string scope, string language)
     {
-        public SemaphoreSlim Slots { get; } = new(MaxRegistriesPerLanguage, MaxRegistriesPerLanguage);
+        var embedded = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<string>([_byScope[scope].Name, language]);
 
-        public ConcurrentBag<Registry> Registries { get; } = [];
-    }
-
-    /// <summary>
-    /// A grammar as TextMateSharp's rules (<see cref="Raw"/> objects, lists, strings, booleans and numbers), read from its
-    /// JSON here: TextMateSharp's own reader leaves numbers and booleans out, so <c>applyEndPatternLast</c> is lost. What
-    /// TextMateSharp cannot read and vscode-textmate tolerates is left out or fixed: captures that are not rules
-    /// (<c>"captures": { "name": "..." }</c>) are ignored, and a <c>begin</c> rule without <c>end</c> or <c>while</c> ends
-    /// at a character no code has (U+FFFF), as vscode-textmate does. A NUL in a pattern (<c>\x00</c>, <c>\x{0}</c>,
-    /// <c>\u0000</c>) is U+0001: the Oniguruma build of TextMateSharp matches every character with a negated class that
-    /// starts at NUL inside another class (<c>[a-z[^\x00-\x7F]]</c>, as CSS selectors are matched), and code has no NUL.
-    /// </summary>
-    internal static IRawGrammar ReadGrammar(byte[] json)
-    {
-        using var document = JsonDocument.Parse(json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-        return (Raw)Convert(document.RootElement, null)!;
-
-        static object? Convert(JsonElement element, string? key)
+        while (pending.TryPop(out var name))
         {
-            switch (element.ValueKind)
+            if (embedded.Add(name) && _embeddedByName.TryGetValue(name, out var names))
             {
-                case JsonValueKind.Object:
-                    var raw = new Raw();
-                    var captures = key is "captures" or "beginCaptures" or "endCaptures" or "whileCaptures";
-
-                    foreach (var property in element.EnumerateObject())
-                    {
-                        if (captures && property.Value.ValueKind != JsonValueKind.Object)
-                        {
-                            continue;
-                        }
-
-                        if (Convert(property.Value, property.Name) is { } value)
-                        {
-                            raw[property.Name] = value;
-                        }
-                    }
-
-                    if (raw.ContainsKey("begin") && !raw.ContainsKey("end") && !raw.ContainsKey("while"))
-                    {
-                        raw["end"] = "\uFFFF";
-                    }
-
-                    return raw;
-                case JsonValueKind.Array:
-                    return element.EnumerateArray().Select(x => Convert(x, null)).Where(x => x != null).ToList();
-                case JsonValueKind.String:
-                    var text = element.GetString()!;
-                    return key is "begin" or "end" or "match" or "while" && NulEscape().IsMatch(text)
-                        ? NulEscape().Replace(text, m => m.Groups[1].Value + m.Groups[2].Value switch { "x00" => @"\x01", "u0000" => @"\u0001", _ => @"\x{1}" })
-                        : text;
-                case JsonValueKind.True:
-                    return true;
-                case JsonValueKind.False:
-                    return false;
-                case JsonValueKind.Number:
-                    return key == "applyEndPatternLast" ? element.GetDouble() != 0 : element.TryGetInt32(out var number) ? number : element.GetDouble();
-                default:
-                    return null;
-            }
-        }
-    }
-
-    [GeneratedRegex(@"(?<!\\)((?:\\\\)*)\\(x00|x\{0+\}|u0000)")]
-    private static partial Regex NulEscape();
-
-    /// <summary>
-    /// The grammars a registry of one language loads: the language's, the grammars of the scopes they include (any
-    /// grammar known by its scope), and the injection grammars into those scopes that the language embeds.
-    /// </summary>
-    private sealed class Locator(CodeTokenizer tokenizer, GrammarInfo root) : IRegistryOptions
-    {
-        private readonly HashSet<string> _embedded = Embedded(tokenizer, root);
-
-        private static HashSet<string> Embedded(CodeTokenizer tokenizer, GrammarInfo root)
-        {
-            var names = new HashSet<string>(StringComparer.Ordinal);
-            var pending = new Stack<string>([root.Name]);
-
-            while (pending.TryPop(out var name))
-            {
-                if (names.Add(name) && tokenizer._byScope.Values.FirstOrDefault(x => x.Name == name) is { } grammar)
+                foreach (var other in names)
                 {
-                    foreach (var embedded in grammar.Embedded)
-                    {
-                        pending.Push(embedded);
-                    }
+                    pending.Push(other);
                 }
             }
-
-            return names;
         }
 
-        public IRawGrammar? GetGrammar(string scopeName)
+        var registry = new GrammarRegistry();
+
+        foreach (var grammar in _byScope.Values)
         {
-            if (!tokenizer._byScope.TryGetValue(scopeName, out var grammar))
+            if (grammar.InjectTo.Count == 0 || grammar.AlwaysInject || embedded.Contains(grammar.Name))
             {
-                return null;
+                registry.Add(new LazySource(grammar));
             }
-
-            // A grammar of its own for each registry: TextMateSharp writes rule ids into it.
-            return ReadGrammar(grammar.Load());
         }
 
-        public ICollection<string>? GetInjections(string scopeName)
-        {
-            var injections = tokenizer._byScope.Values
-                .Where(x => x.InjectTo.Contains(scopeName) && _embedded.Contains(x.Name))
-                .Select(x => x.ScopeName)
-                .ToList();
-            return injections.Count == 0 ? null : injections;
-        }
+        return new Language(registry);
+    }
 
-        public IRawTheme? GetTheme(string scopeName) => null;
+    private sealed class Language(GrammarRegistry registry)
+    {
+        public GrammarRegistry Registry { get; } = registry;
 
-        public IRawTheme GetDefaultTheme() => EmptyTheme.Instance;
+        public ConcurrentBag<RentedTokenizer> Tokenizers { get; } = [];
     }
 
     /// <summary>
-    /// The theme of the registries: styles are resolved by <see cref="CodeTheme"/>, not by the grammar.
+    /// A tokenizer and the styles of the scope stacks it met: a stack is resolved in every theme once.
     /// </summary>
-    private sealed class EmptyTheme : IRawTheme
+    private sealed class RentedTokenizer(Tokenizer tokenizer)
     {
-        public static readonly EmptyTheme Instance = new();
+        private readonly Dictionary<AttributedScopeStack, TokenStyle[]> _styles = [];
 
-        public string GetName() => "none";
-        public string? GetInclude() => null;
-        public ICollection<IRawThemeSetting> GetSettings() => [];
-        public ICollection<IRawThemeSetting> GetTokenColors() => [];
-        public ICollection<KeyValuePair<string, object>> GetGuiColors() => [];
+        public Tokenizer Tokenizer { get; } = tokenizer;
+
+        public TokenStyle[] Styles(AttributedScopeStack scopes, IReadOnlyList<CodeTheme> themes)
+        {
+            if (!_styles.TryGetValue(scopes, out var styles))
+            {
+                var names = scopes.GetScopeNames();
+                styles = new TokenStyle[themes.Count];
+
+                for (var t = 0; t < styles.Length; t++)
+                {
+                    styles[t] = themes[t].Resolve(names);
+                }
+
+                _styles[scopes] = styles;
+            }
+
+            return styles;
+        }
+    }
+
+    /// <summary>
+    /// A grammar as a registry sees it: its scope and the scopes it injects into are known up front, the grammar is
+    /// read when a tokenizer reaches it. The language id is left out: a registry holds every grammar, more than the 255
+    /// languages Tint numbers.
+    /// </summary>
+    private sealed class LazySource(CodeGrammar grammar) : IGrammarSource
+    {
+        private GrammarInfo? _info;
+
+        public string ScopeName => grammar.ScopeName;
+
+        public GrammarInfo Info => _info ??= grammar.InjectTo.Count == 0
+            ? GrammarInfo.Empty
+            : new GrammarInfo { InjectTo = grammar.InjectTo, InjectionSelector = grammar.AlwaysInject ? grammar.Source().Info.InjectionSelector : null };
+
+        public RawGrammar GetGrammar() => grammar.Source().GetGrammar();
     }
 }

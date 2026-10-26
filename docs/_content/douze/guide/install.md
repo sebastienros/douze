@@ -106,7 +106,7 @@ In PowerShell, pass them to the script block:
 ```
 
 The installed files are a folder per version, `<install dir>/<version>`, with the `douze` executable and the native
-libraries it loads (libvips for images, Oniguruma for syntax highlighting). `<install dir>/bin` is a link to the
+library it loads (libvips, for images). `<install dir>/bin` is a link to the
 current version.
 
 ## Install as a .NET tool
