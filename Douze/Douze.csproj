@@ -68,25 +68,7 @@
     <PackageReference Include="System.IO.Hashing" />
     <PackageReference Include="Tint" />
     <PackageReference Include="Tint.Grammars" />
-    <!-- The VS Code grammar files the kernel grammars are generated from (DouzeKernelGrammars, below): nothing ships. -->
-    <PackageReference Include="Tint.Grammars.Sources" PrivateAssets="all" />
     <PackageReference Include="ZString" />
-  </ItemGroup>
-
-  <!-- Grammars compiled to regex kernels by Tint's source generator (CodeTokenizer registers them before the grammars
-       of Tint.Grammars and textmate.zip): a list among csharp, typescript, html and json, none by default. Each one
-       makes the tool larger (about 1 MB for C#) and its build slower, for faster tokenizing of that language:
-       dotnet publish Douze -p:DouzeKernelGrammars="csharp;typescript". -->
-  <PropertyGroup>
-    <_DouzeKernelGrammars>;$(DouzeKernelGrammars.Replace(' ', '').ToLowerInvariant());</_DouzeKernelGrammars>
-    <TintGrammarsClass>Douze.Highlighting.KernelGrammars</TintGrammarsClass>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <TintGrammar Include="@(TintGrammarsSourcesAll->WithMetadataValue('LanguageId', 'csharp'))" Kernels="true" Namespace="Douze.Highlighting" Name="KernelCSharpGrammar" Condition="$(_DouzeKernelGrammars.Contains(';csharp;'))" />
-    <TintGrammar Include="@(TintGrammarsSourcesAll->WithMetadataValue('LanguageId', 'typescript'))" Kernels="true" Namespace="Douze.Highlighting" Name="KernelTypeScriptGrammar" Condition="$(_DouzeKernelGrammars.Contains(';typescript;'))" />
-    <TintGrammar Include="@(TintGrammarsSourcesAll->WithMetadataValue('LanguageId', 'html'))" Kernels="true" Namespace="Douze.Highlighting" Name="KernelHtmlGrammar" Condition="$(_DouzeKernelGrammars.Contains(';html;'))" />
-    <TintGrammar Include="@(TintGrammarsSourcesAll->WithMetadataValue('LanguageId', 'json'))" Kernels="true" Namespace="Douze.Highlighting" Name="KernelJsonGrammar" Condition="$(_DouzeKernelGrammars.Contains(';json;'))" />
   </ItemGroup>
 
   <!-- libvips, the native library of the image features (NetVips, loaded by its module initializer at process start):

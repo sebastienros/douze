@@ -639,8 +639,10 @@ step per branch, each waiting only for its own branch's reduce steps, the peak i
 TextMateSharp 33.3 s, 6.9 GB RSS (5.5 GB footprint); Tint 18.7 and 19.9 s, 7.2 and 8.0 GB RSS (5.8 and 6.5 GB). A step
 that joins branches pays for the reduce steps of all of them.
 
-Kernels (`DouzeKernelGrammars`) gain nothing measurable here, as Tint measures (3 to 4% on large C# files), for 5 MB
-more binary: they stay opt-in. The pages are byte-identical with and without kernels. Against TextMateSharp, VS Code's
+Kernels (the `DouzeKernelGrammars` opt-in of 0.3.x) gained nothing measurable here, as Tint measured (3 to 4% on large
+C# files), for 5 MB more binary; with GregsEx 0.5.2's kernels for subexpression calls (Tint 0.1.1) a clean build of
+aspire.dev was still within noise (20.7 to 23.0 s either way: the regex engine is about 6% of its CPU, and kernels cut
+that by a fifth), so the opt-in was removed in 0.3.2. The pages are byte-identical with and without kernels. Against TextMateSharp, VS Code's
 grammars, which now win over tm-grammars', change YAML (`: ` is one token) and dotenv (numbers are not colored); C#,
 TypeScript, JSON, XML, shell and PowerShell are unchanged.
 

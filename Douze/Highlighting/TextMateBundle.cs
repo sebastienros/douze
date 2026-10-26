@@ -14,11 +14,10 @@ namespace Douze.Highlighting;
 internal sealed record CodeGrammar(string Name, string ScopeName, IReadOnlyList<string> Aliases, IReadOnlyList<string> Embedded, IReadOnlyList<string> InjectTo, Func<IGrammarSource> Source, bool AlwaysInject = false)
 {
     /// <summary>
-    /// The grammars of Tint, in the order they win over each other and over the grammars of <see cref="TextMateBundle"/>:
-    /// those compiled to regex kernels in this build (<see cref="KernelGrammars"/>, opted in with the
-    /// <c>DouzeKernelGrammars</c> property), then the VS Code grammars of Tint.Grammars.
+    /// The grammars of Tint (the VS Code grammars of Tint.Grammars), which win over the grammars of
+    /// <see cref="TextMateBundle"/>.
     /// </summary>
-    public static IReadOnlyList<CodeGrammar> Tint { get; } = [.. KernelGrammars.All.Concat(global::Tint.Grammars.TintGrammars.All).Select(FromTint)];
+    public static IReadOnlyList<CodeGrammar> Tint { get; } = [.. global::Tint.Grammars.TintGrammars.All.Select(FromTint)];
 
     /// <summary>
     /// A grammar of Tint, named by its language, or by its scope when it has none (injection grammars, grammars only

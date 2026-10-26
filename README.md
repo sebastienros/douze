@@ -864,11 +864,6 @@ Oniguruma-compatible regex engine; Douze resolves the themes itself, with vscode
 tokens for the grammars of tm-grammars. Injection grammars of VS Code apply to every language, as in VS Code; those of
 tm-grammars to the languages that embed them, as in Shiki.
 
-A build of Douze can compile the grammars of C#, TypeScript, HTML and JSON to regex kernels, generated code that
-tokenizes faster than interpreted patterns, at the cost of a larger binary (about 1 MB each) and a slower build of
-Douze. They are opt-in: `dotnet publish Douze -p:DouzeKernelGrammars="csharp%3Btypescript%3Bhtml%3Bjson"` (`%3B` is
-`;`), or any of them; they win over the other grammars of their scope, with the same tokens.
-
 # check-code
 
 The `check-code` step checks that code is well formed, with parsers built into Douze: the fences of HTML pages (as the
