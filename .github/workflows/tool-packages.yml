@@ -73,9 +73,8 @@ jobs:
       shell: bash
       run: dotnet pack Douze --configuration Release -r ${{ matrix.rid }} --property:PackTool=true --property:Version="$VERSION" --property:ContinuousIntegrationBuild=True --property:PackageOutputPath="${GITHUB_WORKSPACE}/tool-artifacts"
 
-    # The image features need libvips next to the binary (NetVips.Native.<rid>, Douze.csproj), the highlight step
-    # Oniguruma (libonigwrap, from the Onigwrap package); the symbols are several times the size of the binary and stay
-    # out.
+    # The image features need libvips next to the binary (NetVips.Native.<rid>, Douze.csproj); the symbols are several
+    # times the size of the binary and stay out.
     - name: Check the files of the package (${{ matrix.rid }})
       shell: pwsh
       run: |
@@ -86,13 +85,12 @@ jobs:
         $zip.Dispose()
         $entries | ForEach-Object { Write-Host $_ }
         if (-not ($entries -match '^tools/any/${{ matrix.rid }}/(libvips-42\.dll|libvips\.42\.dylib|libvips\.so\.42)$')) { throw "libvips is missing from $($package.Name)" }
-        if (-not ($entries -match '^tools/any/${{ matrix.rid }}/libonigwrap\.(dll|dylib|so)$')) { throw "libonigwrap is missing from $($package.Name)" }
         $symbols = $entries -match '\.(dSYM|dbg|pdb)(/|$)'
         if ($symbols) { throw "$($package.Name) has symbols: $symbols" }
         Write-Host "$($package.Name): $([math]::Round($package.Length / 1MB, 1)) MB"
 
     # The binary of the package runs on its platform (the runners are native ones, arm64 included): a site whose image
-    # and code block need libvips and Oniguruma.
+    # and code block need libvips and the highlighter.
     - name: Run douze (${{ matrix.rid }})
       shell: pwsh
       run: |
@@ -137,9 +135,7 @@ jobs:
         set -euo pipefail
         entries="$(unzip -Z1 "tool-artifacts/Douze.any.$VERSION.nupkg")"
         for library in win-x64/native/libvips-42.dll win-arm64/native/libvips-42.dll linux-x64/native/libvips.so.42 \
-            linux-arm64/native/libvips.so.42 osx-x64/native/libvips.42.dylib osx-arm64/native/libvips.42.dylib \
-            win-x64/native/libonigwrap.dll win-arm64/native/libonigwrap.dll linux-x64/native/libonigwrap.so \
-            linux-arm64/native/libonigwrap.so osx-x64/native/libonigwrap.dylib osx-arm64/native/libonigwrap.dylib; do
+            linux-arm64/native/libvips.so.42 osx-x64/native/libvips.42.dylib osx-arm64/native/libvips.42.dylib; do
           echo "$entries" | grep -qx "tools/net11.0/any/runtimes/$library" || { echo "Douze.any lacks $library"; exit 1; }
         done
         if echo "$entries" | grep -E '\.pdb$'; then echo "Douze.any has symbols"; exit 1; fi

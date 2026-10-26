@@ -89,13 +89,67 @@ public class CodeTokenizerTests
     }
 
     [Fact]
-    public void GrammarsTextMateSharpCannotReadAsTheyAre()
+    public void GrammarsWithCapturesThatAreNotRules()
     {
         // The XML grammar has captures that are not rules, and a rule with a begin and no end.
         var theme = CodeTheme.Load("github-light", TextMateBundle.Default.GetTheme("github-light")!, 0);
         var tokens = new CodeTokenizer(TextMateBundle.Default.Grammars, [theme]).Tokenize("<a b=\"c\"><!-- d --></a>", "xml");
 
         Assert.True(tokens[0].Count > 3);
+    }
+
+    [Fact]
+    public void TintGrammarsWinOverTheBundledOnes()
+    {
+        var tokenizer = new CodeTokenizer([.. CodeGrammar.Tint, .. TextMateBundle.Default.Grammars], []);
+
+        // A name of tm-grammars refers to a scope, whose first grammar is Tint's.
+        Assert.Same(Tint.Grammars.TintGrammars.CSharp, tokenizer.Find("cs")!.Source());
+        Assert.Same(Tint.Grammars.TintGrammars.Json, tokenizer.Find("json")!.Source());
+
+        // Languages VS Code has no grammar for are the bundle's.
+        Assert.False(tokenizer.Find("bicep")!.AlwaysInject);
+        Assert.Equal("source.bicep", tokenizer.Find("bicep")!.ScopeName);
+    }
+
+    [Fact]
+    public void KernelGrammarsWinAndTokenizeAsInterpretedOnes()
+    {
+        var theme = CodeTheme.Load("github-dark", TextMateBundle.Default.GetTheme("github-dark")!, 0);
+        var kernels = new CodeTokenizer([CodeGrammar.FromTint(KernelJsonGrammar.Instance), .. CodeGrammar.Tint, .. TextMateBundle.Default.Grammars], [theme]);
+        var interpreted = new CodeTokenizer([.. CodeGrammar.Tint, .. TextMateBundle.Default.Grammars], [theme]);
+        var code = "{\n  \"name\": \"aspire\", // a comment\n  \"ports\": [5000, 5001.5, true, null],\n  \"nested\": { \"a\": \"b\\n\" }\n}";
+
+        Assert.Same(KernelJsonGrammar.Instance, kernels.Find("json")!.Source());
+        Assert.Equal(
+            interpreted.Tokenize(code, "json").SelectMany(x => x).Select(Describe),
+            kernels.Tokenize(code, "json").SelectMany(x => x).Select(Describe));
+
+        static string Describe(Token token) => $"{token.Start}-{token.End} {token.Styles[0].Color} {token.Styles[0].FontStyle}";
+    }
+
+    [Fact]
+    public void SiteGrammarsWinOverTint()
+    {
+        var site = new CodeGrammar("csharp", "source.cs", [], [], [], () => Tint.Grammars.TintGrammars.Json);
+        var tokenizer = new CodeTokenizer([site, .. CodeGrammar.Tint, .. TextMateBundle.Default.Grammars], []);
+
+        Assert.Same(site, tokenizer.Find("cs"));
+    }
+
+    [Fact]
+    public void EveryGrammarTokenizes()
+    {
+        // Every grammar of the step, Tint's and the bundle's, reads and tokenizes code without failing.
+        var theme = CodeTheme.Load("github-dark", TextMateBundle.Default.GetTheme("github-dark")!, 0);
+        var tokenizer = new CodeTokenizer([.. CodeGrammar.Tint, .. TextMateBundle.Default.Grammars], [theme]);
+        var names = CodeGrammar.Tint.Concat(TextMateBundle.Default.Grammars).Where(x => x.InjectTo.Count == 0).Select(x => x.Name).Distinct().Order(StringComparer.Ordinal).ToList();
+
+        foreach (var name in names)
+        {
+            var exception = Record.Exception(() => tokenizer.Tokenize("a = \"b\" + 1 // c\n<d e='f'>{ g: [h] }</d>", name));
+            Assert.True(exception == null, $"{name}: {exception}");
+        }
     }
 
     [Fact]

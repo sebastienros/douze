@@ -46,7 +46,7 @@ docs/tests/docker/validate.sh --douze /path/to/linux-build  # a local build inst
 docs/tests/docker/validate.sh --no-dotnet --no-unsupported
 ```
 
-`--douze` mounts a folder with a Linux `douze` and its native libraries (`libvips.so.42`, `libonigwrap.so`), such as
+`--douze` mounts a folder with a Linux `douze` and its native library (`libvips.so.42`), such as
 the output of `dotnet publish Douze -c Release -r linux-arm64`, to check the pages against a version that is not
 published yet. It skips the install steps.
 

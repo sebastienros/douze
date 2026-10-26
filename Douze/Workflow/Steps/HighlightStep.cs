@@ -19,8 +19,9 @@ namespace Douze.Workflow.Steps;
 /// and the twoslash popups of the fences that a code hover step annotated (<c>data-twoslash</c>).
 /// </summary>
 /// <remarks>
-/// <para>The grammars and themes of the tm-grammars and tm-themes packages are bundled (<see cref="TextMateBundle"/>);
-/// <c>grammars</c> and <c>themes</c> add files of the source folder. A token's style in each theme is a CSS variable of
+/// <para>The grammars of Tint (<see cref="CodeGrammar.Tint"/>: VS Code's, some compiled to regex kernels), then the
+/// grammars and themes of the tm-grammars and tm-themes packages are bundled (<see cref="TextMateBundle"/>);
+/// <c>grammars</c> and <c>themes</c> add files of the source folder, which win over the bundled ones. A token's style in each theme is a CSS variable of
 /// the theme's index (<c>--0</c>, <c>--1</c>...), so that a stylesheet switches themes.</para>
 /// <para>Options: <c>themes</c> (bundled names or paths of theme files; <c>github-dark</c> and <c>github-light</c> by
 /// default), <c>min-contrast</c> (5.5: token colors are made readable on the background, 0 keeps the theme's),
@@ -35,6 +36,9 @@ namespace Douze.Workflow.Steps;
 internal sealed partial class HighlightStep : Step, IMapStep
 {
     private const string Version = "1";
+
+    // The grammars of Tint.Grammars, which the tokens depend on.
+    private static readonly string TintVersion = $"tint@{typeof(Tint.Grammars.TintGrammars).Assembly.GetName().Version}";
 
     private static readonly GlobSet HtmlFiles = GlobSet.Parse(["**/*.html"]);
 
@@ -197,8 +201,9 @@ internal sealed partial class HighlightStep : Step, IMapStep
             keyParts.Add(theme.Hash);
         }
 
-        // Grammars: the site's first, so that they win over bundled ones of the same name or scope.
-        var grammars = new List<GrammarInfo>();
+        // Grammars: the site's first, so that they win over bundled ones of the same name or scope, then Tint's (the
+        // kernel compiled ones of this build, then Tint.Grammars), then those of tm-grammars.
+        var grammars = new List<CodeGrammar>();
 
         foreach (var (name, path) in _grammarFiles)
         {
@@ -212,11 +217,14 @@ internal sealed partial class HighlightStep : Step, IMapStep
                 throw new DouzeException($"step '{Name}': the grammar file '{path}' has no scopeName");
             }
 
-            grammars.Add(new GrammarInfo(name, scope, name, [], [], [], () => json));
+            var source = new Lazy<Tint.Grammars.IGrammarSource>(() => CodeGrammar.Load(json, []));
+            grammars.Add(new CodeGrammar(name, scope, [], [], [], () => source.Value));
             keyParts.Add($"{name}\0{scope}\0{Hash128.Of(json)}");
         }
 
+        grammars.AddRange(CodeGrammar.Tint);
         grammars.AddRange(bundle.Grammars);
+        keyParts.Add(TintVersion);
         _tokenizer = new CodeTokenizer(grammars, themes);
 
         foreach (var (alias, target) in _aliases.OrderBy(x => x.Key, StringComparer.Ordinal))

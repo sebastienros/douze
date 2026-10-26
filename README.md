@@ -825,11 +825,15 @@ grammars and themes (the grammars of VS Code and of most highlighters for the we
                with: { themes: [github-dark, github-light], stylesheet: assets/code.css } }
 ````
 
-- Grammars and themes: every grammar of [tm-grammars](https://github.com/shikijs/textmate-grammars-themes) and every
-  theme of tm-themes are bundled (the versions of Shiki 4.5), and `grammars` adds files of the source folder (names to
-  grammar files: `grammars: { mylang: syntax/mylang.json }`); `aliases` maps fence languages to grammar names. A fence
-  whose language no grammar knows is plain text, with one warning per build listing the languages and their fences.
-  `text`, `txt`, `plain` and `plaintext` are plain text.
+- Grammars and themes: the grammars of VS Code ([Tint.Grammars](https://github.com/sebastienros/tint)), then every
+  grammar of [tm-grammars](https://github.com/shikijs/textmate-grammars-themes) and every theme of tm-themes (the
+  versions of Shiki 4.5) are bundled, and `grammars` adds files of the source folder (names to grammar files:
+  `grammars: { mylang: syntax/mylang.json }`), which win over the bundled ones. A fence's language is looked up by the
+  names and aliases of tm-grammars (`cs`, `bash`, `ts`...) and the language ids of VS Code; the first grammar of its
+  scope tokenizes it, so a language VS Code has (C#, TypeScript, JSON, shell...) uses VS Code's grammar and the others
+  (Bicep, TOML, HTTP...) use tm-grammars'. `aliases` maps fence languages to grammar names. A fence whose language no
+  grammar knows is plain text, with one warning per build listing the languages and their fences. `text`, `txt`,
+  `plain` and `plaintext` are plain text.
 - Themes: `themes` lists bundled names or theme files (VS Code's JSON); the first is the default, the others are
   selected by CSS. Each token is a `<span style="--0:#color;--1:#color">`, a variable per theme (with `--0fs`, `--0fw`
   and `--0td` for italic, bold and decorations), so that a stylesheet switches themes without another render.
@@ -855,9 +859,15 @@ grammars and themes (the grammars of VS Code and of most highlighters for the we
 - `tab-width` replaces tabs; the code is trimmed as Markdown highlighters do (trailing spaces, blank lines around it).
 
 The tokens of each fence are kept in the cache by its language and code, so that a changed page highlights only its
-new fences. Tokenization uses [TextMateSharp](https://github.com/danipen/TextMateSharp) on Oniguruma (a native library
-next to `douze`, like libvips); Douze reads the grammars and resolves the themes itself, with vscode-textmate's rules,
-and gives Shiki's tokens.
+new fences. Tokenization uses [Tint](https://github.com/sebastienros/tint), on GregsEx, a managed
+Oniguruma-compatible regex engine; Douze resolves the themes itself, with vscode-textmate's rules, and gives Shiki's
+tokens for the grammars of tm-grammars. Injection grammars of VS Code apply to every language, as in VS Code; those of
+tm-grammars to the languages that embed them, as in Shiki.
+
+A build of Douze can compile the grammars of C#, TypeScript, HTML and JSON to regex kernels, generated code that
+tokenizes faster than interpreted patterns, at the cost of a larger binary (about 1 MB each) and a slower build of
+Douze. They are opt-in: `dotnet publish Douze -p:DouzeKernelGrammars="csharp%3Btypescript%3Bhtml%3Bjson"` (`%3B` is
+`;`), or any of them; they win over the other grammars of their scope, with the same tokens.
 
 # check-code
 

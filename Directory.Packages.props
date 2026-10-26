@@ -20,7 +20,9 @@
     <PackageVersion Include="SharpYaml" Version="3.16.0" />
     <PackageVersion Include="Spectre.Console" Version="0.57.2" />
     <PackageVersion Include="System.IO.Hashing" Version="11.0.0-rc.2.26504.105" />
-    <PackageVersion Include="TextMateSharp" Version="2.0.4" />
+    <PackageVersion Include="Tint" Version="0.1.0" />
+    <PackageVersion Include="Tint.Grammars" Version="0.1.0" />
+    <PackageVersion Include="Tint.Grammars.Sources" Version="0.1.0" />
     <PackageVersion Include="ZString" Version="2.6.0" />
     <!-- Scripts (scripts/*.cs) -->
     <PackageVersion Include="NuGet.Versioning" Version="7.9.0" />

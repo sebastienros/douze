@@ -9,6 +9,13 @@
   <ItemGroup>
     <PackageReference Include="Spectre.Console.Testing" />
     <PackageReference Include="xunit.v3.mtp-v2" />
+    <!-- A grammar compiled to regex kernels by Tint's generator, as Douze's DouzeKernelGrammars builds compile them. -->
+    <PackageReference Include="Tint" />
+    <PackageReference Include="Tint.Grammars.Sources" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <TintGrammar Include="@(TintGrammarsSourcesAll->WithMetadataValue('LanguageId', 'json'))" Kernels="true" Namespace="Douze.Tests.Highlighting" Name="KernelJsonGrammar" />
   </ItemGroup>
 
   <ItemGroup>

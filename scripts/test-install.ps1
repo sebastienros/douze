@@ -5,7 +5,7 @@ Tests install.sh and install.ps1: installs douze with each of them, runs it, upd
 .DESCRIPTION
 Installs from the packages of a folder (served as a local feed by test-feed.cs) or from a feed. Each script installs
 the latest preview into a temporary folder; the installed douze prints its version, builds a site whose image needs
-libvips and whose code block needs Oniguruma (and the Sample site), and is uninstalled. install.sh runs on Linux and
+libvips and whose code block is highlighted (and the Sample site), and is uninstalled. install.sh runs on Linux and
 macOS, install.ps1 on PowerShell 7, and on Windows PowerShell 5.1 on Windows.
 
 .PARAMETER Packages
@@ -119,7 +119,7 @@ try {
         Write-Host "douze --version: $reported"
         if ($Version -and ($reported -replace '\+.*$', '') -ne $Version) { throw "installed $reported, expected $Version" }
 
-        # libvips and Oniguruma load from the install folder.
+        # libvips loads from the install folder; the code block is highlighted.
         $site = Join-Path $work "site-$run"
         Invoke-Checked $douze @('-s', (Join-Path $PSScriptRoot 'install-test-site'), '-o', $site, '--plain', '--no-cache')
         if (-not (Get-ChildItem (Join-Path $site 'assets/images') -Filter '*.webp')) { throw 'the image variant was not written' }
