@@ -7,6 +7,26 @@ Stupidly simple, blazing fast static site generator
 
 The documentation is at <https://sebastienros.github.io/douze/>, built by Douze from [`docs/`](docs/README.md).
 
+# performance
+
+Build times of Douze, Hugo, Eleventy, Astro and Jekyll, each in its own Docker image on an Apple M4 Pro (14 cores),
+fastest of 3 clean builds, in seconds. The Markdown column is Zach Leatherman's
+[Markdown build benchmark](https://www.zachleat.com/web/build-benchmark/) with 4,000 files; the other two build
+documentation pages of about 8 KB with highlighted code and heading ids.
+
+| Generator | 4,000 Markdown files | 4,000 docs pages | 16,000 docs pages |
+|---|---:|---:|---:|
+| Douze | 0.387 | 0.963 | 4.138 |
+| Hugo | 0.412 | 1.639 | 6.105 |
+| Jekyll | 1.793 | 20.051 | 81.746 |
+| Eleventy | 6.363 | 5.947 | 38.122 |
+| Astro | 3.295 | 16.244 | failed |
+
+Astro fails at 16,000 pages: its content layer data store grows past the largest string V8 allows. Hugo writes only the
+post pages in the Markdown benchmark, so it does less work there. The setup, the caveats and the other sizes are in the
+[benchmarks](https://sebastienros.github.io/douze/guide/benchmarks/) page; `bench/ssg-comparison/run.sh` and
+`run-docs-heavy.sh` run them again.
+
 # installation
 
 Douze is a native executable for Windows, Linux and macOS (x64 and arm64), with libvips for the image features (see
