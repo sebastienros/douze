@@ -1,7 +1,6 @@
 ---
 title: Benchmarks
-description: Build times of Douze, Hugo, Eleventy, Astro and Jekyll on Zach Leatherman's Markdown benchmark and on a
-docs-heavy scenario, and the internal benchmarks of large Douze sites.
+description: Build times of Douze, Hugo, Eleventy, Astro and Jekyll on Zach Leatherman's Markdown benchmark and on a docs-heavy scenario, and the internal benchmarks of large Douze sites.
 ---
 
 This page compares the build time of Douze with other generators on a public benchmark, then summarizes the internal
