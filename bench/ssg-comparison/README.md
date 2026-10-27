@@ -83,34 +83,8 @@ samples have no headings), syntax highlighting CSS on posts (no code), per-page 
 stylesheet, the post contents in the feed, and tag pages (the samples have no tags but `posts`, so eleventy-base-blog
 writes none either).
 
-The previous and next links were the costliest part of it on large sites while they were a Liquid loop over
-`collections.posts` for every post: O(n²), 0.53 s against 0.35 s without them at 4000 posts. The `previous_item` and
-`next_item` filters index a collection once (see the before and after below).
-
 Douze runs with `--no-cache`, so that every run is a clean build like the others'. A normal `douze` build also writes
 its cache (`.douze/`); the "rebuild, cache warm" rows are `douze -q` run again with that cache and nothing changed.
-
-## Douze before and after the 2026-10-23 optimizations
-
-`run.sh douze`, 5 runs, base da30df9 with this benchmark (the loop, asynchronous streams) and the branch's head (`previous_item` and
-`next_item`, outputs written 4 at a time, sources read whole), run back to back twice on an Apple M4 Pro (14 cores,
-Docker VM with 14 CPUs and 8 GB) while other work loaded the host (load average 9): absolute times are higher than on a
-quiet machine, the comparison holds. Fastest of the runs, seconds:
-
-| | 250 | 500 | 1000 | 2000 | 4000 |
-|---|---:|---:|---:|---:|---:|
-| Clean build, before (round 1, 2) | 0.036, 0.036 | 0.062, 0.061 | 0.119, 0.113 | 0.241, 0.244 | 0.606, 0.632 |
-| Clean build, after (round 1, 2) | 0.033, 0.035 | 0.053, 0.053 | 0.103, 0.101 | 0.182, 0.179 | 0.370, 0.380 |
-| Rebuild, cache warm, before | 0.017, 0.017 | 0.021, 0.022 | 0.030, 0.031 | 0.052, 0.050 | 0.093, 0.093 |
-| Rebuild, cache warm, after | 0.016, 0.016 | 0.023, 0.024 | 0.036, 0.039 | 0.066, 0.063 | 0.121, 0.123 |
-
-On a quiet machine earlier the same day the 4000-post clean build went from 0.538 s (median 0.559) to 0.365 s (median
-0.387) with the filters alone.
-
-The warm rebuild with nothing changed is 30 ms slower at 4000 posts: every post used to depend on the whole collection,
-one dependency set that the replay checks once; now each post depends on its own item and its neighbors, 4000 sets
-checked one by one. In exchange an edit only renders what it changes: changing the title of one post rebuilds in 0.18 s
-instead of 0.41 s on macOS (20 units run instead of 3955).
 
 ## Images
 

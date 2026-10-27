@@ -1,6 +1,7 @@
 ---
 title: Benchmarks
-description: Build times of Douze, Hugo, Eleventy, Astro and Jekyll on Zach Leatherman's Markdown benchmark and on a docs-heavy scenario, and the internal benchmarks of large Douze sites.
+description: Build times of Douze, Hugo, Eleventy, Astro and Jekyll on Zach Leatherman's Markdown benchmark and on a
+docs-heavy scenario, and the internal benchmarks of large Douze sites.
 ---
 
 This page compares the build time of Douze with other generators on a public benchmark, then summarizes the internal
@@ -30,7 +31,7 @@ the Markdown files where that starter keeps its posts.
 
 | Generator | Version | Starter | Pages for N posts | Other outputs |
 |---|---|---|---|---|
-| Douze | preview, commit `da30df9` | A blog written for this benchmark as the equivalent of eleventy-base-blog (below) | N posts, home, archive, about, tags, 404 | Atom feed, sitemap |
+| Douze | preview, commit `001838c` | A blog written for this benchmark as the equivalent of eleventy-base-blog (below) | N posts, home, archive, about, tags, 404 | Atom feed, sitemap |
 | Hugo | 0.168.0 extended | The benchmark repository's quickstart: no theme, one template for posts | N posts | RSS, sitemap (Hugo's built-in templates) |
 | Eleventy | 3.1.7 | [eleventy-base-blog](https://github.com/11ty/eleventy-base-blog) v9, sample posts removed | N posts, home, archive, about, tags, 404 | Atom feed with the post contents, sitemap |
 | Astro | 7.4.0 | The blog example of the Astro repository, sample posts removed | N posts, home, about, blog index | RSS feed, sitemap, one optimized image |
@@ -47,8 +48,8 @@ Notes on the setup:
 The Douze blog follows eleventy-base-blog page by page, with the default workflow:
 
 - A base layout with eleventy-base-blog's stylesheet inlined, the site metadata and a navigation menu from a data file.
-- A post layout with the title, date, tags, content, and links to the previous and next posts, found by a Liquid loop
-  over `collections.posts`.
+- A post layout with the title, date, tags, content, and links to the previous and next posts, found with the
+  `previous_item` and `next_item` filters.
 - A data file in the posts folder that gives every post the `posts` tag and the post layout.
 - A home page with the 3 latest posts, an archive of every post, an about page, a tags page, a 404 page, an Atom feed of
   the 10 latest posts and a sitemap.
@@ -82,11 +83,11 @@ has the titles and links of the posts, not their contents, and the stylesheets a
 |---|---|
 | Machine | Apple M4 Pro, 14 cores, 48 GB, macOS 15.8.1 |
 | Docker | Docker Desktop 28.0.4, Linux 6.10.14 arm64 VM with 14 CPUs and 7.7 GB of memory |
-| Douze | Commit `da30df9`, built from source like a release binary |
+| Douze | Commit `001838c`, built from source like a release binary |
 | Hugo | 0.168.0 extended, release binary on `debian:trixie-slim` |
 | Eleventy, Astro | Node.js 24.22.1 (`node:24.22.1-trixie-slim`) |
 | Jekyll | Ruby 3.4.11 (`ruby:3.4.11-slim-trixie`), sass-embedded 1.106.1 |
-| Date | 2026-10-23 |
+| Date | 2026-10-27 |
 
 Every container gets all the CPUs and memory of the Docker VM.
 
@@ -96,36 +97,40 @@ Seconds, lower is better. Fastest of 3 runs.
 
 | Generator | 250 | 500 | 1000 | 2000 | 4000 |
 |---|---:|---:|---:|---:|---:|
-| Douze | 0.039 | 0.058 | 0.107 | 0.224 | 0.531 |
-| Hugo | 0.048 | 0.072 | 0.119 | 0.205 | 0.386 |
-| Jekyll | 0.310 | 0.412 | 0.666 | 1.020 | 1.809 |
-| Eleventy | 0.595 | 0.829 | 1.344 | 2.516 | 6.248 |
-| Astro | 1.066 | 1.249 | 1.496 | 2.065 | 3.131 |
+| Douze | 0.035 | 0.060 | 0.109 | 0.207 | 0.387 |
+| Hugo | 0.051 | 0.073 | 0.118 | 0.216 | 0.412 |
+| Jekyll | 0.345 | 0.470 | 0.666 | 1.020 | 1.793 |
+| Eleventy | 0.635 | 0.894 | 1.468 | 2.639 | 6.363 |
+| Astro | 1.123 | 1.364 | 1.613 | 2.346 | 3.295 |
 
 Median of 3 runs:
 
 | Generator | 250 | 500 | 1000 | 2000 | 4000 |
 |---|---:|---:|---:|---:|---:|
-| Douze | 0.043 | 0.060 | 0.107 | 0.241 | 0.595 |
-| Hugo | 0.049 | 0.073 | 0.119 | 0.207 | 0.393 |
-| Jekyll | 0.310 | 0.429 | 0.672 | 1.028 | 1.873 |
-| Eleventy | 0.626 | 0.860 | 1.362 | 2.566 | 6.287 |
-| Astro | 1.078 | 1.250 | 1.500 | 2.077 | 3.217 |
+| Douze | 0.037 | 0.061 | 0.109 | 0.211 | 0.403 |
+| Hugo | 0.058 | 0.074 | 0.119 | 0.220 | 0.414 |
+| Jekyll | 0.358 | 0.472 | 0.673 | 1.038 | 1.857 |
+| Eleventy | 0.657 | 0.912 | 1.501 | 2.680 | 6.420 |
+| Astro | 1.137 | 1.422 | 1.648 | 2.388 | 3.302 |
 
 <div class="bench-chart">
-<h4>1000 files</h4>
-<div class="bench-row" data-generator="douze"><span class="bench-label">Douze</span><span class="bench-bar" style="--value: 0.072"></span><span class="bench-value">0.107 s</span></div>
-<div class="bench-row" data-generator="hugo"><span class="bench-label">Hugo</span><span class="bench-bar" style="--value: 0.080"></span><span class="bench-value">0.119 s</span></div>
-<div class="bench-row" data-generator="jekyll"><span class="bench-label">Jekyll</span><span class="bench-bar" style="--value: 0.445"></span><span class="bench-value">0.666 s</span></div>
-<div class="bench-row" data-generator="eleventy"><span class="bench-label">Eleventy</span><span class="bench-bar" style="--value: 0.898"></span><span class="bench-value">1.344 s</span></div>
-<div class="bench-row" data-generator="astro"><span class="bench-label">Astro</span><span class="bench-bar" style="--value: 1"></span><span class="bench-value">1.496 s</span></div>
-<h4>4000 files</h4>
-<div class="bench-row" data-generator="douze"><span class="bench-label">Douze</span><span class="bench-bar" style="--value: 0.085"></span><span class="bench-value">0.531 s</span></div>
-<div class="bench-row" data-generator="hugo"><span class="bench-label">Hugo</span><span class="bench-bar" style="--value: 0.062"></span><span class="bench-value">0.386 s</span></div>
-<div class="bench-row" data-generator="jekyll"><span class="bench-label">Jekyll</span><span class="bench-bar" style="--value: 0.290"></span><span class="bench-value">1.809 s</span></div>
-<div class="bench-row" data-generator="eleventy"><span class="bench-label">Eleventy</span><span class="bench-bar" style="--value: 1"></span><span class="bench-value">6.248 s</span></div>
-<div class="bench-row" data-generator="astro"><span class="bench-label">Astro</span><span class="bench-bar" style="--value: 0.501"></span><span class="bench-value">3.131 s</span></div>
+<h4>1,000 files</h4>
+<div class="bench-row" data-generator="douze"><span class="bench-label">Douze</span><span class="bench-bar" style="--value: 0.068"></span><span class="bench-value">0.109 s</span></div>
+<div class="bench-row" data-generator="hugo"><span class="bench-label">Hugo</span><span class="bench-bar" style="--value: 0.073"></span><span class="bench-value">0.118 s</span></div>
+<div class="bench-row" data-generator="jekyll"><span class="bench-label">Jekyll</span><span class="bench-bar" style="--value: 0.413"></span><span class="bench-value">0.666 s</span></div>
+<div class="bench-row" data-generator="eleventy"><span class="bench-label">Eleventy</span><span class="bench-bar" style="--value: 0.91"></span><span class="bench-value">1.468 s</span></div>
+<div class="bench-row" data-generator="astro"><span class="bench-label">Astro</span><span class="bench-bar" style="--value: 1"></span><span class="bench-value">1.613 s</span></div>
+<h4>4,000 files</h4>
+<div class="bench-row" data-generator="douze"><span class="bench-label">Douze</span><span class="bench-bar" style="--value: 0.061"></span><span class="bench-value">0.387 s</span></div>
+<div class="bench-row" data-generator="hugo"><span class="bench-label">Hugo</span><span class="bench-bar" style="--value: 0.065"></span><span class="bench-value">0.412 s</span></div>
+<div class="bench-row" data-generator="jekyll"><span class="bench-label">Jekyll</span><span class="bench-bar" style="--value: 0.282"></span><span class="bench-value">1.793 s</span></div>
+<div class="bench-row" data-generator="eleventy"><span class="bench-label">Eleventy</span><span class="bench-bar" style="--value: 1"></span><span class="bench-value">6.363 s</span></div>
+<div class="bench-row" data-generator="astro"><span class="bench-label">Astro</span><span class="bench-bar" style="--value: 0.518"></span><span class="bench-value">3.295 s</span></div>
 </div>
+
+Douze is the fastest at every size, narrowly ahead of Hugo from 1000 files up. At 4000 files it builds the blog in
+0.387 s, against 0.412 s for Hugo, 1.793 s for Jekyll, 3.295 s for Astro and 6.363 s for Eleventy. Hugo writes only the
+post pages, so it does less work for the same number of files.
 
 ### Rebuilds from the disk cache
 
@@ -135,23 +140,10 @@ same site with that cache and no change, fastest of 3 runs:
 
 | | 250 | 500 | 1000 | 2000 | 4000 |
 |---|---:|---:|---:|---:|---:|
-| Douze, rebuild with the cache | 0.014 | 0.018 | 0.028 | 0.048 | 0.086 |
+| Douze, rebuild with the cache | 0.018 | 0.025 | 0.039 | 0.069 | 0.125 |
 
-The other generators were not measured this way: their caches were deleted before each run, as the benchmark requires.
-
-### The 2022 results
-
-The original numbers, for reference: a MacBook Air M1 with 16 GB, on macOS, without Docker, in July and August 2022.
-They are not comparable with the table above (different machine, operating system and versions). The article also has
-rows for Next.js with file routing and for Remix, left out here.
-
-| Generator | 250 | 500 | 1000 | 2000 | 4000 |
-|---|---:|---:|---:|---:|---:|
-| Hugo 0.101.0 | 0.071 | 0.110 | 0.171 | 0.352 | 0.684 |
-| Eleventy 1.0.1 | 0.584 | 0.683 | 0.914 | 1.250 | 1.938 |
-| Astro 1.0.1 | 2.270 | 3.172 | 5.098 | 9.791 | 22.907 |
-| Next.js 12.2.3 (JS routing) | 6.552 | 6.932 | 8.034 | 9.582 | 13.409 |
-| Gatsby 4.19.0 | 14.462 | 15.722 | 17.967 | 22.356 | 29.059 |
+A rebuild of 4000 posts takes about a third of the clean build. The other generators were not measured this way: their
+caches were deleted before each run, as the benchmark requires.
 
 ## Caveats
 
@@ -159,16 +151,12 @@ rows for Next.js with file routing and for Remix, left out here.
   optimization, heading ids) over every page and puts the post contents in its feed. Astro optimizes an image and
   bundles its assets. Jekyll compiles minima's Sass. The Douze blog is close to eleventy-base-blog, but it is written by
   the Douze project, and it leaves out what the list above says.
-- About a third of the Douze build at 4000 posts is the Liquid loop that finds the previous and next posts: it scans
-  `collections.posts` for each post, so its cost grows with the square of the number of posts. Without it the
-  4000-post build takes 0.35 s instead of 0.53 s. Eleventy's `getPreviousCollectionItem` filter scans the collection
-  in the same way.
 - Startup is part of the time. Douze and Hugo are native executables that start in milliseconds. Eleventy and Astro
   start Node.js and `npx`, and Jekyll starts Ruby and Bundler, which accounts for much of their time at 250 files.
 - Douze and Hugo use every core of the VM. Eleventy and Jekyll do most of their work on one thread.
 - Docker Desktop on macOS runs a Linux VM. The sites are in the container's file system to keep the macOS file sharing
   out of the measure, but the numbers are those of that VM, not of macOS or of a Linux machine.
-- Douze has no stable release yet: this is a build of the repository at commit `da30df9`.
+- Douze has no stable release yet: this is a build of the repository at commit `001838c`.
 - 3 runs per size is few, and the Markdown files are small and plain. On a real site, templates, images and code
   highlighting take most of the build time.
 
@@ -212,45 +200,49 @@ Seconds, lower is better. Fastest of 3 runs:
 
 | Generator | 1,000 | 4,000 | 16,000 |
 |---|---:|---:|---:|
-| Douze | 1.080 | 3.085 | 12.397 |
-| Hugo | 0.409 | 1.312 | 5.736 |
-| Eleventy | 1.825 | 6.884 | 37.493 |
-| Astro | 5.010 | 16.835 | failed |
-| Jekyll | 6.208 | 21.518 | 82.721 |
+| Douze | 0.284 | 0.963 | 4.138 |
+| Hugo | 0.476 | 1.639 | 6.105 |
+| Eleventy | 1.565 | 5.947 | 38.122 |
+| Astro | 4.844 | 16.244 | failed |
+| Jekyll | 5.192 | 20.051 | 81.746 |
 
 Median of 3 runs:
 
 | Generator | 1,000 | 4,000 | 16,000 |
 |---|---:|---:|---:|
-| Douze | 1.094 | 3.131 | 15.601 |
-| Hugo | 0.423 | 1.371 | 5.779 |
-| Eleventy | 1.825 | 7.323 | 38.844 |
-| Astro | 5.404 | 19.172 | failed |
-| Jekyll | 6.212 | 22.381 | 87.792 |
+| Douze | 0.287 | 0.973 | 4.632 |
+| Hugo | 0.477 | 1.706 | 6.265 |
+| Eleventy | 1.594 | 5.986 | 39.139 |
+| Astro | 5.048 | 16.474 | failed |
+| Jekyll | 5.199 | 20.081 | 82.701 |
 
 <div class="bench-chart">
 <h4>1,000 pages</h4>
-<div class="bench-row" data-generator="douze"><span class="bench-label">Douze</span><span class="bench-bar" style="--value: 0.174"></span><span class="bench-value">1.080 s</span></div>
-<div class="bench-row" data-generator="hugo"><span class="bench-label">Hugo</span><span class="bench-bar" style="--value: 0.066"></span><span class="bench-value">0.409 s</span></div>
-<div class="bench-row" data-generator="eleventy"><span class="bench-label">Eleventy</span><span class="bench-bar" style="--value: 0.294"></span><span class="bench-value">1.825 s</span></div>
-<div class="bench-row" data-generator="astro"><span class="bench-label">Astro</span><span class="bench-bar" style="--value: 0.807"></span><span class="bench-value">5.010 s</span></div>
-<div class="bench-row" data-generator="jekyll"><span class="bench-label">Jekyll</span><span class="bench-bar" style="--value: 1"></span><span class="bench-value">6.208 s</span></div>
+<div class="bench-row" data-generator="douze"><span class="bench-label">Douze</span><span class="bench-bar" style="--value: 0.055"></span><span class="bench-value">0.284 s</span></div>
+<div class="bench-row" data-generator="hugo"><span class="bench-label">Hugo</span><span class="bench-bar" style="--value: 0.092"></span><span class="bench-value">0.476 s</span></div>
+<div class="bench-row" data-generator="eleventy"><span class="bench-label">Eleventy</span><span class="bench-bar" style="--value: 0.301"></span><span class="bench-value">1.565 s</span></div>
+<div class="bench-row" data-generator="astro"><span class="bench-label">Astro</span><span class="bench-bar" style="--value: 0.933"></span><span class="bench-value">4.844 s</span></div>
+<div class="bench-row" data-generator="jekyll"><span class="bench-label">Jekyll</span><span class="bench-bar" style="--value: 1"></span><span class="bench-value">5.192 s</span></div>
 <h4>4,000 pages</h4>
-<div class="bench-row" data-generator="douze"><span class="bench-label">Douze</span><span class="bench-bar" style="--value: 0.143"></span><span class="bench-value">3.085 s</span></div>
-<div class="bench-row" data-generator="hugo"><span class="bench-label">Hugo</span><span class="bench-bar" style="--value: 0.061"></span><span class="bench-value">1.312 s</span></div>
-<div class="bench-row" data-generator="eleventy"><span class="bench-label">Eleventy</span><span class="bench-bar" style="--value: 0.320"></span><span class="bench-value">6.884 s</span></div>
-<div class="bench-row" data-generator="astro"><span class="bench-label">Astro</span><span class="bench-bar" style="--value: 0.782"></span><span class="bench-value">16.835 s</span></div>
-<div class="bench-row" data-generator="jekyll"><span class="bench-label">Jekyll</span><span class="bench-bar" style="--value: 1"></span><span class="bench-value">21.518 s</span></div>
+<div class="bench-row" data-generator="douze"><span class="bench-label">Douze</span><span class="bench-bar" style="--value: 0.048"></span><span class="bench-value">0.963 s</span></div>
+<div class="bench-row" data-generator="hugo"><span class="bench-label">Hugo</span><span class="bench-bar" style="--value: 0.082"></span><span class="bench-value">1.639 s</span></div>
+<div class="bench-row" data-generator="eleventy"><span class="bench-label">Eleventy</span><span class="bench-bar" style="--value: 0.297"></span><span class="bench-value">5.947 s</span></div>
+<div class="bench-row" data-generator="astro"><span class="bench-label">Astro</span><span class="bench-bar" style="--value: 0.81"></span><span class="bench-value">16.244 s</span></div>
+<div class="bench-row" data-generator="jekyll"><span class="bench-label">Jekyll</span><span class="bench-bar" style="--value: 1"></span><span class="bench-value">20.051 s</span></div>
 <h4>16,000 pages</h4>
-<div class="bench-row" data-generator="douze"><span class="bench-label">Douze</span><span class="bench-bar" style="--value: 0.150"></span><span class="bench-value">12.397 s</span></div>
-<div class="bench-row" data-generator="hugo"><span class="bench-label">Hugo</span><span class="bench-bar" style="--value: 0.069"></span><span class="bench-value">5.736 s</span></div>
-<div class="bench-row" data-generator="eleventy"><span class="bench-label">Eleventy</span><span class="bench-bar" style="--value: 0.453"></span><span class="bench-value">37.493 s</span></div>
+<div class="bench-row" data-generator="douze"><span class="bench-label">Douze</span><span class="bench-bar" style="--value: 0.051"></span><span class="bench-value">4.138 s</span></div>
+<div class="bench-row" data-generator="hugo"><span class="bench-label">Hugo</span><span class="bench-bar" style="--value: 0.075"></span><span class="bench-value">6.105 s</span></div>
+<div class="bench-row" data-generator="eleventy"><span class="bench-label">Eleventy</span><span class="bench-bar" style="--value: 0.466"></span><span class="bench-value">38.122 s</span></div>
 <div class="bench-row" data-generator="astro"><span class="bench-label">Astro</span><span class="bench-bar" style="--value: 0"></span><span class="bench-value">failed</span></div>
-<div class="bench-row" data-generator="jekyll"><span class="bench-label">Jekyll</span><span class="bench-bar" style="--value: 1"></span><span class="bench-value">82.721 s</span></div>
+<div class="bench-row" data-generator="jekyll"><span class="bench-label">Jekyll</span><span class="bench-bar" style="--value: 1"></span><span class="bench-value">81.746 s</span></div>
 </div>
 
 Astro fails at 16,000 pages, on every run, after about 52 s: writing its content layer data store throws
 `Invalid string length` (the store is serialized as one string, larger than V8 allows).
+
+Douze takes 60 to 70% of the time of Hugo, the next fastest: 16,000 pages in 4.1 s against 6.1 s. Eleventy takes 38 s,
+Jekyll 82 s, and Astro cannot build that many. Douze and Hugo use about 10 of the 14 cores,
+the others one or two.
 
 ### CPU utilization
 
@@ -259,11 +251,11 @@ busy; the VM has 14.
 
 | Generator | 1,000 | 4,000 | 16,000 |
 |---|---:|---:|---:|
-| Douze | 7.7 | 10.1 | 9.4 |
-| Hugo | 7.6 | 9.7 | 9.5 |
-| Eleventy | 1.2 | 1.3 | 2.1 |
-| Astro | 1.3 | 1.2 | 1.1 |
+| Douze | 9.7 | 10.5 | 10.7 |
+| Hugo | 7.7 | 8.5 | 9.7 |
 | Jekyll | 1.0 | 1.0 | 1.0 |
+| Eleventy | 1.3 | 1.3 | 2.0 |
+| Astro | 1.3 | 1.2 | 1.1 |
 
 ### Rebuilds with nothing changed
 
@@ -271,9 +263,9 @@ Fastest of 3 runs, after a first build that writes the cache:
 
 | Generator | 1,000 | 4,000 | 16,000 |
 |---|---:|---:|---:|
-| Douze, disk cache | 0.031 | 0.079 | 0.346 |
-| Jekyll, `--incremental` | 0.314 | 0.617 | 1.819 |
-| Astro, content layer cache | 2.087 | 5.857 | failed |
+| Douze, disk cache | 0.034 | 0.082 | 0.360 |
+| Jekyll, `--incremental` | 0.264 | 0.557 | 1.744 |
+| Astro, content layer cache | 1.826 | 5.241 | failed |
 
 Hugo has no persistent cache for pages, and Eleventy's `--incremental` only applies to `--watch` and `--serve`, so they
 were not measured this way.
@@ -282,12 +274,11 @@ were not measured this way.
 
 - The features are close but not equal. Eleventy and Jekyll render no table of contents, Astro's is a flat list. Prism
   and Rouge write classes and no stylesheet is shipped for them; Douze, Hugo and Astro write the colors into the HTML,
-  so their pages are larger (Douze about 41 KB per page, the others 29 to 34 KB).
+  so their pages are larger.
 - The highlighters are different: Douze and Shiki use TextMate grammars, which are slower and more precise than Chroma,
   Prism or Rouge.
 - Each site was written for this scenario by the Douze project, from each generator's documentation.
-- The Douze runs at 16,000 pages vary (12.4, 15.6 and 21.3 s), more than the others. The 7.7 GB VM is a likely factor.
-- The same as above: Docker Desktop on macOS, a build of Douze at commit `da30df9`, and 3 runs per size.
+- The same as above: Docker Desktop on macOS, a build of Douze at commit `001838c`, and 3 runs per size.
 
 `bench/ssg-comparison/run-docs-heavy.sh` runs it again, and `results-docs-heavy.md` next to it has every number, the
 page counts and the versions.
