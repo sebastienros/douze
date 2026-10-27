@@ -8,6 +8,6 @@
     "runner": "Microsoft.Testing.Platform"
   },
   "msbuild-sdks": {
-    "PublishWithSatoriGC": "11.0.0-satori.39292159428.1"
+    "PublishWithSatoriGC": "11.0.0-satori.40433706754.1"
   }
 }
