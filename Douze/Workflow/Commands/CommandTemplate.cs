@@ -235,23 +235,15 @@ internal sealed class CommandTemplate
 
         public override bool Equals(FluidValue other) => other is ArgumentValue argument && argument.Raw == value;
 
-        [Obsolete("Use the TemplateContext overload.")]
+        public override bool ToBooleanValue(TemplateContext context) => true;
 
-        public override bool ToBooleanValue() => true;
+        public override decimal ToNumberValue(TemplateContext context) => decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var number) ? number : 0;
 
-        [Obsolete("Use the TemplateContext overload.")]
+        public override string ToStringValue(TemplateContext context) => value;
 
-        public override decimal ToNumberValue() => decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var number) ? number : 0;
+        public override object ToObjectValue(TemplateContext context) => value;
 
-        [Obsolete("Use the TemplateContext overload.")]
-
-        public override string ToStringValue() => value;
-
-        [Obsolete("Use the TemplateContext overload.")]
-
-        public override object ToObjectValue() => value;
-
-        public override ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, CultureInfo cultureInfo)
+        public override ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, TemplateContext context)
         {
             output.Write(Quote(value, style));
             return default;
@@ -276,23 +268,15 @@ internal sealed class CommandTemplate
 
         public override bool Equals(FluidValue other) => ReferenceEquals(this, other);
 
-        [Obsolete("Use the TemplateContext overload.")]
+        public override bool ToBooleanValue(TemplateContext context) => true;
 
-        public override bool ToBooleanValue() => true;
+        public override decimal ToNumberValue(TemplateContext context) => 0;
 
-        [Obsolete("Use the TemplateContext overload.")]
+        public override string ToStringValue(TemplateContext context) => "";
 
-        public override decimal ToNumberValue() => 0;
+        public override object ToObjectValue(TemplateContext context) => members;
 
-        [Obsolete("Use the TemplateContext overload.")]
-
-        public override string ToStringValue() => "";
-
-        [Obsolete("Use the TemplateContext overload.")]
-
-        public override object ToObjectValue() => members;
-
-        public override ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, CultureInfo cultureInfo) => default;
+        public override ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, TemplateContext context) => default;
 
         public override bool Equals(object? obj) => obj is FluidValue other && Equals(other);
 

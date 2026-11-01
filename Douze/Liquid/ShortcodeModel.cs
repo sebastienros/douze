@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Encodings.Web;
 using Fluid;
 using Fluid.Values;
@@ -47,19 +46,15 @@ internal sealed class ShortcodeModel : FluidValue
 
     public override bool Equals(FluidValue other) => ReferenceEquals(this, other);
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override bool ToBooleanValue() => true;
+    public override bool ToBooleanValue(TemplateContext context) => true;
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override decimal ToNumberValue() => 0;
+    public override decimal ToNumberValue(TemplateContext context) => 0;
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override string ToStringValue() => "";
+    public override string ToStringValue(TemplateContext context) => "";
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override object ToObjectValue() => _values;
+    public override object ToObjectValue(TemplateContext context) => _values;
 
-    public override ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, CultureInfo cultureInfo) => default;
+    public override ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, TemplateContext context) => default;
 
     public override bool Equals(object? obj) => obj is FluidValue other && Equals(other);
 

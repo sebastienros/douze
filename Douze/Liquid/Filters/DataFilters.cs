@@ -149,8 +149,8 @@ internal static class DataFilters
     /// </summary>
     public static ValueTask<FluidValue> Slice(FluidValue input, FilterArguments arguments, TemplateContext context)
     {
-        if (input is not NodeArrayValue array || arguments.Count is not (1 or 2) || !arguments.At(0).IsInteger()
-            || arguments.Count == 2 && !arguments.At(1).IsNil() && !arguments.At(1).IsInteger())
+        if (input is not NodeArrayValue array || arguments.Count is not (1 or 2) || !arguments.At(0).IsInteger(context)
+            || arguments.Count == 2 && !arguments.At(1).IsNil() && !arguments.At(1).IsInteger(context))
         {
             return StringFilters.Slice(input, arguments, context);
         }

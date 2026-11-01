@@ -11,14 +11,15 @@ public class NodeValuesTests
     private static Task<string> RenderAsync(string template, NodeObject own) => MetadataValueTests.RenderAsync(template, new Metadata(own, "/"), ScopeSet.Empty);
 
     [Theory]
-    [InlineData(2020, 1, 1, 23, 59, 30, 0, "2020/01/01 23:59:30|Wednesday, 01 January 2020 23:59:30|2020/01/01")]
-    [InlineData(2019, 12, 31, 0, 0, 1, 0, "2019/12/31 00:00:01|Tuesday, 31 December 2019 00:00:01|2019/12/31")]
-    [InlineData(2024, 7, 14, 12, 0, 0, 123, "2024/07/14 12:00:00|Sunday, 14 July 2024 12:00:00|2024/07/14")]
+    [InlineData(2020, 1, 1, 23, 59, 30, 0, "2020/01/01 23:59:30|Wed Jan  1 23:59:30 2020|2020/01/01")]
+    [InlineData(2019, 12, 31, 0, 0, 1, 0, "2019/12/31 00:00:01|Tue Dec 31 00:00:01 2019|2019/12/31")]
+    [InlineData(2024, 7, 14, 12, 0, 0, 123, "2024/07/14 12:00:00|Sun Jul 14 12:00:00 2024|2024/07/14")]
     public async Task DateTimeRendersLikeTheProcessorPipeline(int year, int month, int day, int hour, int minute, int second, int millisecond, string expected)
     {
         // page.date reaches templates as a NodeValue<DateTime> holding the file's UTC modification time. The expected
         // values are what the processor pipeline (removed in phase 1b) rendered for the formats the Sample uses
-        // (open question 4 of the workflow engine plan).
+        // (open question 4 of the workflow engine plan), except %c: Fluid formats it like Ruby's strftime since
+        // sebastienros/fluid#1214.
         var date = new DateTime(year, month, day, hour, minute, second, millisecond, DateTimeKind.Utc);
         var own = new NodeObject { ["d"] = NodeValue.Create(date) };
 

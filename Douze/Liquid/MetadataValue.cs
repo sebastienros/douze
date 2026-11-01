@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Encodings.Web;
 using Douze.Nodes;
 using Douze.Workflow;
@@ -74,19 +73,15 @@ internal sealed class MetadataValue : FluidValue
 
     public override bool Equals(FluidValue other) => other is MetadataValue metadata && ReferenceEquals(metadata.Metadata, Metadata);
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override bool ToBooleanValue() => true;
+    public override bool ToBooleanValue(TemplateContext context) => true;
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override decimal ToNumberValue() => 0;
+    public override decimal ToNumberValue(TemplateContext context) => 0;
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override string ToStringValue() => "";
+    public override string ToStringValue(TemplateContext context) => "";
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override object ToObjectValue() => Metadata;
+    public override object ToObjectValue(TemplateContext context) => Metadata;
 
-    public override ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, CultureInfo cultureInfo) => default;
+    public override ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, TemplateContext context) => default;
 
     public override bool Equals(object? obj) => obj is FluidValue other && Equals(other);
 
