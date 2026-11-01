@@ -125,13 +125,6 @@ internal sealed class NodeObjectValue : FluidValue
         return GetValueAsync(index.ToStringValue(context), context);
     }
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override bool Contains(FluidValue value)
-    {
-        _recorder?.ReadWhole();
-        return Value.ContainsKey(value.ToStringValue());
-    }
-
     public override ValueTask<bool> ContainsAsync(FluidValue value, TemplateContext context)
     {
         _recorder?.ReadWhole();
@@ -152,6 +145,14 @@ internal sealed class NodeObjectValue : FluidValue
 
     public override bool Equals(FluidValue other)
     {
+        // Like Fluid's dictionary value, an object without members is equal to empty and blank. Fluid's empty value
+        // asks this object to compare itself ('empty' and the 'default' filter): that reads only the number of members.
+        if (other.Type is FluidValues.Empty or FluidValues.Blank)
+        {
+            _recorder?.ReadCount();
+            return Value.Count == 0;
+        }
+
         _recorder?.ReadWhole();
 
         if (other is not NodeObjectValue nodeObject)
@@ -166,27 +167,23 @@ internal sealed class NodeObjectValue : FluidValue
 
     // An object is true whatever its members. Like Fluid's dictionary value, it counts its members: 'empty' and the
     // 'default' filter compare that number to 0.
-    [Obsolete("Use the TemplateContext overload.")]
-    public override bool ToBooleanValue() => true;
+    public override bool ToBooleanValue(TemplateContext context) => true;
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override decimal ToNumberValue()
+    public override decimal ToNumberValue(TemplateContext context)
     {
         _recorder?.ReadCount();
         return Value.Count;
     }
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override string ToStringValue() => "";
+    public override string ToStringValue(TemplateContext context) => "";
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override object ToObjectValue()
+    public override object ToObjectValue(TemplateContext context)
     {
         _recorder?.ReadWhole();
         return Value;
     }
 
-    public override ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, CultureInfo cultureInfo) => default;
+    public override ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, TemplateContext context) => default;
 
     public override bool Equals(object? obj) => obj is FluidValue other && Equals(other);
 
@@ -411,37 +408,33 @@ internal sealed class NodeArrayValue : FluidValue, IFluidArray
 
     // An array is true whatever its items. Like Fluid's array value, it counts its items: 'empty' and the 'default'
     // filter compare that number to 0.
-    [Obsolete("Use the TemplateContext overload.")]
-    public override bool ToBooleanValue() => true;
+    public override bool ToBooleanValue(TemplateContext context) => true;
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override decimal ToNumberValue()
+    public override decimal ToNumberValue(TemplateContext context)
     {
         _recorder?.ReadCount();
         return Value.Count;
     }
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override string ToStringValue()
+    public override string ToStringValue(TemplateContext context)
     {
         RecordWhole();
-        return string.Concat(Value.Select(x => NodeValues.ToFluidValue(x).ToStringValue()));
+        return string.Concat(Value.Select(x => NodeValues.ToFluidValue(x).ToStringValue(context)));
     }
 
-    [Obsolete("Use the TemplateContext overload.")]
-    public override object ToObjectValue()
+    public override object ToObjectValue(TemplateContext context)
     {
         RecordWhole();
         return Value;
     }
 
-    public override async ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, CultureInfo cultureInfo)
+    public override async ValueTask WriteToAsync(IFluidOutput output, TextEncoder encoder, TemplateContext context)
     {
         RecordWhole();
 
         foreach (var item in Value)
         {
-            await NodeValues.ToFluidValue(item).WriteToAsync(output, encoder, cultureInfo);
+            await NodeValues.ToFluidValue(item).WriteToAsync(output, encoder, context);
         }
     }
 
