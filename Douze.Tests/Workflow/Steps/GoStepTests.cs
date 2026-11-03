@@ -14,7 +14,8 @@ namespace Douze.Tests.Workflow.Steps;
 
 /// <summary>
 /// Runs the <c>go</c> step with gopls (the executable of <c>DOUZE_TEST_GOPLS</c>, or the pinned version installed once
-/// in a temporary folder with <c>go install</c>) and the <c>go</c> on the <c>PATH</c>. Skipped without Go, or offline.
+/// in a temporary folder with <c>go install</c>) and the <c>go</c> on the <c>PATH</c>. Skipped without Go, or offline,
+/// locally; CI requires both tools.
 /// </summary>
 public sealed partial class GoStepTests : CacheTestBase
 {
@@ -62,6 +63,11 @@ public sealed partial class GoStepTests : CacheTestBase
 
         if (path == null)
         {
+            if (Environment.GetEnvironmentVariable("CI") == "true")
+            {
+                Assert.Fail($"Go integration tests require Go and gopls in CI: {reason}");
+            }
+
             Assert.Skip(reason!);
         }
 
