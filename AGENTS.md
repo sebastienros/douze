@@ -131,6 +131,10 @@ dotnet test
 
 Tests use xUnit v3 on Microsoft.Testing.Platform (opted in through `global.json`).
 
+The PR matrix and main/release test jobs provision Go 1.27.3 for `GoStepTests`, which installs the pinned gopls.
+With `CI=true`, missing Go or gopls fails these tests instead of skipping them; local/offline runs still skip.
+Go module caching is disabled in `setup-go` because this repository has no `go.sum`.
+
 Check the native AOT build (CI smoke tests this on every PR):
 
 ```bash
