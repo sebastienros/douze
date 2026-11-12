@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Douze.Liquid.Filters;
 using Douze.Liquid.Tags;
 using Fluid;
@@ -37,6 +38,11 @@ internal static class LiquidOptions
     /// A parser whose errors carry line and column, with Douze's tags. The shortcodes of a site are registered on it by
     /// <see cref="ShortcodeRegistry.ScanAsync"/>.
     /// </summary>
+    /// <remarks>
+    /// Parlot (2.3) reads the <c>Parser</c> property of its <c>SkipWhiteSpace</c> parsers by reflection when a parser
+    /// first runs, which native AOT trims away: the dependency keeps it.
+    /// </remarks>
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, "Parlot.Fluent.SkipWhiteSpace`1", "Parlot")]
     public static DouzeParser CreateParser()
     {
 #pragma warning disable FLUID001 // statement locations are what gives errors a line and a column

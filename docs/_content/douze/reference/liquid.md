@@ -151,9 +151,10 @@ own key order; other values go through Fluid's `json` filter. The result is not 
 {{ api | slice: 10, 20 }}
 ```
 
-Fluid's filters. When the input is a large data array (or a slice of one) and the value a string, `where` and
-`find_index` use an index built once per array instead of scanning it, and a slice of a data array keeps using that
-index.
+Fluid's filters. When the input is a large data array of objects (or a slice of one) and the value a string, `where`
+and `find_index` use an index built once per array instead of scanning it, and a slice of a data array keeps using
+that index. The answers are Fluid's either way, including a nil item, which makes the filter return nil once it reaches
+it.
 
 ### xml_escape
 
