@@ -72,11 +72,11 @@ How it fits together:
 The first build downloads Pagefind:
 
 ```
-✓ layout            2 files    0.00 s
+✓ layout            2 files    0.00 s     0.00 s work
 search: downloading pagefind 1.5.2 (@pagefind/darwin-arm64) from https://registry.npmjs.org/@pagefind/darwin-arm64/-/darwin-arm64-1.5.2.tgz
 search: installed pagefind 1.5.2 in /my-site/.douze/tools/pagefind/1.5.2/osx-arm64
-✓ search            2 files    0.49 s
-✓ write            18 files    2.34 s
+✓ search            2 files    0.49 s     0.49 s work
+✓ write            18 files    2.34 s     2.34 s work
 ```
 
 `_site/pagefind/` then has the index, `pagefind-ui.js` and `pagefind-ui.css`.

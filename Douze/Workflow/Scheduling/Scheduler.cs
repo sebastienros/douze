@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Douze.FileSystems;
@@ -923,6 +924,7 @@ internal sealed class Scheduler
 
             StepOutput output;
             ScopeSet? contributions;
+            var started = Stopwatch.GetTimestamp();
 
             try
             {
@@ -940,6 +942,10 @@ internal sealed class Scheduler
                 Run.AddUnitDone();
                 Context.View.StepProgress(Run);
                 return null;
+            }
+            finally
+            {
+                Run.AddWork(Stopwatch.GetElapsedTime(started));
             }
 
             var files = output.Files;

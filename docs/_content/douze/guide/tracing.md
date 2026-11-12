@@ -14,23 +14,26 @@ In a terminal, Douze shows a table of the running steps: the shape of each step,
 completes prints one line above the table. At the end, a summary lists every step:
 
 ```
-  Step          State       In   Out   Units   Cached     Time   0   0.01 s
-  ──────────────────────────────────────────────────────────────────────────
-  folder-data   succeeded    1     0       1        0   0.00 s   ▎
-  pages         succeeded    4     4       4        0   0.00 s   ▍
-  permalink     succeeded    4     4       4        0   0.00 s    ▌
-  collections   succeeded    4     0       1        0   0.01 s    ███████▋
-  paginate      succeeded    4     4       4        0   0.00 s           ▏
-  render        succeeded    4     4       4        0   0.00 s           █▋
-  markdown      succeeded    4     3       3        0   0.00 s           ▊
-  layout        succeeded    4     4       4        0   0.00 s            ▎
-  write         succeeded    4     4       4        0   0.00 s            █
+  Step          State       In   Out   Units   Cached     Time     Work   0   0.01 s
+  ───────────────────────────────────────────────────────────────────────────────────
+  folder-data   succeeded    1     0       1        0   0.00 s   0.00 s   ▎
+  pages         succeeded    4     4       4        0   0.00 s   0.00 s   ▍
+  permalink     succeeded    4     4       4        0   0.00 s   0.00 s    ▌
+  collections   succeeded    4     0       1        0   0.01 s   0.01 s    ███████▋
+  paginate      succeeded    4     4       4        0   0.00 s   0.00 s           ▏
+  render        succeeded    4     4       4        0   0.00 s   0.00 s           █▋
+  markdown      succeeded    4     3       3        0   0.00 s   0.00 s           ▊
+  layout        succeeded    4     4       4        0   0.00 s   0.00 s            ▎
+  write         succeeded    4     4       4        0   0.00 s   0.00 s            █
 
 Build succeeded: 9 steps, 4 files written in 0.02 s, 29 units executed
 ```
 
 The last column places each step on the time scale of the build, so you can see which steps ran at the same time.
-A step's time starts when its first file reaches it, not while it waits for the steps it needs.
+A step's time starts when its first file reaches it, not while it waits for the steps it needs, and ends with its last
+file. Steps stream files to each other, so a step that the build feeds slowly spans a long time whatever it costs:
+Work is the time its units ran, added up, which is what the step itself did. Units run in parallel, so Work can be
+longer than Time; much shorter means the step mostly waited for its input. The plain view prints the same two times.
 
 ## The plain view
 
@@ -42,8 +45,8 @@ The live view is replaced by one line per step:
 - when `TERM=dumb`.
 
 ```
-✓ pages            4 files    0.00 s
-✓ render           4 files    0.00 s       1 cached
+✓ pages            4 files    0.00 s     0.00 s work
+✓ render           4 files    0.00 s     0.00 s work       1 cached
 Build succeeded: 9 steps, 4 files written in 0.02 s, 1 unit executed, 28 cached
 ```
 
