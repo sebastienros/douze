@@ -26,8 +26,9 @@ public class PlainProgressViewTests
 
         var markdown = result["markdown"];
         var seconds = ((markdown.EndedAt!.Value - markdown.StartedAt!.Value).TotalSeconds).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var work = markdown.Work.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
 
-        Assert.Equal($"✓ markdown         2 files {seconds,7} s", lines[0]);
+        Assert.Equal($"✓ markdown         2 files {seconds,7} s {work,8} s work", lines[0]);
         Assert.StartsWith("✓ write            2 files ", lines[1]);
         Assert.StartsWith("Build succeeded: 2 steps, 2 files written in ", lines[2]);
     }
@@ -40,8 +41,21 @@ public class PlainProgressViewTests
             .Write("write", "markdown"), unicode: true, "/a.md");
 
         // Singular, with the seconds still aligned with "   312 files".
-        Assert.Matches(@"^✓ markdown         1 file     0\.\d\d s$", lines[0]);
+        Assert.Matches(@"^✓ markdown         1 file     0\.\d\d s     0\.\d\d s work$", lines[0]);
         Assert.StartsWith("Build succeeded: 2 steps, 1 file written in ", lines[2]);
+    }
+
+    [Fact]
+    public async Task WorkAddsUpTheUnitsOfAStep()
+    {
+        var site = await new FakeSite().WithFilesAsync("/a.md", "/b.md", "/c.md");
+
+        var result = await site.BuildAsync(new FakeWorkflow()
+            .Add("markdown", d => new FakeMapStep(d) { Delay = TimeSpan.FromMilliseconds(30) }, inputs: ["**"])
+            .Build(), view: new PlainProgressView(new StringWriter(), unicode: true));
+
+        // Three units of at least 30 ms each, whether they ran one after the other or in parallel.
+        Assert.True(result["markdown"].Work >= TimeSpan.FromMilliseconds(90), $"work was {result["markdown"].Work}");
     }
 
     [Fact]

@@ -89,15 +89,15 @@ douze serve
 Douze builds the site, then serves it and watches your files:
 
 ```txt
-✓ folder-data       0 files    0.00 s
-✓ pages             1 file     0.00 s
-✓ permalink         1 file     0.00 s
-✓ collections       1 file     0.00 s
-✓ paginate          1 file     0.00 s
-✓ render            1 file     0.00 s
-✓ markdown          1 file     0.00 s
-✓ layout            1 file     0.00 s
-✓ write             1 file     0.00 s
+✓ folder-data       0 files    0.00 s     0.00 s work
+✓ pages             1 file     0.00 s     0.00 s work
+✓ permalink         1 file     0.00 s     0.00 s work
+✓ collections       1 file     0.00 s     0.00 s work
+✓ paginate          1 file     0.00 s     0.00 s work
+✓ render            1 file     0.00 s     0.00 s work
+✓ markdown          1 file     0.00 s     0.00 s work
+✓ layout            1 file     0.00 s     0.00 s work
+✓ write             1 file     0.00 s     0.00 s work
 Build succeeded: 9 steps, 1 file written in 0.03 s, 9 units executed
 Serving _site at http://localhost:8080/
 Watching . for changes (Ctrl+C to stop)

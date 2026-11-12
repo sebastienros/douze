@@ -10,9 +10,10 @@ namespace Douze.Progress;
 internal static class StepSummary
 {
     /// <summary>
-    /// The line of a completed step without its marker: <c>markdown        312 files    0.41 s</c>, followed by
-    /// <c>   300 cached</c> when units were replayed from the cache, and <c>   140 shared</c> when units took the result of
-    /// another variant of their file.
+    /// The line of a completed step without its marker: <c>markdown        312 files    0.41 s    1.20 s work</c>: its
+    /// span (from its first file to its last), then the time its units ran added up (<see cref="StepRun.Work"/>), followed
+    /// by <c>   300 cached</c> when units were replayed from the cache, and <c>   140 shared</c> when units took the result
+    /// of another variant of their file.
     /// </summary>
     public static string Line(StepRun run, int nameWidth)
     {
@@ -22,7 +23,7 @@ internal static class StepSummary
 
         return run.State switch
         {
-            StepState.Succeeded => string.Create(CultureInfo.InvariantCulture, $"{name}{Files(run.FilesConsumed)} {Duration(run).TotalSeconds,7:0.00} s{cached}"),
+            StepState.Succeeded => string.Create(CultureInfo.InvariantCulture, $"{name}{Files(run.FilesConsumed)} {Duration(run).TotalSeconds,7:0.00} s {run.Work.TotalSeconds,8:0.00} s work{cached}"),
             StepState.Failed => $"{name}{FirstError(run)}",
             StepState.Cancelled => $"{name}cancelled",
             _ => $"{name}skipped",

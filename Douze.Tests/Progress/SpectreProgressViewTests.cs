@@ -82,7 +82,7 @@ public class SpectreProgressViewTests
         var lines = Lines(console);
 
         Assert.Equal("warning: no 'write' step: nothing will be written to the output folder", lines[0]);
-        Assert.Matches(@"^✓ markdown         1 file     0\.\d\d s$", lines[1]);
+        Assert.Matches(@"^✓ markdown         1 file     0\.\d\d s     0\.\d\d s work$", lines[1]);
         Assert.Equal("✗ broken      error: broken: /a.md: failed on /a.md", lines[2]);
         Assert.Equal("- og-images   skipped", lines[3]);
     }
@@ -101,9 +101,9 @@ public class SpectreProgressViewTests
         var lines = Lines(console);
         var header = Array.FindIndex(lines, x => x.TrimStart().StartsWith("Step", StringComparison.Ordinal));
 
-        Assert.Matches(@"Step\s+State\s+In\s+Out\s+Units\s+Cached\s+Time\s+0\s+0\.\d\d s", lines[header]);
-        Assert.Matches(@"markdown\s+succeeded\s+2\s+2\s+2\s+0\s+0\.\d\d s\s+█", lines[header + 2]);
-        Assert.Matches(@"write\s+succeeded\s+2\s+2\s+2\s+0\s+0\.\d\d s\s+ *[█▏▎▍▌▋▊▉]", lines[header + 3]);
+        Assert.Matches(@"Step\s+State\s+In\s+Out\s+Units\s+Cached\s+Time\s+Work\s+0\s+0\.\d\d s", lines[header]);
+        Assert.Matches(@"markdown\s+succeeded\s+2\s+2\s+2\s+0\s+0\.\d\d s\s+0\.\d\d s\s+█", lines[header + 2]);
+        Assert.Matches(@"write\s+succeeded\s+2\s+2\s+2\s+0\s+0\.\d\d s\s+0\.\d\d s\s+ *[█▏▎▍▌▋▊▉]", lines[header + 3]);
         Assert.StartsWith("Build succeeded: 2 steps, 2 files written in ", lines[^1]);
 
         // The timeline: a step starts when its first file arrives, so write starts once markdown has processed a file (20 ms

@@ -21,6 +21,7 @@ internal sealed class StepRun
     private int _unitsDone;
     private int _unitsReplayed;
     private int _unitsShared;
+    private long _workTicks;
 
     public StepRun(GraphNode node)
     {
@@ -61,6 +62,13 @@ internal sealed class StepRun
     /// </summary>
     public int UnitsShared => Volatile.Read(ref _unitsShared);
 
+    /// <summary>
+    /// The time the step's units ran, added up: what the step itself did. A streaming step's span
+    /// (<see cref="StartedAt"/> to <see cref="EndedAt"/>) also holds the time it waited for its input, and its units run
+    /// in parallel, so its work can be shorter or longer than its span.
+    /// </summary>
+    public TimeSpan Work => TimeSpan.FromTicks(Interlocked.Read(ref _workTicks));
+
     /// <summary>Units that ran (or failed).</summary>
     public int UnitsExecuted => UnitsDone - UnitsReplayed - UnitsShared;
 
@@ -97,6 +105,7 @@ internal sealed class StepRun
     internal void AddUnitDone() => Interlocked.Increment(ref _unitsDone);
     internal void AddUnitReplayed() => Interlocked.Increment(ref _unitsReplayed);
     internal void AddUnitShared() => Interlocked.Increment(ref _unitsShared);
+    internal void AddWork(TimeSpan elapsed) => Interlocked.Add(ref _workTicks, elapsed.Ticks);
     internal void AddResult(UnitResult result) => _results.Enqueue(result);
     internal void AddError(BuildError error) => _errors.Enqueue(error);
 
