@@ -28,6 +28,8 @@ public class DataFiltersTests : FilterTests
     });
 
     // 40 routes (more than MemberIndex.MinimumCount): a module per range, one without a module, one with a number.
+    // The same routes with a nil item, strings (which have no index: Fluid reads their property like Ruby's []), and
+    // a few strings (fewer than the minimum: Fluid's filter).
     private static ScopeSet Routes() => Scopes(new NodeObject
     {
         ["routes"] = new NodeArray([.. Enumerable.Range(0, 40).Select(i => i switch
@@ -36,6 +38,7 @@ public class DataFiltersTests : FilterTests
             36 => new NodeObject { ["module"] = NodeValue.Create(5), ["n"] = NodeValue.Create(i) },
             _ => new NodeObject { ["module"] = NodeValue.Create(i < 10 ? "a" : i < 30 ? "b" : "c"), ["n"] = NodeValue.Create(i) },
         })]),
+        ["holes"] = new NodeArray([.. Enumerable.Range(0, 40).Select(i => i == 20 ? null : new NodeObject { ["module"] = NodeValue.Create(i < 10 ? "a" : i < 30 ? "b" : "c") })]),
         ["names"] = new NodeArray([.. Enumerable.Range(0, 40).Select(i => i == 20 ? null : NodeValue.Create($"s{i}"))]),
         ["few"] = new NodeArray([.. Enumerable.Range(0, 10).Select(i => i == 5 ? null : NodeValue.Create($"s{i}"))]),
     });
@@ -56,11 +59,19 @@ public class DataFiltersTests : FilterTests
     [InlineData("{{ routes | slice: 38, 10 | map: 'n' | join: ',' }}", "38,39")]
     [InlineData("{{ routes | slice: 5, 0 | size }}", "0")]
     [InlineData("{{ routes | slice: 7 | map: 'n' | join: ',' }}", "7")]
-    [InlineData("{{ names | find_index: 'x', 's5' }}", "5")]
-    [InlineData("{{ names | find_index: 'x', 's25' }}", "")]
-    [InlineData("{{ names | slice: 21, 10 | find_index: 'x', 's25' }}", "4")]
-    [InlineData("{{ names | where: 'x', 's5' | size }}", "0")]
-    [InlineData("{{ few | find_index: 'x', 's7' }}{{ few | find_index: 'x', 's3' }}", "3")]
+    [InlineData("{{ holes | find_index: 'module', 'b' }}", "10")]
+    [InlineData("{{ holes | find_index: 'module', 'c' }}", "")]
+    [InlineData("{{ holes | slice: 21, 19 | find_index: 'module', 'c' }}", "9")]
+    [InlineData("{{ holes | where: 'module', 'b' }}", "")]
+    [InlineData("{{ holes | slice: 0, 20 | where: 'module', 'b' | size }}", "10")]
+    [InlineData("{{ holes | slice: 15, 10 | where: 'module', 'b' }}", "")]
+    [InlineData("{{ names | find_index: 'x', 's5' }}", "")]
+    [InlineData("{{ names | find_index: 's1', 's1' }}", "1")]
+    [InlineData("{{ names | find_index: 's25', 's25' }}", "")]
+    [InlineData("{{ names | slice: 21, 10 | find_index: 's25', 's25' }}", "4")]
+    [InlineData("{{ names | slice: 21, 10 | where: 's2', 's2' | join: ',' }}", "s21,s22,s23,s24,s25,s26,s27,s28,s29")]
+    [InlineData("{{ names | where: 'x', 's5' }}", "")]
+    [InlineData("{{ few | find_index: 's3', 's3' }}{{ few | find_index: 's7', 's7' }}{{ few | find_index: 'x', 's3' }}", "3")]
     public async Task WhereAndFindIndexOverLargeArraysAreFluids(string template, string expected)
     {
         Assert.Equal(expected, await RenderAsync(template, scopes: Routes()));
