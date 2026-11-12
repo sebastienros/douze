@@ -54,8 +54,9 @@ public class PlainProgressViewTests
             .Add("markdown", d => new FakeMapStep(d) { Delay = TimeSpan.FromMilliseconds(30) }, inputs: ["**"])
             .Build(), view: new PlainProgressView(new StringWriter(), unicode: true));
 
-        // Three units of at least 30 ms each, whether they ran one after the other or in parallel.
-        Assert.True(result["markdown"].Work >= TimeSpan.FromMilliseconds(90), $"work was {result["markdown"].Work}");
+        // Three units of about 30 ms each, whether they ran one after the other or in parallel: more than two units'
+        // worth, with room for timers that end a delay a little early.
+        Assert.True(result["markdown"].Work >= TimeSpan.FromMilliseconds(75), $"work was {result["markdown"].Work}");
     }
 
     [Fact]
