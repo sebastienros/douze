@@ -18,7 +18,7 @@
     <PackageVersion Include="NetVips.Native.win-x64" Version="8.18.7" />
     <PackageVersion Include="SharpYaml" Version="3.17.0" />
     <PackageVersion Include="Spectre.Console" Version="0.57.2" />
-    <PackageVersion Include="System.IO.Hashing" Version="11.0.0-rc.3.26522.148" />
+    <PackageVersion Include="System.IO.Hashing" Version="11.0.0" />
     <PackageVersion Include="Tint" Version="0.3.0" />
     <PackageVersion Include="Tint.Grammars" Version="0.3.0" />
     <PackageVersion Include="ZString" Version="2.6.0" />
