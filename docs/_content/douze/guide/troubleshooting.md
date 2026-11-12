@@ -196,8 +196,12 @@ another `--cache-dir`.
 Fontconfig error: Cannot load default config file: File not found
 ```
 
-Pango prints this when a `social-image` step runs on a machine without a Fontconfig configuration. The build still
-succeeds; set `fontfile` on each text block so that the fonts do not depend on the system.
+Pango prints this when a `social-image` step lays out text on a machine without a Fontconfig configuration. On macOS
+douze configures Fontconfig itself when neither `FONTCONFIG_FILE` nor `FONTCONFIG_PATH` is set and
+`/usr/local/etc/fonts/fonts.conf` (an Intel Homebrew install) does not exist: it writes a configuration of the macOS
+font folders to a `douze-fontconfig` folder of the temporary folder. If you still see the message, one of those
+points to a configuration that cannot be read. Either way the build succeeds; set `fontfile` on each text block so
+that the fonts do not depend on the system.
 
 ## Still stuck
 
