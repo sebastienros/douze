@@ -62,6 +62,7 @@ internal sealed class ImageProcessor
         {
             if (!_initialized)
             {
+                FontConfiguration.EnsureConfigured();
                 Cache.Max = 0;
                 NetVips.NetVips.Concurrency = 1;
 
