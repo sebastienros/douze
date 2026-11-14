@@ -54,7 +54,7 @@ internal readonly record struct SourceStat(long Length, DateTime LastWriteTimeUt
 /// </summary>
 internal sealed class CacheIndex
 {
-    public const int FormatVersion = 2;
+    public const int FormatVersion = 3;
 
     private static readonly byte[] Magic = "DOUZE-CACHE\n"u8.ToArray();
 
@@ -189,6 +189,14 @@ internal sealed class CacheIndex
                     String(path.FullName);
                     writer.Write(length);
                     Date(lastWriteTimeUtc);
+                }
+
+                writer.Write7BitEncodedInt(set.Dates.Length);
+
+                foreach (var (path, date) in set.Dates)
+                {
+                    String(path.FullName);
+                    Date(date);
                 }
             }
 
@@ -419,7 +427,14 @@ internal sealed class CacheIndex
                 written[w] = (new FPath(RequiredString()), reader.ReadInt64(), Date() ?? default);
             }
 
-            index.Dependencies[hash] = new DependencySet([.. templates], [.. lookups], [.. written]);
+            var dates = new (FPath, DateTime)[reader.Read7BitEncodedInt()];
+
+            for (var d = 0; d < dates.Length; d++)
+            {
+                dates[d] = (new FPath(RequiredString()), Date() ?? default);
+            }
+
+            index.Dependencies[hash] = new DependencySet([.. templates], [.. lookups], [.. written], [.. dates]);
         }
 
         var units = reader.Read7BitEncodedInt();

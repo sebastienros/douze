@@ -77,15 +77,16 @@ public class EarlyCutoffTests : CacheTestBase
         Assert.Equal(["/posts/c/index.html"], Executed(result, "write"));
         Assert.Contains("new c body", await OutputAsync("/posts/c/index.html"));
 
-        // A real edit changes the file's date, so page.date: the collections are built again, and the home page, which
-        // lists the posts, renders again; the nav lists the first two pages only, so the other layouts do not run.
+        // A real edit changes the file's date too, which nothing reads: the pages have a front matter date, and no
+        // template reads page.date. The same page only runs again.
         await EditAsync("/_content/posts/c.md", "---\ntitle: C\ndate: 2020-02-03\ntags: [post]\nlayout: post.html\n---\nnewer c body");
         result = await BuildCachedAsync();
 
-        Assert.Equal(["*"], Executed(result, "collections"));
-        Assert.Equal(["/index.md", "/posts/c/index.md"], Executed(result, "render"));
+        Assert.Empty(Executed(result, "collections"));
+        Assert.Equal(["/posts/c/index.md"], Executed(result, "render"));
         Assert.Equal(["/posts/c/index.md"], Executed(result, "markdown"));
         Assert.Equal(["/posts/c/index.html"], Executed(result, "layout"));
+        Assert.Contains("newer c body", await OutputAsync("/posts/c/index.html"));
     }
 
     [Fact]
@@ -191,21 +192,84 @@ public class EarlyCutoffTests : CacheTestBase
         Assert.Contains("<footer>Douze</footer>", await OutputAsync("/index.html"));
     }
 
+    /// <summary>
+    /// Sets the modification time of every source file to <paramref name="date"/>, as a fresh checkout does.
+    /// </summary>
+    private async Task TouchAllAsync(DateTime date)
+    {
+        foreach (var entry in await Source.EnumerateFileSystemEntriesAsync(FPath.Root, recursive: true, filter: null))
+        {
+            if (!entry.IsDirectory)
+            {
+                Source.SetLastWriteTimeUtc(entry.Path, date);
+            }
+        }
+    }
+
     [Fact]
-    public async Task DateChangeWithoutAnEditRerunsThePage()
+    public async Task DateOnlyChangeExecutesZeroUnits()
+    {
+        await WriteSiteAsync();
+        await TouchAllAsync(new DateTime(2020, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        var first = await BuildCachedAsync();
+
+        // A fresh checkout: every file has a new date and the same content. Nothing reads page.date (the pages have a
+        // front matter date, which the collections are sorted by), so every unit replays.
+        await TouchAllAsync(new DateTime(2021, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        var second = await BuildCachedAsync();
+
+        Assert.Equal(0, second.UnitsExecuted);
+        Assert.Equal(first.Outputs, second.Outputs);
+        Assert.Equal(first.Scopes.Hash, second.Scopes.Hash);
+    }
+
+    [Fact]
+    public async Task DateChangeRerunsWhatReadsTheDate()
     {
         await WriteSiteAsync();
         await Source.WriteTextFileAsync("/_content/dated.md", "---\ntitle: Dated\n---\n{{ page.date | date: '%Y' }}");
-        Source.SetLastWriteTimeUtc("/_content/dated.md", new DateTime(2020, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        await TouchAllAsync(new DateTime(2020, 6, 1, 0, 0, 0, DateTimeKind.Utc));
         await BuildCachedAsync();
         Assert.Contains("2020", await OutputAsync("/dated/index.html"));
 
-        // A touched file (a checkout, a copy) has the same content and a new page.date.
-        Source.SetLastWriteTimeUtc("/_content/dated.md", new DateTime(2021, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        // A touched file (a checkout, a copy) has the same content and a new page.date: the page that shows it renders
+        // again. The front matter replays: page.date holds a reference to the file's date. The collections, which sort
+        // the page by it (it has no front matter date), are sorted again, in the same order: what reads them replays.
+        await TouchAllAsync(new DateTime(2021, 6, 1, 0, 0, 0, DateTimeKind.Utc));
         var result = await BuildCachedAsync();
 
-        Assert.Equal(["/_content/dated.md"], Executed(result, "pages"));
+        Assert.Equal(["collections", "render", "markdown", "layout", "write"], StepsThatRan(result));
+        Assert.Equal(["/dated/index.md"], Executed(result, "render"));
+        Assert.Equal(["/dated/index.html"], Executed(result, "write"));
         Assert.Contains("2021", await OutputAsync("/dated/index.html"));
+    }
+
+    [Fact]
+    public async Task CollectionsByFileDateFollowTheOrderOfTheDates()
+    {
+        // Without a front matter date, the collections are sorted by page.date.
+        await Source.WriteTextFileAsync("/_content/index.md", "---\ntitle: Home\ndate: 2000-01-01\n---\n{% for p in collections.post %}{{ p.data.title }} {% endfor %}");
+        await Source.WriteTextFileAsync("/_content/a.md", "---\ntitle: A\ntags: [post]\n---\na");
+        await Source.WriteTextFileAsync("/_content/b.md", "---\ntitle: B\ntags: [post]\n---\nb");
+        Source.SetLastWriteTimeUtc("/_content/a.md", new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        Source.SetLastWriteTimeUtc("/_content/b.md", new DateTime(2020, 1, 2, 0, 0, 0, DateTimeKind.Utc));
+        await BuildCachedAsync();
+        Assert.Contains("A B", await OutputAsync("/index.html"));
+
+        // New dates in the same order: the collections are sorted again, to the same items, so the home page replays.
+        Source.SetLastWriteTimeUtc("/_content/a.md", new DateTime(2021, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        Source.SetLastWriteTimeUtc("/_content/b.md", new DateTime(2021, 1, 2, 0, 0, 0, DateTimeKind.Utc));
+        var result = await BuildCachedAsync();
+
+        Assert.Equal(["*"], Executed(result, "collections"));
+        Assert.Empty(Executed(result, "render"));
+
+        // Dates in the other order: the home page lists the posts in that order.
+        Source.SetLastWriteTimeUtc("/_content/a.md", new DateTime(2022, 1, 3, 0, 0, 0, DateTimeKind.Utc));
+        result = await BuildCachedAsync();
+
+        Assert.Equal(["/index.md"], Executed(result, "render"));
+        Assert.Contains("B A", await OutputAsync("/index.html"));
     }
 
     [Fact]

@@ -4,7 +4,8 @@ namespace Douze.Workflow.Steps;
 
 /// <summary>
 /// <c>uses: frontmatter</c>. Moves the YAML front matter of a file into its metadata, removes it from the content, and
-/// sets <c>page.date</c> to the modification time of the source file. <c>with.require</c> lists keys that every file
+/// sets <c>page.date</c> to the modification time of the source file, by reference (<see cref="FileDateNode"/>): only
+/// what reads it depends on it. <c>with.require</c> lists keys that every file
 /// it consumes must have, in its front matter or through the scopes (folder or site data).
 /// </summary>
 internal sealed class FrontMatterStep : Step, IMapStep
@@ -37,7 +38,7 @@ internal sealed class FrontMatterStep : Step, IMapStep
             if (file.LastWriteTimeUtc is { } date)
             {
                 var page = own["page"] is NodeObject existing ? existing.ShallowClone() : new NodeObject();
-                page["date"] = NodeValue.Create(date);
+                page["date"] = new FileDateNode(file.SourcePath ?? file.Path, date);
                 own["page"] = page;
             }
 

@@ -45,7 +45,7 @@ internal static class NodeSerializer
     private enum Tag : byte
     {
         Null, String, True, False, Int, Long, Decimal, Double, Float, DateTime, DateTimeOffset, Metadata, Object, Array, Reference,
-        Short, SByte, Byte, UShort, UInt, ULong, Char,
+        Short, SByte, Byte, UShort, UInt, ULong, Char, FileDate,
     }
 
     /// <summary>
@@ -144,6 +144,13 @@ internal static class NodeSerializer
                 writer.Write((byte)dt.Value.Kind);
                 break;
 
+            case FileDateNode fileDate:
+                writer.Write((byte)Tag.FileDate);
+                writer.Write(fileDate.Source.FullName);
+                writer.Write(fileDate.CreatedDate.Ticks);
+                writer.Write((byte)fileDate.CreatedDate.Kind);
+                break;
+
             case NodeValue<DateTimeOffset> dto:
                 writer.Write((byte)Tag.DateTimeOffset);
                 writer.Write(dto.Value.Ticks);
@@ -188,6 +195,11 @@ internal static class NodeSerializer
             case Tag.DateTimeOffset:
                 var offsetTicks = reader.ReadInt64();
                 return new NodeValue<DateTimeOffset>(new DateTimeOffset(offsetTicks, TimeSpan.FromMinutes(reader.ReadInt16())));
+
+            case Tag.FileDate:
+                var fileDateSource = new FPath(reader.ReadString());
+                var fileDateTicks = reader.ReadInt64();
+                return new FileDateNode(fileDateSource, new DateTime(fileDateTicks, (DateTimeKind)reader.ReadByte()));
 
             case Tag.Metadata:
                 return new NodeValue<Metadata>(source.GetMetadata(ReadHash(reader)));

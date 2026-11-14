@@ -62,6 +62,7 @@ internal static class CanonicalJson
             case NodeValue<double> d when double.IsFinite(d.Value): writer.WriteNumberValue(d.Value); break;
             case NodeValue<float> f when float.IsFinite(f.Value): writer.WriteNumberValue(f.Value); break;
             case NodeValue<DateTime> dt: writer.WriteStringValue(dt.Value.ToString("O", CultureInfo.InvariantCulture)); break;
+            case FileDateNode fileDate: writer.WriteStringValue(fileDate.Read().ToString("O", CultureInfo.InvariantCulture)); break;
             case NodeValue<DateTimeOffset> dto: writer.WriteStringValue(dto.Value.ToString("O", CultureInfo.InvariantCulture)); break;
 
             // Metadata wrapped in a node (collection items) is identified by its own hash.

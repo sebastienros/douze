@@ -65,6 +65,7 @@ internal static class NodeValues
             NodeValue<uint> ui => NumberValue.Create(ui.Value),
             NodeValue<ulong> ul => NumberValue.Create(ul.Value),
             NodeValue<DateTime> dt => DateTimeValue.Create(dt.Value),
+            FileDateNode fileDate => DateTimeValue.Create(fileDate.Read()),
             NodeValue<DateTimeOffset> dto => DateTimeValue.Create(dto.Value),
             NodeValue<Metadata> meta => new MetadataValue(meta.Value),
             IFormattable formattable => StringValue.Create(formattable.ToString(null, CultureInfo.InvariantCulture)),

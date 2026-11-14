@@ -15,11 +15,14 @@ internal sealed class DependencyTracker
     /// </summary>
     public static readonly DependencyTracker Null = new(enabled: false);
 
+    private static readonly AsyncLocal<DependencyTracker?> s_current = new();
+
     private readonly bool _enabled;
     private readonly Lock _lock = new();
     private readonly Dictionary<FPath, Hash128> _templates = new();
     private readonly Dictionary<(FPath Directory, string Key), LookupRecord> _lookups = new();
     private readonly Dictionary<FPath, (long Length, DateTime LastWriteTimeUtc)> _written = new();
+    private readonly Dictionary<FPath, DateTime> _dates = new();
 
     public DependencyTracker() : this(enabled: true)
     {
@@ -28,6 +31,41 @@ internal sealed class DependencyTracker
     private DependencyTracker(bool enabled)
     {
         _enabled = enabled;
+    }
+
+    /// <summary>
+    /// The tracker of the unit that runs: the scheduler sets it around each unit, for what reads values with no other
+    /// way to reach the unit (<see cref="Nodes.FileDateNode"/>).
+    /// </summary>
+    public static DependencyTracker? Current
+    {
+        get => s_current.Value;
+        set => s_current.Value = value;
+    }
+
+    /// <summary>
+    /// The modification times of the source files of the build, which <see cref="ReadFileDate"/> reads.
+    /// </summary>
+    public SourceDates? SourceDates { get; init; }
+
+    /// <summary>
+    /// Records that the unit read the modification time of the source file <paramref name="source"/>
+    /// (<c>page.date</c>), and returns it: the one of the build (<see cref="SourceDates"/>), else
+    /// <paramref name="fallback"/>. A result is reused only while the file still has that date.
+    /// </summary>
+    public DateTime ReadFileDate(FPath source, DateTime fallback)
+    {
+        var date = SourceDates is { } dates && dates.TryGet(source, out var current) ? current : fallback;
+
+        if (_enabled)
+        {
+            lock (_lock)
+            {
+                _dates[source] = date;
+            }
+        }
+
+        return date;
     }
 
     /// <summary>
@@ -229,6 +267,11 @@ internal sealed class DependencyTracker
             {
                 _written[path] = (length, lastWriteTimeUtc);
             }
+
+            foreach (var (path, date) in set.Dates)
+            {
+                _dates[path] = date;
+            }
         }
     }
 
@@ -239,7 +282,7 @@ internal sealed class DependencyTracker
     {
         lock (_lock)
         {
-            if (_templates.Count == 0 && _lookups.Count == 0 && _written.Count == 0)
+            if (_templates.Count == 0 && _lookups.Count == 0 && _written.Count == 0 && _dates.Count == 0)
             {
                 return DependencySet.Empty;
             }
@@ -247,7 +290,8 @@ internal sealed class DependencyTracker
             return new DependencySet(
                 [.. _templates.Select(x => (x.Key, x.Value)).OrderBy(x => x.Key)],
                 [.. _lookups.Select(x => x.Value.ToLookup(x.Key.Directory, x.Key.Key)).OrderBy(x => x.Directory).ThenBy(x => x.Key, StringComparer.Ordinal)],
-                [.. _written.Select(x => (x.Key, x.Value.Length, x.Value.LastWriteTimeUtc)).OrderBy(x => x.Key)]);
+                [.. _written.Select(x => (x.Key, x.Value.Length, x.Value.LastWriteTimeUtc)).OrderBy(x => x.Key)],
+                [.. _dates.Select(x => (x.Key, x.Value)).OrderBy(x => x.Key)]);
         }
     }
 
@@ -303,22 +347,25 @@ internal readonly record struct Lookup(FPath Directory, string Key, Hash128 Hash
 /// <summary>
 /// What a unit read besides its inputs, sorted and deduplicated, with what each dependency was: a result is reused only
 /// when every template still has its hash, every lookup still resolves to the same value
-/// (<see cref="ScopeSet.ResolveHash"/>), and every written file is still in the output folder as it was written.
+/// (<see cref="ScopeSet.ResolveHash"/>), every written file is still in the output folder as it was written, and every
+/// source file whose date was read still has that date.
 /// </summary>
 /// <param name="Templates">Layouts, includes and templates, with the hash of their content, or <see cref="Absent"/> for a path looked for that did not exist.</param>
 /// <param name="Lookups">Keys resolved beyond the own metadata of a file of a directory, with the hash of what they resolved to, or <see cref="Absent"/>.</param>
 /// <param name="Written">Files written to the output folder, with their length and modification time once written.</param>
+/// <param name="Dates">Source files whose modification time was read (<c>page.date</c>), with that time.</param>
 internal sealed record DependencySet(
     ImmutableArray<(FPath Path, Hash128 Hash)> Templates,
     ImmutableArray<Lookup> Lookups,
-    ImmutableArray<(FPath Path, long Length, DateTime LastWriteTimeUtc)> Written)
+    ImmutableArray<(FPath Path, long Length, DateTime LastWriteTimeUtc)> Written,
+    ImmutableArray<(FPath Path, DateTime Date)> Dates)
 {
     /// <summary>
     /// The hash of a dependency that does not exist: a template that is not there, a key no scope defines.
     /// </summary>
     public static readonly Hash128 Absent = default;
 
-    public static readonly DependencySet Empty = new([], [], []);
+    public static readonly DependencySet Empty = new([], [], [], []);
 
     private HashSlot _hash;
 
@@ -328,9 +375,10 @@ internal sealed record DependencySet(
         Templates = original.Templates;
         Lookups = original.Lookups;
         Written = original.Written;
+        Dates = original.Dates;
     }
 
-    public bool IsEmpty => Templates.IsEmpty && Lookups.IsEmpty && Written.IsEmpty;
+    public bool IsEmpty => Templates.IsEmpty && Lookups.IsEmpty && Written.IsEmpty && Dates.IsEmpty;
 
     /// <summary>
     /// A hash of every dependency, to share equal sets between units and to check a set once per step.
@@ -346,7 +394,7 @@ internal sealed record DependencySet(
 
     private Hash128 ComputeHash()
     {
-        var hashes = new List<Hash128>(Templates.Length * 2 + Lookups.Length * 4 + Written.Length * 2 + 2);
+        var hashes = new List<Hash128>(Templates.Length * 2 + Lookups.Length * 4 + Written.Length * 2 + Dates.Length * 2 + 3);
 
         foreach (var (path, hash) in Templates)
         {
@@ -370,6 +418,14 @@ internal sealed record DependencySet(
         {
             hashes.Add(Hash128.OfText(path.FullName));
             hashes.Add(new Hash128((ulong)length, (ulong)lastWriteTimeUtc.Ticks));
+        }
+
+        hashes.Add(Hash128.Empty);
+
+        foreach (var (path, date) in Dates)
+        {
+            hashes.Add(Hash128.OfText(path.FullName));
+            hashes.Add(new Hash128((ulong)date.Ticks, (ulong)date.Kind));
         }
 
         return Hash128.Combine([.. hashes]);

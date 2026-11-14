@@ -118,6 +118,13 @@ internal sealed class Scheduler
             files[i] = VirtualFile.FromSource(path, content, date);
         }
 
+        SourceDates = SourceDates.Of(files);
+
+        if (_replay != null)
+        {
+            _replay.SourceDates = SourceDates;
+        }
+
         var byRoot = new List<VirtualFile>[roots.Length];
 
         for (var r = 0; r < byRoot.Length; r++)
@@ -135,6 +142,11 @@ internal sealed class Scheduler
 
         return new SourceFiles(roots, byRoot);
     }
+
+    /// <summary>
+    /// The modification times of the source files, once they are enumerated, which <c>page.date</c> reads.
+    /// </summary>
+    public SourceDates SourceDates { get; private set; } = SourceDates.Empty;
 
     /// <summary>
     /// The snapshot of the source folder the build used, once the sources are enumerated.
@@ -737,7 +749,8 @@ internal sealed class Scheduler
 
             // Files are sorted, so every group's files are sorted too.
             var resolver = new GroupKeyResolver(Node.Definition.GroupBy!, Context, Name);
-            var partition = new DependencyTracker();
+            var partition = new DependencyTracker { SourceDates = _scheduler.SourceDates };
+            DependencyTracker.Current = partition;
             var groups = new Dictionary<string, List<VirtualFile>>(StringComparer.Ordinal);
 
             foreach (var file in files)
@@ -766,6 +779,7 @@ internal sealed class Scheduler
 
             var ordered = groups.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => new FileGroup(x.Key, x.Value)).ToArray();
             var partitionDependencies = partition.ToSet();
+            DependencyTracker.Current = null;
 
             Run.AddUnits(ordered.Length);
             Run.UnitsFinal = true;
@@ -885,7 +899,7 @@ internal sealed class Scheduler
 
         private Hash128 ComputeResultKey(IReadOnlyList<VirtualFile> inputFiles, ImmutableArray<FileRef> inputs)
         {
-            return ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent, [.. inputFiles.Select(x => x.LastWriteTimeUtc)], [.. inputFiles.Select(x => x.SourcePath)]);
+            return ResultKey.Compute(Node.Definition, inputs, _version, Node.Step.ReadsContent, [.. inputFiles.Select(x => x.SourcePath)]);
         }
 
         /// <summary>
@@ -918,7 +932,7 @@ internal sealed class Scheduler
         {
             var replay = _replay;
 
-            var deps = new DependencyTracker { Subject = subject };
+            var deps = new DependencyTracker { Subject = subject, SourceDates = _scheduler.SourceDates };
             using var span = Context.Trace.Begin(Name, UnitCategory, key.Unit);
             var context = new StepContext(Node.Definition, Run.Scopes, Context, deps, span);
 
@@ -928,6 +942,8 @@ internal sealed class Scheduler
 
             try
             {
+                // Restored when this method returns: the tracker flows into what the unit awaits only.
+                DependencyTracker.Current = deps;
                 output = WithAddedOutputs(await body(context, ct), context, inputs);
                 contributions = Contribute(output);
                 CheckContents(output, inputFiles);
