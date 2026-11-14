@@ -47,7 +47,7 @@ internal sealed class VariantSharing
 
     /// <summary>
     /// The key of the group of variants of <paramref name="file"/>: the hash of its content, its path without the
-    /// prefix of its variant, its folder, its content type, its dates, and every key of its own metadata but the keys of
+    /// prefix of its variant, its folder, its content type, its source path, and every key of its own metadata but the keys of
     /// its variant. Null when its path does not start with the prefix (a step moved it).
     /// </summary>
     public static Hash128? KeyOf(VirtualFile file)
@@ -68,7 +68,6 @@ internal sealed class VariantSharing
             Hash128.OfText(file.Metadata.Directory.FullName),
             Hash128.OfText(file.ContentType ?? ""),
             Hash128.OfText(file.SourcePath?.FullName ?? ""),
-            file.LastWriteTimeUtc is { } date ? new Hash128((ulong)date.Ticks, (ulong)date.Kind) : Hash128.Empty,
             new Hash128((ulong)variant.Members, 0),
         };
 

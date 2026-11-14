@@ -147,7 +147,8 @@ that read `posts` need it.
 ## Collections and the cache
 
 A page that lists a collection depends on what it reads: adding a page, or changing a title, tag or date of a listed
-page, renders it again. See [Cache and incremental builds](cache.md).
+page, renders it again. A new file date (`page.date`) sorts the collections again, and renders the pages that list
+them only when the order changed. See [Cache and incremental builds](cache.md).
 
 ## See also
 

@@ -60,7 +60,8 @@ public sealed class BuildCacheTests : IDisposable
         var dependencies = new DependencySet(
             [("/_includes/layout.html", Hash128.OfText("layout")), ("/_includes/missing.liquid", DependencySet.Absent)],
             [new Lookup("/blog/", "collections", Hash128.OfText("collections"), new ValueAccess(false, true, [], [(0, ValueAccess.Whole)])), new Lookup("/blog/", "site", Hash128.OfText("site"), null)],
-            [("/a.html", 12, date)]);
+            [("/a.html", 12, date)],
+            [("/a.md", date)]);
 
         Hash128 key;
 

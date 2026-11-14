@@ -66,9 +66,9 @@ In GitHub Actions, the checkout must have the history, or every file gets the da
 ```
 
 :::tip[The dates and the cache]
-`page.date` is part of what a page's cache entry depends on: a file whose modification time changed runs again even
-when its content did not. Setting the dates from Git also keeps them stable from one CI build to the next, so a
-restored [cache](../guide/cache.md) is reused.
+A page that reads `page.date` runs again when the file's modification time changes, even when its content did not; a
+page that does not read it replays from the [cache](../guide/cache.md). Setting the dates from Git keeps them stable
+from one CI build to the next, so the pages that show them are reused too.
 :::
 
 ## Set the date by hand

@@ -756,9 +756,14 @@ data files and scope sources (7.3), and a result is reused when every recorded l
 value. Command steps do not record every scope: they cannot read scopes (their model has the file, the folders and
 `with`; workers receive the own metadata only), so `ScopeSet.Hash` in their keys would only re-run them for nothing;
 what a command reads from disk is declared with `sources`. A step that reads only metadata (`Step.ReadsContent`, false
-for `collect`) leaves the content hashes of its inputs out of its keys. The key also has the date of the source file
-each input comes from (`VirtualFile.LastWriteTimeUtc`): `frontmatter` reads it for `page.date`, and a checkout or a copy
-changes it without changing the content (found by `scripts/compare-sample.sh`, which touches the Sample). Early cutoff needs no comparison: a unit that
+for `collect`) leaves the content hashes of its inputs out of its keys. The dates of the source files are not part of
+the key: a fresh checkout (CI) gives every file a new one, and a restored cache would match nothing. `frontmatter` sets
+`page.date` to a `FileDateNode`, a reference to the source file hashed and stored by path; reading its value
+(`FileDateNode.Read`) takes the date from the build's `SourceDates` and records it in the unit's `DependencySet.Dates`
+(through `DependencyTracker.Current`, set by the scheduler around each unit: nodes are converted in places with no
+other way to the unit). A replay checks the recorded dates against the build's, so only the units that read a date run
+again when it changes. `collect` keeps the node in the item's `date`: the collections keep their hash while the order
+of the dates does not change. Early cutoff needs no comparison: a unit that
 runs again and produces the same outputs gives its dependents the same input refs, hence the same keys.
 
 ### 2.8 Templates and the Liquid bridge
@@ -1806,6 +1811,8 @@ correctness over minimal rebuilds.
   users.
 - `write` records the files it wrote with their length and modification time (`DependencySet.Written`): a replay
   writes nothing, so it checks that the output file is still there, unchanged; otherwise it runs again.
+- Source dates: a unit that reads `page.date` records the date (`DependencySet.Dates`, 2.7); a replay checks that
+  the source file still has it.
 - Completeness (checked by the review of phase 5, `ValueAccessSurfaceTests`): every member of `FluidValue` that exposes
   the content of a `NodeObjectValue` or `NodeArrayValue` records what it exposes, including the value on the *right* of
   `==` and `contains`, which the comparison of the left value reads (`Equals` marks the other value read whole), and

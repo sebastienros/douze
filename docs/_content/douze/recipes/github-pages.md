@@ -90,10 +90,11 @@ servers of the hover steps). Add this step before the build:
 
 The key changes with every commit, so each build saves a new cache, and `restore-keys` restores the latest one.
 
-A fresh checkout gives every file the time of the checkout, and `page.date`, the modification time, is part of what a
-page's cache entry depends on. To reuse the cache entries of unchanged pages, and to get the right `page.date`, set
-each file's time to its last commit with the script of [Add last modified time](modified-time.md), which needs the
-history:
+A fresh checkout gives every file the time of the checkout. Only what reads `page.date`, the modification time, runs
+again for that: the pages that show it, and the collections, which sort pages without a front matter `date` by it. A
+site that shows or sorts by `page.date` gets the right dates, and keeps them stable from one build to the next, by
+setting each file's time to its last commit with the script of [Add last modified time](modified-time.md), which needs
+the history:
 
 ```yaml
       - uses: actions/checkout@v7

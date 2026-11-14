@@ -25,7 +25,9 @@ tags: [guide]
 
 For each text file it consumes, the step:
 
-- sets `page.date` to the last write time of the source file (UTC), when the file has one;
+- sets `page.date` to the last write time of the source file (UTC), when the file has one. The value is read when a
+  template or a step uses it: only what reads it runs again when the file's date changes and its content does not
+  (see [File dates](../../guide/cache.md#file-dates));
 - merges the front matter values into the file's data: a nested object (`page: { ... }`) is merged into the existing
   one, lists and values replace the existing ones;
 - removes the front matter block from the content. A file without front matter keeps its content as it is.

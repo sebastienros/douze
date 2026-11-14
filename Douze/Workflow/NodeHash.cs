@@ -158,6 +158,10 @@ internal static class NodeHash
                 length = 17;
                 break;
 
+            case FileDateNode fileDate:
+                // By reference: the date itself is a dependency of what reads it (DependencySet.Dates).
+                return (Text('F', fileDate.Source.FullName), fileDate.Source.FullName.Length + 10);
+
             default:
                 // Other values (a Guid) are stored as the string they format to: they are hashed the same way.
                 var text = Format(node);

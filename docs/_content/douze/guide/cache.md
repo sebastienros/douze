@@ -50,10 +50,13 @@ such as a remote API.
 
 ### File dates
 
-The front matter step sets `page.date` to the file's modification time, so touching a file changes its data, even when
-its content is the same: the page runs again, and so does everything that reads its date. A fresh `git clone` gives
-every file a new date, which runs every page again. The fence results of `highlight` and the hover steps are keyed by
-code, not by page, so they still come from the cache.
+The front matter step sets `page.date` to the file's modification time. A result depends on that date only when it read
+it: a template that shows `page.date`, a permalink built from it, a command given the page's data, or the collections,
+which sort a page without a front matter `date` by it. Touching a file, or a fresh `git clone` that gives every file a
+new date, runs only those units again; everything else comes from the cache.
+
+The collections are sorted again when a date they sort by changes. The pages that list them render again only when the
+order changed.
 
 ## The write step
 
@@ -83,9 +86,11 @@ or is cancelled keeps the previous results.
 
 ## Cache in CI
 
-Restoring the cache folder between CI runs saves the downloads of tools and the work of the steps that cache by
-content: highlighting and code checks. Pages still render again after a fresh checkout, because the files' dates
-changed (see [File dates](#file-dates)).
+Restoring the cache folder between CI runs saves the downloads of tools and the work of every unit whose inputs did not
+change. A fresh checkout gives every file a new date, which runs again only what reads the dates (see
+[File dates](#file-dates)). Collections sort a page without a front matter `date` by its file date, so in a fresh
+checkout their order can change, and so can the pages that list them: give dated content a `date`, or set the dates from
+Git (see [Add last modified time](../recipes/modified-time.md)).
 
 ```yaml title=".github/workflows/site.yml"
       - uses: actions/cache@v4

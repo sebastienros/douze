@@ -69,6 +69,11 @@ internal static class NodeJson
                 Write(writer, metadata.Value.Own);
                 break;
 
+            // As a date of the front matter is written (IFormattable below).
+            case FileDateNode fileDate:
+                writer.WriteStringValue(fileDate.Read().ToString());
+                break;
+
             case IFormattable formattable:
                 writer.WriteStringValue(formattable.ToString(null, CultureInfo.InvariantCulture));
                 break;

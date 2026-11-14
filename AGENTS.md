@@ -99,6 +99,10 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 - Builds must be deterministic: files are processed in parallel, so anything collected across files must be sorted before it is exposed (reduce and group inputs, collections, results).
 - `VirtualFile` is immutable: a step returns new files (`With`, `Derived`) or the same instance. Metadata nodes are shared between files and never mutated once published: shallow clone (`Metadata.With`) and replace.
 - Data is never copied into files. Folder and site data live in scopes, and steps read metadata only through `ScopeSet.TryResolve`, which records what a unit depends on: a unit is replayed from the cache only while every key it resolved beyond a file's own metadata resolves to the same value (or, for templates, to the same part of it: `ValueAccess`). A step that cannot record what it reads must not be incremental. `NodeHash` caches the hash of objects and arrays once computed: never change a node after it is published.
+- Source file dates are never part of a result key: a fresh checkout changes them all. `page.date` is a `FileDateNode`
+  (hashed by source path); reading it (`Read`, or a conversion of the node) records the date in the unit's
+  `DependencySet.Dates`, through `DependencyTracker.Current`. Code that reads a node's value handles `FileDateNode`
+  next to `NodeValue<DateTime>`.
 - Data files are keyed by file name: `_data/colors.json` is `colors`. The nearest scope wins: own data, folder data (nearest folder first), site data, the `site:` settings of `douze.yml` (`site.url`, whose `site` object is completed rather than hidden by a `site` data object), then the front matter of layouts.
 - Collection items (`collections.all`, `collections.<tag>`) are sorted by date ascending, using front matter `date` if defined, or `page.date` (the file date) otherwise, then by path (ordinal). This matches Eleventy.
 - Collection items expose the page's data as `data`, plus the resolved `date`, `url` and `inputPath` at their root, so standard Liquid filters work on them (`sort: 'date'`). Shopify Liquid filters don't support dotted paths like `data.date`.

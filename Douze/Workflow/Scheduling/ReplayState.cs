@@ -24,9 +24,14 @@ internal sealed class ReplayState
     public BuildCache Cache { get; }
 
     /// <summary>
+    /// The modification times of the source files of the build, set once they are listed, before any unit runs.
+    /// </summary>
+    public SourceDates SourceDates { get; set; } = SourceDates.Empty;
+
+    /// <summary>
     /// Whether every dependency of a cached result is unchanged: each template has its hash, each lookup resolves to the
     /// same value in <paramref name="scopes"/> (or the same part of it, for what a template read), each written file is
-    /// in the output folder as it was written.
+    /// in the output folder as it was written, each source file whose date was read still has that date.
     /// </summary>
     public async ValueTask<bool> IsUnchangedAsync(string step, ScopeSet scopes, DependencySet dependencies, CancellationToken ct)
     {
@@ -45,6 +50,14 @@ internal sealed class ReplayState
 
     private async Task<bool> CheckAsync(ScopeSet scopes, DependencySet dependencies)
     {
+        foreach (var (path, date) in dependencies.Dates)
+        {
+            if (!SourceDates.TryGet(path, out var current) || current != date)
+            {
+                return false;
+            }
+        }
+
         foreach (var lookup in dependencies.Lookups)
         {
             var hash = lookup.Access == null ? scopes.ResolveHash(lookup.Directory, lookup.Key) : scopes.ProjectHash(lookup.Directory, lookup.Key, lookup.Access);

@@ -58,16 +58,16 @@ internal sealed class CollectStep : Step, IReduceStep
 
         foreach (var file in files)
         {
-            var date = GetDate(file.Metadata, scopes, deps);
+            var (date, dateNode) = GetDate(file.Metadata, scopes, deps);
 
             // The common values are also at the root of the item, as in Eleventy: Liquid filters take a member name,
             // not a path like 'data.date'. The url is the file's own (permalink), covered by the inputs of the unit,
             // and so is the source path (ResultKey).
             var node = new NodeObject { [Data] = new NodeValue<Metadata>(file.Metadata) };
 
-            if (date != DateTimeOffset.MinValue)
+            if (dateNode != null)
             {
-                node[Date] = NodeValue.Create(date);
+                node[Date] = dateNode;
             }
 
             if (file.Metadata.Own[Url] is { } url)
@@ -160,19 +160,24 @@ internal sealed class CollectStep : Step, IReduceStep
             .Select(x => x!);
     }
 
-    private static DateTimeOffset GetDate(Metadata metadata, ScopeSet scopes, DependencyTracker deps)
+    /// <summary>
+    /// The date an item is sorted by, and the node of its <c>date</c>: <c>page.date</c> stays a reference to the file's
+    /// date (<see cref="FileDateNode"/>), so that the collections keep their hash when the dates change and the order
+    /// does not. Null without a date.
+    /// </summary>
+    private static (DateTimeOffset Date, Node? Node) GetDate(Metadata metadata, ScopeSet scopes, DependencyTracker deps)
     {
         if (scopes.TryResolve(metadata, Date, null, deps, out var date, out _) && TryGetDate(date, out var result))
         {
-            return result;
+            return (result, NodeValue.Create(result));
         }
 
         if (scopes.TryResolve(metadata, "page", null, deps, out var page, out _) && page is NodeObject pageObject && TryGetDate(pageObject[Date], out result))
         {
-            return result;
+            return (result, pageObject[Date] is FileDateNode fileDate ? fileDate : NodeValue.Create(result));
         }
 
-        return DateTimeOffset.MinValue;
+        return (DateTimeOffset.MinValue, null);
     }
 
     private static bool TryGetDate(Node? node, out DateTimeOffset date)
@@ -181,6 +186,11 @@ internal sealed class CollectStep : Step, IReduceStep
         {
             case NodeValue<DateTimeOffset> dto:
                 date = dto.Value;
+                return true;
+
+            case FileDateNode fileDate:
+                var read = fileDate.Read();
+                date = read.Kind == DateTimeKind.Unspecified ? new DateTimeOffset(read, TimeSpan.Zero) : new DateTimeOffset(read);
                 return true;
 
             case NodeValue<DateTime> dt:
