@@ -53,7 +53,9 @@ jobs:
       fail-fast: true
       matrix:
         include:
-        - { os: ubuntu-latest, rid: linux-x64 }
+        # Not ubuntu-latest: on ubuntu-26.04 the C startup object the binary links (Scrt1.o, from the amd64v3 libc6-dev)
+        # marks it x86-64-v3, which glibc refuses to start on CPUs without AVX2 (see the ISA level check below).
+        - { os: ubuntu-24.04, rid: linux-x64 }
         - { os: ubuntu-24.04-arm, rid: linux-arm64 }
         - { os: windows-latest, rid: win-x64 }
         - { os: windows-11-arm, rid: win-arm64 }
@@ -101,6 +103,19 @@ jobs:
         & $douze -s scripts/install-test-site -o smoke --plain --no-cache
         if ($LASTEXITCODE -ne 0) { throw "douze exited with $LASTEXITCODE" }
         if (-not (Select-String -LiteralPath smoke/index.html -SimpleMatch 'style="--0:' -Quiet)) { throw 'the code block was not highlighted' }
+
+    # The linker marks the binary with the highest x86-64 ISA level of the objects it links, and glibc refuses to start a
+    # binary marked above the CPU ("CPU ISA level is lower than required"), however little code needs it: douze ships
+    # for every x64 CPU.
+    - name: Check the x86-64 ISA level (${{ matrix.rid }})
+      if: matrix.rid == 'linux-x64'
+      run: |
+        needed="$(readelf -n extracted/tools/any/linux-x64/douze | sed -n 's/.*x86 ISA needed: //p')"
+        echo "x86 ISA needed: ${needed:-none}"
+        if printf '%s\n' "$needed" | grep -q 'x86-64-v[234]'; then
+          echo "::error::the linux-x64 binary needs $needed, above x86-64-baseline"
+          exit 1
+        fi
 
     - uses: actions/upload-artifact@v7
       with:
