@@ -22,6 +22,7 @@ default folders (`_content`, `_includes`, `_data`) and, when they change the wor
 | [Add reading time](reading-time.md) | A word count and a reading time computed in a layout with Liquid filters |
 | [Add last modified time](modified-time.md) | `page.date`, and the date of the last Git commit of each page in CI |
 | [Add icons to external links](external-links.md) | A class on external links from the layout, and an icon in CSS |
+| [Write an API reference for a .NET library](dotnet-api-reference.md) | A page per namespace and per type from an assembly and its XML documentation, with the `dotnet-api` step |
 
 ## Workflow and tools
 

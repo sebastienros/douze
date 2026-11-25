@@ -78,6 +78,7 @@
         - /douze/recipes/reading-time/
         - /douze/recipes/modified-time/
         - /douze/recipes/external-links/
+        - /douze/recipes/dotnet-api-reference/
         - /douze/recipes/github-pages/
         - /douze/recipes/docker/
     - label: Migrate to Douze
@@ -105,6 +106,7 @@
         - { label: data, link: /douze/reference/steps/data/ }
         - { label: frontmatter, link: /douze/reference/steps/frontmatter/ }
         - { label: parse, link: /douze/reference/steps/parse/ }
+        - { label: dotnet-api, link: /douze/reference/steps/dotnet-api/ }
         - { label: replace, link: /douze/reference/steps/replace/ }
         - { label: permalink, link: /douze/reference/steps/permalink/ }
         - { label: collect, link: /douze/reference/steps/collect/ }

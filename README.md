@@ -351,7 +351,7 @@ entering files that its `match` selects, and the others pass through it unchange
 | `needs` | none | a step name or a list: the steps whose files, and data, enter this step |
 | `inputs` | none | a glob or a list: the source files that enter this step |
 | `match` | the step's own | a glob or a list: the entering files the step consumes |
-| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `check-code`, `links`, `check-links`, `write` |
+| `uses` | | a built-in step: `data`, `frontmatter`, `parse`, `dotnet-api`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `hover-typescript`, `hover-csharp`, `hover-go`, `highlight`, `check-code`, `links`, `check-links`, `write` |
 | `with` | none | the options of the built-in step |
 | `group-by` | none | `file`, `dir`, or a Liquid template: processes the files in groups (`liquid` with a `template`) |
 | `incremental` | `true` | `false` runs the step on every build |
@@ -938,6 +938,43 @@ Two steps check the links of the built site. `links` (HTML pages after `layout`)
   check them on every build.
 - `check-links` reads metadata only: an edit that changes no link, anchor or `page.date` of any page (a layout's) does
   not run it again. Warnings are reported again when it is replayed.
+
+# dotnet-api
+
+The `dotnet-api` step reads .NET assemblies and their XML documentation files (`<GenerateDocumentationFile>`, the
+`.xml` next to each `.dll`) and publishes their public API as site data, `api`, for API reference pages. It reads the
+metadata of the assemblies without loading them, so a reference assembly works too, and emits no files: pages
+paginate over `api.types` or `api.namespaces` with the site's own templates.
+
+````yaml
+  api:   { inputs: "_api/*.{dll,xml}", uses: dotnet-api }
+  pages: { inputs: "_content/**", needs: api, uses: frontmatter }
+````
+
+```liquid
+---
+pagination: { data: api.types, size: 1, alias: type }
+permalink: "{{ type.url }}"
+---
+<h1>{{ type.title }}</h1>
+{{ type.summary | raw }}
+<pre data-lang="csharp"><code>{{ type.signature }}</code></pre>
+{% for m in type.methods %}<h2 id="{{ m.anchor }}">{{ m.displayName }}</h2>{{ m.summary | raw }}{% endfor %}
+```
+
+- Types and members: the public types and their public and protected members (`protected: false` leaves those out),
+  with their kind, modifiers, C# `signature`, base types, interfaces, type parameters and constraints, parameters
+  (modifiers, default values), constants, `[Obsolete]`, extension methods, explicit implementations and nullable
+  reference types, from the metadata; the documentation joins them by documentation comment ID.
+- Documentation: `summary`, `remarks`, `example`, `returns`, the descriptions of parameters, `exceptions` and `seeAlso`
+  are HTML (`raw`): `<see cref>` links to the page of its type or member, `<code>` is a fence the `highlight` step
+  colors, `<inheritdoc/>` is resolved from the base types, the interfaces or its `cref`. Other `.xml` files the step
+  consumes document what the assemblies inherit (the `System.Runtime.xml` of .NET).
+- Urls: `/api/contoso.widgets.widget/` (`url`), members as anchors of their type's page, or of a page per member name
+  with `member-pages: true` (`api.members`). Types of `System` and `Microsoft` link to learn.microsoft.com, and
+  `external` maps other namespaces to url patterns.
+- Type references (parameter types, base types) have `name`, `fullName`, `url` and `html`, which links each type of
+  `Dictionary<string, Widget>`. `api.ids` has every item by documentation comment ID.
 
 # commands
 

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The library of the dotnet-api step tests: its assembly and its XML documentation file are read from its output
+       folder, it is not referenced. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Contoso.Widgets</RootNamespace>
+    <AssemblyName>Contoso.Widgets</AssemblyName>
+    <Version>2.1.0</Version>
+  </PropertyGroup>
+
+</Project>

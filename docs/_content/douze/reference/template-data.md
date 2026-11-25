@@ -170,6 +170,12 @@ The `t` filter reads the page's `locale` and the strings of `site.locales.string
 | `image` | [images](steps/images.md), on each file it emits | `{ source, url, width, height, format, variants }`, `variants` being a list of `{ url, width, height, format }`. |
 | `images` | [image-map](steps/image-map.md), as site data | The `image` values by source url: `images["/docs/images/x.png"].width`. |
 
+## API data
+
+| Name | Set by | Value |
+|---|---|---|
+| `api` | [dotnet-api](steps/dotnet-api.md), as site data | The assemblies, namespaces, types and members of .NET assemblies, with their urls, signatures and documentation: see [its data](steps/dotnet-api.md#data). |
+
 ## Shortcode values
 
 A [shortcode](liquid.md#shortcodes) template sees, before the page's names:

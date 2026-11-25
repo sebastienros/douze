@@ -24,7 +24,7 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
 
 - `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`), `WorkflowSource` (finds the site options and the workflow), `ViewSelector`.
 - `Douze/Workflow/`: the engine. `WorkflowGraph` validates a `WorkflowDefinition` and instantiates its steps; `SiteBuilder` runs it with the `Scheduling/Scheduler`, which streams files between steps by shape (`map`, `group`, `reduce`). `DefaultWorkflow` is the workflow of a site without a workflow file.
-- `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `check-code`, `links`, `check-links`, `write`). `links` extracts links and anchors with `Markdown/LinkScanner`; `check-links` is a metadata-only reduce that emits nothing, a branch `write` does not wait for (`docs/site-features-plan.md` 3.11).
+- `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `dotnet-api`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `localize`, `replace`, `fork`, `liquid`, `layout`, `check-code`, `links`, `check-links`, `write`). `links` extracts links and anchors with `Markdown/LinkScanner`; `check-links` is a metadata-only reduce that emits nothing, a branch `write` does not wait for (`docs/site-features-plan.md` 3.11).
 - `Douze/Workflow/LocaleSet.cs`: `site.locales` (`BuildContext.Locales`, `LocaleSet.None` without the section), also exposed to templates as `site.locales` in the settings scope.
 - `Douze/Workflow/Steps/`: the built-in steps (`uses:` ids `data`, `frontmatter`, `parse`, `markdown`, `headings`, `paginate`, `permalink`, `collect`, `liquid`, `layout`, `images`, `image-map`, `pictures`, `social-image`, `write`). A step or a tag that produces a file besides what its unit returns (an image variant) adds it with `StepContext.AddOutput`: it is stored and replayed with the unit, and `write` accepts identical files (same `FileRef`) for one path, written once.
 - `Douze/Cli/`: the command line (`CommandLine`, `BuildCommand`, `WatchCommand` for `watch` and `serve`, `DoctorCommand`, `ToolsCommand` for `tools install`), `WorkflowSource` (finds the site options and the workflow), `ViewSelector`.
@@ -65,6 +65,13 @@ Douze builds a site by running a workflow (`docs/workflow-engine-plan.md` is the
   `CodeTheme` normalizes themes and resolves styles with vscode-textmate's rule trie, `Color` is the contrast arithmetic;
   `CodeMeta` parses fence metas, `CodeBlockBuilder` builds the block model (frames, markers, sections, twoslash nodes)
   that the Liquid templates render (`Templates/`, the defaults).
+- `Douze/DotNetApi/`: the `dotnet-api` step's engine (`Workflow/Steps/DotNetApiStep.cs`). `AssemblyReader` reads the
+  public API of an assembly from its metadata (`System.Reflection.Metadata`, nothing is loaded: AOT safe) with
+  `SignatureProvider`, whose `ApiTypeRef`s format as documentation comment IDs (the join key with the XML file, checked
+  against the SDK's reference assemblies by `FrameworkDocIdTests`) and as C# (`CSharpWriter`); nullable metadata is
+  decoded by `AssemblyReader.Annotate`. `DocSet` holds the XML documentation and resolves `<inheritdoc/>`, `DocHtml`
+  turns comments into HTML, `ApiNodeBuilder` assigns urls and builds the `api` site value. `Douze.Tests.ApiSample` is
+  the library its tests read, from its output folder.
 - `Douze/Markdown/`: Markdown rendering. `MarkdownOptions` is the `markdown:` section of `douze.yml`;
   `MarkdownPipelineFactory` builds the one Markdig pipeline of a build, which `MarkdownRenderer` (`BuildContext.Markdown`)
   renders with pooled renderers: anything that renders Markdown uses it, never a second configuration. Douze's own
