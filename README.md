@@ -896,7 +896,7 @@ The `check-code` step checks that code is well formed, with parsers built into D
   check-files: { needs: layout, uses: check-code, match: ["**/*.xml", "**/*.json"] }
 ````
 
-- Validators (`languages`, all by default): `yaml` (SharpYaml, every document, duplicate keys), `json` (duplicate
+- Validators (`languages`, all by default): `yaml` (Styml, every document, duplicate keys), `json` (duplicate
   properties), `jsonc` (comments and trailing commas), `jsonl` (a value per line), `xml` (`XmlReader`, a DTD is ignored
   and nothing is fetched), `liquid` (the build's parser, shortcodes included). Built-in aliases (`yml`, `svg`,
   `webmanifest`, `ndjson`...) and `aliases` (`{ compose: yaml }`) map fence languages and extensions to them.

@@ -1,8 +1,5 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Douze.Nodes;
-using SharpYaml;
-using SharpYaml.Model;
 
 namespace Douze.Workflow.Yaml;
 
@@ -10,12 +7,15 @@ namespace Douze.Workflow.Yaml;
 /// A parsed YAML file that keeps the position of every node, so that errors point at the file, line and column of
 /// the node they are about.
 /// </summary>
-internal sealed partial class YamlSource
+internal sealed class YamlSource
 {
-    private YamlSource(string fileName, YamlElement? root)
+    private readonly YamlStream _stream;
+
+    private YamlSource(string fileName, YamlStream stream)
     {
         FileName = fileName;
-        Root = root;
+        _stream = stream;
+        Root = stream.Documents.IsEmpty ? null : stream.Documents[0];
     }
 
     /// <summary>
@@ -26,7 +26,7 @@ internal sealed partial class YamlSource
     /// <summary>
     /// The content of the document, or <c>null</c> when the file is empty.
     /// </summary>
-    public YamlElement? Root { get; }
+    public YamlSyntax? Root { get; }
 
     /// <exception cref="WorkflowValidationException">The text is not valid YAML or has more than one document.</exception>
     public static YamlSource Parse(string text, string fileName)
@@ -35,48 +35,52 @@ internal sealed partial class YamlSource
 
         try
         {
-            using var reader = new StringReader(text);
-            stream = YamlStream.Load(reader);
+            stream = YamlStream.Parse(text);
         }
-        catch (YamlException e)
+        catch (YamlSyntaxException e)
         {
-            throw new WorkflowValidationException(ErrorMessage(e.Message), Location(fileName, e.Start));
+            throw new WorkflowValidationException(e.Reason, new SourceLocation(fileName, e.Line, e.Column));
         }
 
-        if (stream.Count > 1)
+        var source = new YamlSource(fileName, stream);
+
+        if (stream.Documents.Length > 1)
         {
-            var second = stream[1].Contents;
-            throw new WorkflowValidationException("a workflow file has a single YAML document", second is null ? null : Location(fileName, Start(second)));
+            throw new WorkflowValidationException("a workflow file has a single YAML document", source.Location(stream.Documents[1]));
         }
 
-        return new YamlSource(fileName, stream.Count == 0 ? null : stream[0].Contents);
+        return source;
     }
 
-    public SourceLocation Location(YamlElement node) => Location(FileName, Start(node));
+    public SourceLocation Location(YamlSyntax node)
+    {
+        var (line, column) = _stream.Position(node);
+        return new SourceLocation(FileName, line, column);
+    }
 
     /// <summary>
     /// Whether <paramref name="node"/> is <c>null</c>, <c>~</c> or empty (an absent value).
     /// </summary>
-    public static bool IsNull(YamlElement? node)
+    public static bool IsNull(YamlSyntax? node)
     {
-        return node is null || node is YamlValue { Style: ScalarStyle.Plain or ScalarStyle.Any } value && IsNullLiteral(value.Value);
+        return node is null || node is YamlScalar { IsPlain: true } scalar && IsNullLiteral(scalar.Value);
     }
 
     /// <summary>
     /// The text of a scalar, or <c>null</c> when <paramref name="node"/> is not a scalar.
     /// </summary>
-    public static string? Scalar(YamlElement node) => node is YamlValue value ? value.Value : null;
+    public static string? Scalar(YamlSyntax node) => node is YamlScalar scalar ? scalar.Value : null;
 
     /// <summary>
     /// The entries of a mapping in document order. A key that is not a scalar or that is defined twice is an error.
     /// </summary>
-    public IEnumerable<(string Key, YamlElement KeyNode, YamlElement? Value)> Entries(YamlMapping mapping, ICollection<WorkflowValidationError> errors)
+    public IEnumerable<(string Key, YamlSyntax KeyNode, YamlSyntax Value)> Entries(YamlMapping mapping, ICollection<WorkflowValidationError> errors)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var (keyNode, value) in mapping)
         {
-            if (keyNode is not YamlValue { Value: var key })
+            if (keyNode is not YamlScalar { Value: var key })
             {
                 errors.Add(new("keys must be strings", Location(keyNode)));
                 continue;
@@ -96,7 +100,7 @@ internal sealed partial class YamlSource
     /// Converts a node to a <see cref="Node"/>, typing plain scalars like data files do: integers, decimals, booleans
     /// and null.
     /// </summary>
-    public Node? ToNode(YamlElement? node, ICollection<WorkflowValidationError> errors)
+    public Node? ToNode(YamlSyntax? node, ICollection<WorkflowValidationError> errors)
     {
         switch (node)
         {
@@ -123,11 +127,11 @@ internal sealed partial class YamlSource
 
                 return array;
 
-            case YamlValue { Style: ScalarStyle.Plain or ScalarStyle.Any } value:
-                return TypedScalar(value.Value);
+            case YamlScalar { IsPlain: true } scalar:
+                return TypedScalar(scalar.Value);
 
-            case YamlValue value:
-                return value.Value;
+            case YamlScalar scalar:
+                return scalar.Value;
 
             default:
                 return null;
@@ -166,31 +170,4 @@ internal sealed partial class YamlSource
     }
 
     private static bool IsNullLiteral(string text) => text is "" or "~" or "null" or "Null" or "NULL";
-
-    internal static SharpYaml.Mark Start(YamlElement node)
-    {
-        return node switch
-        {
-            YamlValue value => value.Scalar.Start,
-            YamlMapping mapping => mapping.MappingStart.Start,
-            YamlSequence sequence => sequence.SequenceStart.Start,
-            _ => SharpYaml.Mark.Empty,
-        };
-    }
-
-    // SharpYaml marks are zero based.
-    private static SourceLocation Location(string fileName, SharpYaml.Mark mark) => new(fileName, mark.Line + 1, mark.Column + 1);
-
-    /// <summary>
-    /// SharpYaml messages start with the positions, which the location already gives:
-    /// <c>(Lin: 1, Col: 0, Chr: 7) - (Lin: 1, Col: 0, Chr: 7): While parsing a node, did not find expected node content.</c>
-    /// </summary>
-    internal static string ErrorMessage(string message)
-    {
-        message = MarksPrefix().Replace(message, "").Trim().TrimEnd('.');
-        return message.Length == 0 ? "invalid YAML" : char.ToLowerInvariant(message[0]) + message[1..];
-    }
-
-    [GeneratedRegex(@"^\(Lin: \d+, Col: \d+, Chr: \d+\) - \(Lin: \d+, Col: \d+, Chr: \d+\): ")]
-    private static partial Regex MarksPrefix();
 }

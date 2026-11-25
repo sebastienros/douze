@@ -155,11 +155,11 @@ error: render: /index.md: undefined variable 'nme'
 ### Invalid front matter
 
 ```
-error: pages: /index.md: (Lin: 1, Col: 0, Chr: 12) - (Lin: 1, Col: 0, Chr: 12): While parsing a flow sequence, did not find expected ',' or ']'.
+error: pages: /_content/index.md: line 2, column 18: unexpected end of input inside a YAML flow collection
 ```
 
-The YAML of the front matter does not parse; the position is inside the front matter. Quote values that start with
-`[`, `{`, `*` or `&`, or that contain `:`.
+The YAML of the front matter does not parse; the line and column are in the front matter, whose first line is line 1.
+Quote values that start with `[`, `{`, `*` or `&`, or that contain `:`.
 
 ### Two files have the same output
 

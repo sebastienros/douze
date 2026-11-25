@@ -1,6 +1,5 @@
 using Douze.Workflow;
 using Douze.Workflow.Yaml;
-using SharpYaml.Model;
 
 namespace Douze.Validation;
 
@@ -70,19 +69,19 @@ internal static class WorkflowSnippet
 
     private static bool IsStepsExcerpt(YamlStream stream)
     {
-        if (stream.Count != 1 || stream[0].Contents is not YamlMapping { Count: > 0 } root)
+        if (stream.Documents is not [YamlMapping { Count: > 0 } root])
         {
             return false;
         }
 
         foreach (var (key, value) in root)
         {
-            if (key is not YamlValue { Value: var name } || WorkflowSchema.TopLevelKeys.Contains(name))
+            if (key is not YamlScalar { Value: var name } || WorkflowSchema.TopLevelKeys.Contains(name))
             {
                 return false;
             }
 
-            if (value is not YamlMapping step || !step.Any(x => x.Key is YamlValue { Value: var field } && StepMarkers.Contains(field)))
+            if (value is not YamlMapping step || !step.Any(x => x.Key is YamlScalar { Value: var field } && StepMarkers.Contains(field)))
             {
                 return false;
             }

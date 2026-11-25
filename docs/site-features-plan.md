@@ -1532,7 +1532,7 @@ when the parser gives them):
 
 | Validator | Parser | Fence languages and extensions (built-in aliases) |
 | --- | --- | --- |
-| `yaml` | SharpYaml (`YamlStream.Load`: every document), plus duplicate keys of a mapping | `yaml`, `yml` |
+| `yaml` | Styml's reader (`YamlStream.Parse`: every document), plus duplicate keys of a mapping | `yaml`, `yml` |
 | `json` | `JsonDocument.Parse`, duplicate properties rejected (`AllowDuplicateProperties: false`) | `json`, `webmanifest` |
 | `jsonc` | the same with comments and trailing commas allowed | `jsonc` |
 | `jsonl` | a JSON value on every line that is not blank (JSON Lines: the messages of a protocol) | `jsonl`, `ndjson` |

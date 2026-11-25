@@ -1,7 +1,7 @@
 ﻿using System.IO;
 using System.Threading.Tasks;
 using Douze.FileSystems;
-using SharpYaml;
+using System.Text.Yaml;
 
 namespace Douze.Tests;
 

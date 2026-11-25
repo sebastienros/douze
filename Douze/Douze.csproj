@@ -62,11 +62,11 @@
     <None Include="..\README.md" Pack="true" PackagePath="" />
     <PackageReference Include="Markdig" />
     <PackageReference Include="Fluid.Core" />
-    <PackageReference Include="SharpYaml" />
     <PackageReference Include="SixLabors.Fonts" />
     <PackageReference Include="SixLabors.ImageSharp" />
     <PackageReference Include="SixLabors.ImageSharp.Drawing" />
     <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="Styml" />
     <PackageReference Include="System.IO.Hashing" />
     <PackageReference Include="Tint" />
     <PackageReference Include="Tint.Grammars" />

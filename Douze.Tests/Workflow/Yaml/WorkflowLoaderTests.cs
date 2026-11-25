@@ -376,7 +376,25 @@ public class WorkflowLoaderTests
     [Fact]
     public void YamlSyntaxError()
     {
-        AssertError("steps:\n  x: [a\n", "while parsing a flow sequence, did not find expected ',' or ']'", 3, 1);
+        AssertError("steps:\n  x: [a\n", "unexpected end of input inside a YAML flow collection", 3, 1);
+    }
+
+    [Fact]
+    public void KeysMustBeStrings()
+    {
+        AssertError("steps:\n  [a, b]: { inputs: \"**\", uses: write }\n", "keys must be strings", 2, 3);
+    }
+
+    [Fact]
+    public void AliasesReuseTheirAnchor()
+    {
+        var file = WorkflowLoader.Load("""
+            steps:
+              a: &write { inputs: "**", uses: write }
+              b: *write
+            """, "douze.yml");
+
+        Assert.Equal(["**"], file.Workflow!.Steps[1].Inputs);
     }
 
     [Fact]

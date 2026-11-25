@@ -5,7 +5,6 @@ using Douze.Markdown;
 using Douze.FileSystems;
 using Douze.Nodes;
 using Douze.Workflow.Steps;
-using SharpYaml.Model;
 
 namespace Douze.Workflow.Yaml;
 
@@ -109,7 +108,7 @@ internal static partial class WorkflowLoader
         return errors.Count == 0 ? vars : throw new WorkflowValidationException(errors);
     }
 
-    private static NodeObject ReadVars(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)
+    private static NodeObject ReadVars(YamlSource yaml, YamlSyntax? node, List<WorkflowValidationError> errors)
     {
         if (YamlSource.IsNull(node))
         {
@@ -125,7 +124,7 @@ internal static partial class WorkflowLoader
         return (NodeObject)yaml.ToNode(node, errors)!;
     }
 
-    private static SiteSettings ReadSite(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)
+    private static SiteSettings ReadSite(YamlSource yaml, YamlSyntax? node, List<WorkflowValidationError> errors)
     {
         var site = SiteSettings.None;
 
@@ -155,13 +154,13 @@ internal static partial class WorkflowLoader
 
             if (key == "locales")
             {
-                site = site with { Locales = ReadLocales(yaml, value!, errors) };
+                site = site with { Locales = ReadLocales(yaml, value, errors) };
                 continue;
             }
 
-            if (YamlSource.Scalar(value!) is not { } text)
+            if (YamlSource.Scalar(value) is not { } text)
             {
-                errors.Add(new($"'{key}' must be {(key == "parallelism" ? "a positive integer" : "a string")}", yaml.Location(value!)));
+                errors.Add(new($"'{key}' must be {(key == "parallelism" ? "a positive integer" : "a string")}", yaml.Location(value)));
                 continue;
             }
 
@@ -170,7 +169,7 @@ internal static partial class WorkflowLoader
                 case "content" or "data" or "includes" or "shortcodes":
                     if (text.Split('/', '\\').Contains(".."))
                     {
-                        errors.Add(new($"'{key}' must be a folder inside the source folder", yaml.Location(value!)));
+                        errors.Add(new($"'{key}' must be a folder inside the source folder", yaml.Location(value)));
                         break;
                     }
 
@@ -195,7 +194,7 @@ internal static partial class WorkflowLoader
                 case "parallelism":
                     if (!int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var parallelism) || parallelism < 1)
                     {
-                        errors.Add(new("'parallelism' must be a positive integer", yaml.Location(value!)));
+                        errors.Add(new("'parallelism' must be a positive integer", yaml.Location(value)));
                         break;
                     }
 
@@ -211,7 +210,7 @@ internal static partial class WorkflowLoader
     /// Reads the <c>markdown</c> section. <c>markdown:</c> without a value is the same as no section; a section without
     /// <c>extensions</c> has <see cref="MarkdownOptions.DefaultExtensions"/>.
     /// </summary>
-    private static MarkdownOptions? ReadMarkdown(YamlSource yaml, YamlElement? node, List<WorkflowValidationError> errors)
+    private static MarkdownOptions? ReadMarkdown(YamlSource yaml, YamlSyntax? node, List<WorkflowValidationError> errors)
     {
         if (YamlSource.IsNull(node))
         {
@@ -287,10 +286,10 @@ internal static partial class WorkflowLoader
         return options;
     }
 
-    private static AsideOptions ReadAside(YamlSource yaml, YamlElement node, List<WorkflowValidationError> errors)
+    private static AsideOptions ReadAside(YamlSource yaml, YamlSyntax node, List<WorkflowValidationError> errors)
     {
         var aside = AsideOptions.Default;
-        var named = new List<(string Kind, YamlElement KeyNode)>();
+        var named = new List<(string Kind, YamlSyntax KeyNode)>();
 
         foreach (var (key, _, value) in Section(yaml, node, "markdown.aside", WorkflowSchema.AsideKeys, errors))
         {
@@ -353,7 +352,7 @@ internal static partial class WorkflowLoader
         return aside;
     }
 
-    private static ImageOptions ReadImages(YamlSource yaml, YamlElement node, List<WorkflowValidationError> errors)
+    private static ImageOptions ReadImages(YamlSource yaml, YamlSyntax node, List<WorkflowValidationError> errors)
     {
         var images = ImageOptions.Default;
 
@@ -432,7 +431,7 @@ internal static partial class WorkflowLoader
     /// The entries of a mapping section whose keys are in <paramref name="keys"/>, with an error for the others and for
     /// a section that is not a mapping. Entries without a value are skipped.
     /// </summary>
-    private static IEnumerable<(string Key, YamlElement KeyNode, YamlElement Value)> Section(YamlSource yaml, YamlElement node, string name, ImmutableArray<string> keys, List<WorkflowValidationError> errors)
+    private static IEnumerable<(string Key, YamlSyntax KeyNode, YamlSyntax Value)> Section(YamlSource yaml, YamlSyntax node, string name, ImmutableArray<string> keys, List<WorkflowValidationError> errors)
     {
         if (node is not YamlMapping mapping)
         {
@@ -450,12 +449,12 @@ internal static partial class WorkflowLoader
 
             if (!YamlSource.IsNull(value))
             {
-                yield return (key, keyNode, value!);
+                yield return (key, keyNode, value);
             }
         }
     }
 
-    private static string? ReadString(YamlSource yaml, YamlElement node, string name, List<WorkflowValidationError> errors)
+    private static string? ReadString(YamlSource yaml, YamlSyntax node, string name, List<WorkflowValidationError> errors)
     {
         if (YamlSource.Scalar(node) is { } text)
         {
@@ -466,7 +465,7 @@ internal static partial class WorkflowLoader
         return null;
     }
 
-    private static bool? ReadBool(YamlSource yaml, YamlElement node, string name, List<WorkflowValidationError> errors)
+    private static bool? ReadBool(YamlSource yaml, YamlSyntax node, string name, List<WorkflowValidationError> errors)
     {
         if (YamlSource.Scalar(node) is { } text && bool.TryParse(text, out var value))
         {
@@ -480,7 +479,7 @@ internal static partial class WorkflowLoader
     /// <summary>
     /// A string or a list of strings, each with its node.
     /// </summary>
-    private static List<(string Name, YamlElement Node)>? ReadNames(YamlSource yaml, YamlElement node, string name, List<WorkflowValidationError> errors)
+    private static List<(string Name, YamlSyntax Node)>? ReadNames(YamlSource yaml, YamlSyntax node, string name, List<WorkflowValidationError> errors)
     {
         if (YamlSource.Scalar(node) is { } single)
         {
@@ -489,13 +488,13 @@ internal static partial class WorkflowLoader
 
         if (node is YamlSequence sequence)
         {
-            var names = new List<(string, YamlElement)>(sequence.Count);
+            var names = new List<(string, YamlSyntax)>(sequence.Count);
 
             foreach (var item in sequence)
             {
-                if (item is null || YamlSource.Scalar(item) is not { } text)
+                if (YamlSource.Scalar(item) is not { } text)
                 {
-                    errors.Add(new($"'{name}' must be a string or a list of strings", yaml.Location(item ?? node)));
+                    errors.Add(new($"'{name}' must be a string or a list of strings", yaml.Location(item)));
                     return null;
                 }
 
@@ -509,7 +508,7 @@ internal static partial class WorkflowLoader
         return null;
     }
 
-    private static List<(string Key, YamlElement KeyNode, string Value)>? ReadStringMap(YamlSource yaml, YamlElement node, string name, List<WorkflowValidationError> errors)
+    private static List<(string Key, YamlSyntax KeyNode, string Value)>? ReadStringMap(YamlSource yaml, YamlSyntax node, string name, List<WorkflowValidationError> errors)
     {
         if (node is not YamlMapping mapping)
         {
@@ -517,13 +516,13 @@ internal static partial class WorkflowLoader
             return null;
         }
 
-        var entries = new List<(string, YamlElement, string)>();
+        var entries = new List<(string, YamlSyntax, string)>();
 
         foreach (var (key, keyNode, value) in yaml.Entries(mapping, errors))
         {
-            if (value is null || YamlSource.Scalar(value) is not { } text)
+            if (YamlSource.Scalar(value) is not { } text)
             {
-                errors.Add(new($"'{name}' must be a mapping of kinds to strings", yaml.Location(value ?? keyNode)));
+                errors.Add(new($"'{name}' must be a mapping of kinds to strings", yaml.Location(value)));
                 return null;
             }
 
@@ -542,7 +541,7 @@ internal static partial class WorkflowLoader
     /// <summary>
     /// Reads <c>site.locales</c>, or returns null after adding its errors.
     /// </summary>
-    private static LocaleSet? ReadLocales(YamlSource yaml, YamlElement node, List<WorkflowValidationError> errors)
+    private static LocaleSet? ReadLocales(YamlSource yaml, YamlSyntax node, List<WorkflowValidationError> errors)
     {
         if (node is not YamlMapping mapping)
         {
@@ -572,13 +571,13 @@ internal static partial class WorkflowLoader
 
             if (key == "languages")
             {
-                ReadLanguages(yaml, value!, languages, errors);
+                ReadLanguages(yaml, value, languages, errors);
                 continue;
             }
 
-            if (YamlSource.Scalar(value!) is not { } text)
+            if (YamlSource.Scalar(value) is not { } text)
             {
-                errors.Add(new($"'{key}' must be {(key == "fallback" ? "true or false" : "a string")}", yaml.Location(value!)));
+                errors.Add(new($"'{key}' must be {(key == "fallback" ? "true or false" : "a string")}", yaml.Location(value)));
                 continue;
             }
 
@@ -587,7 +586,7 @@ internal static partial class WorkflowLoader
                 case "default":
                     if (!IsLocaleFolder(text))
                     {
-                        errors.Add(new("'default' must be a locale folder name", yaml.Location(value!)));
+                        errors.Add(new("'default' must be a locale folder name", yaml.Location(value)));
                         break;
                     }
 
@@ -597,7 +596,7 @@ internal static partial class WorkflowLoader
                 case "root":
                     if (text.Split('/', '\\').Contains(".."))
                     {
-                        errors.Add(new("'root' must be a folder inside the content folder", yaml.Location(value!)));
+                        errors.Add(new("'root' must be a folder inside the content folder", yaml.Location(value)));
                         break;
                     }
 
@@ -607,7 +606,7 @@ internal static partial class WorkflowLoader
                 case "fallback":
                     if (!bool.TryParse(text, out fallback))
                     {
-                        errors.Add(new("'fallback' must be true or false", yaml.Location(value!)));
+                        errors.Add(new("'fallback' must be true or false", yaml.Location(value)));
                     }
 
                     break;
@@ -639,7 +638,7 @@ internal static partial class WorkflowLoader
             strings);
     }
 
-    private static void ReadLanguages(YamlSource yaml, YamlElement node, List<LanguageSettings> languages, List<WorkflowValidationError> errors)
+    private static void ReadLanguages(YamlSource yaml, YamlSyntax node, List<LanguageSettings> languages, List<WorkflowValidationError> errors)
     {
         if (node is not YamlMapping mapping)
         {
@@ -661,7 +660,7 @@ internal static partial class WorkflowLoader
             {
                 if (value is not YamlMapping settings)
                 {
-                    errors.Add(new($"the settings of locale '{folder}' must be a mapping of 'label', 'lang' and 'dir'", yaml.Location(value!)));
+                    errors.Add(new($"the settings of locale '{folder}' must be a mapping of 'label', 'lang' and 'dir'", yaml.Location(value)));
                     continue;
                 }
 
@@ -678,9 +677,9 @@ internal static partial class WorkflowLoader
                         continue;
                     }
 
-                    if (YamlSource.Scalar(setting!) is not { } text)
+                    if (YamlSource.Scalar(setting) is not { } text)
                     {
-                        errors.Add(new($"'{key}' must be a string", yaml.Location(setting!)));
+                        errors.Add(new($"'{key}' must be a string", yaml.Location(setting)));
                         continue;
                     }
 
@@ -695,7 +694,7 @@ internal static partial class WorkflowLoader
                         default:
                             if (text is not ("ltr" or "rtl"))
                             {
-                                errors.Add(new("'dir' must be 'ltr' or 'rtl'", yaml.Location(setting!)));
+                                errors.Add(new("'dir' must be 'ltr' or 'rtl'", yaml.Location(setting)));
                                 break;
                             }
 
@@ -725,7 +724,7 @@ internal static partial class WorkflowLoader
         public Locale ToLocale(string prefix) => new(Key, Label ?? Key, Lang ?? Key, Dir ?? "ltr", prefix);
     }
 
-    private static ImmutableArray<StepDefinition>? ReadSteps(YamlSource yaml, YamlElement? node, WorkflowEnvironment environment, List<WorkflowValidationError> errors)
+    private static ImmutableArray<StepDefinition>? ReadSteps(YamlSource yaml, YamlSyntax? node, WorkflowEnvironment environment, List<WorkflowValidationError> errors)
     {
         // 'steps:' with no value is the same as no 'steps': the default workflow.
         if (YamlSource.IsNull(node))
@@ -791,7 +790,7 @@ internal static partial class WorkflowLoader
         return [.. steps.Where(x => x.Enabled).Select(x => x with { Needs = [.. x.Needs.SelectMany(n => Resolve(n, [])).Distinct(StringComparer.Ordinal)] })];
     }
 
-    private static StepDefinition ReadStep(YamlSource yaml, string name, YamlElement nameNode, YamlElement? node, WorkflowEnvironment environment, List<WorkflowValidationError> errors)
+    private static StepDefinition ReadStep(YamlSource yaml, string name, YamlSyntax nameNode, YamlSyntax? node, WorkflowEnvironment environment, List<WorkflowValidationError> errors)
     {
         var location = yaml.Location(nameNode);
         var step = new StepDefinition { Name = name, Location = location };
@@ -809,7 +808,7 @@ internal static partial class WorkflowLoader
         }
 
         // The key of every field that is set, for the rules that involve several fields.
-        var present = new List<(WorkflowField Field, YamlElement Key)>();
+        var present = new List<(WorkflowField Field, YamlSyntax Key)>();
 
         foreach (var (key, keyNode, value) in yaml.Entries(mapping, errors))
         {
@@ -824,12 +823,12 @@ internal static partial class WorkflowLoader
                 continue;
             }
 
-            step = field.Read(yaml, value!, step, environment, errors);
+            step = field.Read(yaml, value, step, environment, errors);
             present.Add((field, keyNode));
 
             if (field.Name == "tool" && step.Tool is { } tool && Tools.NpmTool.Parse(tool) == null)
             {
-                errors.Add(new($"unknown tool '{tool}' on step '{name}'; Douze knows {WorkflowSchema.Expected([.. Tools.NpmTool.Known.Keys.Order(StringComparer.Ordinal)])}", yaml.Location(value!)));
+                errors.Add(new($"unknown tool '{tool}' on step '{name}'; Douze knows {WorkflowSchema.Expected([.. Tools.NpmTool.Known.Keys.Order(StringComparer.Ordinal)])}", yaml.Location(value)));
             }
         }
 

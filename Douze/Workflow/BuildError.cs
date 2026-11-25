@@ -61,7 +61,7 @@ internal sealed record BuildError(string Step, FPath? File, string Message, Sour
             case TemplateRenderException render when render.Path == null || file == null || render.Path == file.Value.FullName:
                 return new BuildError(step, file ?? (render.Path is { } path ? new FPath(path) : (FPath?)null), render.Reason, new SourceLocation(render.Path ?? file?.FullName ?? "", render.Line, render.Column), null);
 
-            case TemplateParseException or TemplateRenderException or DouzeException or WorkflowValidationException or SharpYaml.YamlException:
+            case TemplateParseException or TemplateRenderException or DouzeException or WorkflowValidationException:
                 return new BuildError(step, file, exception.Message, null, null);
 
             default:
