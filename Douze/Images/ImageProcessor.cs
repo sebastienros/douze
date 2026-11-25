@@ -190,7 +190,9 @@ internal sealed class ImageProcessor
     {
         if (format == ImageFormats.Webp)
         {
-            return new WebpEncoder { FileFormat = WebpFileFormatType.Lossy, Quality = quality, SkipMetadata = true };
+            // Effort 2 of 6: the default, 4, takes 4 times as long (half a second for a 1280 px photo) for files of the same
+            // size and quality on photos, and screenshots are as small as with it (bench/README.md).
+            return new WebpEncoder { FileFormat = WebpFileFormatType.Lossy, Quality = quality, Method = WebpEncodingMethod.Level2, SkipMetadata = true };
         }
 
         if (format == ImageFormats.Jpeg)
