@@ -30,6 +30,12 @@ bench/fetch-api-data.sh <checkout> bench/api-reference/data <path>/pkgs <path>/t
 bench/out/bin/Douze.Bench api-reference --data bench/api-reference/data --out bench/api-reference/data/site
 bench/out/bin/Douze.Bench api-reference --data bench/api-reference/data --out bench/api-reference/data/site-data --mode data
 
+# Images: 200 JPEG photos (1600x1200, gradients with a quarter of every row noise, quality 85) and 100 PNG screenshots
+# (1440x900) through images, image-map and pictures (640 and 1280 wide WebP), and 100 pages with a social image each
+# (an SVG card with gradients, shapes and an inlined PNG, two text blocks with a font file). --cards 0 drops the social
+# images, --photos 0 --screenshots 0 the variants.
+bench/out/bin/Douze.Bench images --out bench/images/data/all
+
 # Clean builds (the output folder is deleted before each run); prints a Markdown table row with the median.
 # Options after '--' go to douze.
 bench/out/bin/Douze.Bench run --site bench/synthetic/data/32000 --out bench/out/site --repeat 3 --label "synthetic 32000"
@@ -52,6 +58,7 @@ bench/out/bin/Douze.Bench run --site bench/synthetic/data/32000 --out bench/out/
 | `synthetic 32000, nav none` | The same without the nav include |
 | `API reference data only` | The 342 JSON files of the API reference (78 MB) as site data and a single page |
 | `API reference pages` | The API routes of its documentation site rendered from that data: C# package (202), type (1,810) and member kind (2,829) pages, TypeScript module (140), item (4,097) and method (10,634) pages, 19,712 in all, each with a sidebar of the 342 packages |
+| `images-all`, `images-variants`, `images-cards` | The image site (`Douze.Bench images`): photos, screenshots and social cards; without the cards; the cards alone |
 
 The API reference site builds with the default workflow, since workflow files land in phase 2: the JSON files are site data
 (`pkgs.<slug>`, `tsmodules.<slug>`), each package folder has its page index as folder data (`pages.json`), and one
@@ -454,7 +461,8 @@ churn of rendered pages; image variants, memoized as bytes for the whole build (
 
 Is SkiaSharp lighter than libvips for Douze's image work, can images stream from source file to output file instead of
 going through whole buffers, and what does `ImageProcessor._variants` (every encoded variant kept for the build) cost?
-`bench/Douze.ImageBench` runs both libraries on the same inputs, each run in its own process:
+`bench/Douze.ImageBench` ran both libraries on the same inputs, each run in its own process (the project and
+`bench/image-bench.sh` were removed when Douze moved to ImageSharp, see "ImageSharp and Styml" below):
 
 ```bash
 # <sources>: PNG and JPEG files, searched recursively; <singles>: a few files run one at a time; <svg>: a 1200x630 SVG
