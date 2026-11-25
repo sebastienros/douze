@@ -43,8 +43,6 @@ internal sealed class ImagesStep : Step, IMapStep
 
     public override StepShape NativeShape => StepShape.Map;
 
-    public override IEnumerable<Requirement> Requirements(BuildContext context) => [ImageProcessor.Requirement];
-
     public override GlobSet DefaultMatch => ImageFormats.Sources;
 
     /// <summary>

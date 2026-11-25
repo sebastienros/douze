@@ -1,37 +1,44 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using System.Runtime.InteropServices;
-using System.Text;
+using System.Reflection;
 using Douze.Workflow;
-using NetVips;
+using SixLabors.Fonts;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Webp;
+using SixLabors.ImageSharp.Metadata.Profiles.Exif;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using Image = SixLabors.ImageSharp.Image;
 
 namespace Douze.Images;
 
 /// <summary>
-/// The bridge to libvips (NetVips): reads image sizes, encodes variants, rasterizes SVG and lays text over images.
-/// One per build (<see cref="BuildContext.Images"/>), created on first use: a build that uses no image feature never
-/// needs the native library. Thread safe: the engine runs units in parallel, so libvips runs each operation on one
-/// thread (<c>Concurrency = 1</c>) and keeps no operation cache (<c>Cache.Max = 0</c>, which would keep the sources of
-/// recent operations alive). Variants are memoized by source content and variant for the build, so that the pages
-/// using one image (and the fallback copies of a page) encode it once.
+/// The image engine (ImageSharp, managed): reads image sizes, encodes variants, rasterizes SVG (<see cref="SvgRenderer"/>)
+/// and lays text over images (<see cref="FontResolver"/>). One per build (<see cref="BuildContext.Images"/>), created
+/// on first use. Thread safe: the engine runs units in parallel, so ImageSharp runs each operation on one thread
+/// (<see cref="Configuration.MaxDegreeOfParallelism"/> of 1). Variants are memoized by source content and variant for
+/// the build, so that the pages using one image (and the fallback copies of a page) encode it once.
 /// </summary>
 internal sealed class ImageProcessor
 {
-    private static readonly Lock InitializationLock = new();
-    private static bool _initialized;
-
-    // libvips warnings are process wide: they go to the view of the build that created the last processor.
-    private static Action<string>? _warn;
-    private static Log.LogDelegate? _logHandler;
-
-    // libvips' largest image dimension (VIPS_MAX_COORD).
-    private const int MaxCoordinate = 10_000_000;
+    /// <summary>
+    /// The configuration of every operation: one thread each, since the engine parallelizes per unit.
+    /// </summary>
+    internal static readonly Configuration Configuration = CreateConfiguration();
 
     /// <summary>
     /// The most memory the memoized rasters of a build use (<see cref="Rasterize"/>): 256 MB, about 80 backgrounds of
     /// 1200 by 630.
     /// </summary>
     public const long RasterBudget = 256L * 1024 * 1024;
+
+    // The largest dimension of a variant: an unbounded height scales with the width.
+    private const int MaxDimension = 65_535;
 
     private readonly ConcurrentDictionary<(Hash128 Source, ImageVariant Variant), Lazy<Task<ProcessedImage>>> _variants = new();
     private readonly ConcurrentDictionary<(Hash128 Svg, int Width, int Height), Lazy<Raster>> _rasters = new();
@@ -42,83 +49,38 @@ internal sealed class ImageProcessor
     }
 
     /// <summary>
-    /// The version of libvips, part of what the image steps' results depend on.
+    /// The version of ImageSharp, part of what the image steps' results depend on.
     /// </summary>
     public string Version { get; } = LibraryVersion;
 
     /// <summary>
-    /// Creates the processor of a build. <paramref name="warn"/> receives the warnings of libvips.
+    /// The fonts of the text of social images: the system's and the font files of the site.
     /// </summary>
-    /// <exception cref="DouzeException">libvips cannot be loaded; the message says how to install it.</exception>
-    public static ImageProcessor Create(Action<string>? warn = null)
-    {
-        // Reading the field runs the module initializer of NetVips, which loads libvips and records a failure.
-        if (!ModuleInitializer.VipsInitialized)
-        {
-            throw new DouzeException(MissingLibraryMessage(ModuleInitializer.Exception));
-        }
-
-        lock (InitializationLock)
-        {
-            if (!_initialized)
-            {
-                FontConfiguration.EnsureConfigured();
-                Cache.Max = 0;
-                NetVips.NetVips.Concurrency = 1;
-
-                _logHandler = static (domain, level, message) => _warn?.Invoke(message);
-                Log.SetLogHandler("VIPS", Enums.LogLevelFlags.Warning, _logHandler);
-                _initialized = true;
-            }
-
-            _warn = warn;
-        }
-
-        return new ImageProcessor();
-    }
+    public FontResolver Fonts { get; } = new();
 
     /// <summary>
-    /// How to get libvips: every package and release archive of douze includes it for the platforms it ships for, builds
-    /// from source on other platforms do not.
+    /// Creates the processor of a build.
     /// </summary>
-    public const string InstallHint = "douze includes it on win-x64, win-arm64, linux-x64, linux-arm64, osx-x64 and "
-        + "osx-arm64; on other platforms, put libvips 8.18 (libvips.so.42, libvips.42.dylib or libvips-42.dll) next to the "
-        + "douze executable or on the library path";
+    public static ImageProcessor Create() => new();
 
-    /// <summary>
-    /// libvips, which the image steps need.
-    /// </summary>
-    public static Requirement Requirement { get; } = Requirement.Create("libvips", InstallHint, static _ =>
-        ValueTask.FromResult(ModuleInitializer.VipsInitialized
-            ? RequirementStatus.Found(LibraryVersion)
-            : RequirementStatus.Missing($"cannot be loaded{Reason(ModuleInitializer.Exception)}")));
+    internal static string LibraryVersion { get; } = typeof(Image).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
+        ?? typeof(Image).Assembly.GetName().Version?.ToString(3)
+        ?? "";
 
-    /// <summary>
-    /// The message of a missing libvips.
-    /// </summary>
-    public static string MissingLibraryMessage(Exception? exception)
+    private static Configuration CreateConfiguration()
     {
-        return $"image processing needs libvips, which cannot be loaded{Reason(exception)}. {char.ToUpperInvariant(InstallHint[0])}{InstallHint[1..]}";
-    }
-
-    private static string Reason(Exception? exception) => exception?.Message is { Length: > 0 } message ? $" ({FirstSentence(message)})" : "";
-
-    private static string LibraryVersion => string.Create(CultureInfo.InvariantCulture, $"{NetVips.NetVips.Version(0)}.{NetVips.NetVips.Version(1)}.{NetVips.NetVips.Version(2)}");
-
-    private static string FirstSentence(string message)
-    {
-        var line = message.Split('\n')[0].Trim();
-        var end = line.IndexOf(". ", StringComparison.Ordinal);
-        return end > 0 ? line[..end] : line.TrimEnd('.');
+        var configuration = Configuration.Default.Clone();
+        configuration.MaxDegreeOfParallelism = 1;
+        return configuration;
     }
 
     /// <summary>
     /// The size, format and alpha of an image. GIF and SVG are read without decoding (<see cref="ImageFormats.ReadSize"/>).
     /// </summary>
-    /// <exception cref="DouzeException">The bytes are not an image libvips reads.</exception>
+    /// <exception cref="DouzeException">The bytes are not an image douze reads.</exception>
     public ImageInfo Probe(ReadOnlyMemory<byte> source)
     {
-        var format = ImageFormats.Sniff(source.Span) ?? throw new DouzeException("not an image format douze reads (png, jpeg, webp, avif, gif, svg)");
+        var format = ImageFormats.Sniff(source.Span) ?? throw new DouzeException($"not an image format douze reads ({ImageFormats.ReadNames})");
 
         if (format.CopiedAsIs)
         {
@@ -128,14 +90,13 @@ internal sealed class ImageProcessor
 
         return Run(() =>
         {
-            using var image = Image.NewFromBuffer(source.Span, access: Enums.Access.Sequential);
+            var info = Image.Identify(new DecoderOptions { Configuration = Configuration }, source.Span);
+            var hasAlpha = info.PixelType.AlphaRepresentation != PixelAlphaRepresentation.None;
 
             // Variants are auto rotated: a portrait photo stored as landscape with an orientation tag is displayed portrait.
-            var rotated = image.GetTypeOf("orientation") != 0 && image.Get("orientation") is int orientation && orientation is >= 5 and <= 8;
-
-            return rotated
-                ? new ImageInfo(image.Height, image.Width, format.Name, image.HasAlpha())
-                : new ImageInfo(image.Width, image.Height, format.Name, image.HasAlpha());
+            return IsTransposed(info)
+                ? new ImageInfo(info.Height, info.Width, format.Name, hasAlpha)
+                : new ImageInfo(info.Width, info.Height, format.Name, hasAlpha);
         });
     }
 
@@ -144,7 +105,7 @@ internal sealed class ImageProcessor
     /// pages that use one image (and the fallback copies of a page) encode it once, and a page that uses several
     /// encodes them in parallel when it starts them before awaiting them (<see cref="ImageBuilder.Prefetch"/>).
     /// </summary>
-    /// <exception cref="DouzeException">The format cannot be encoded, libvips cannot read the source or encode the variant.</exception>
+    /// <exception cref="DouzeException">The format cannot be encoded, the source cannot be read or the variant encoded.</exception>
     public Task<ProcessedImage> VariantAsync(ReadOnlyMemory<byte> source, ImageVariant variant)
     {
         var format = ImageFormats.Encodable(variant.Format) ?? throw new DouzeException($"cannot encode images as '{variant.Format}'; expected {ImageFormats.EncodableNames}");
@@ -157,11 +118,12 @@ internal sealed class ImageProcessor
     }
 
     /// <summary>
-    /// Encodes a variant: shrink on load, auto rotation and premultiplied alpha (<c>thumbnail</c>), never wider than the
-    /// source, metadata stripped. Not memoized: for a source processed once (the <c>images</c> step), whose variants
-    /// would only stay in memory.
+    /// Encodes a variant: scaled on load where the format allows it (JPEG), auto rotated, resized with Lanczos 3 in
+    /// premultiplied alpha, converted to sRGB from an embedded color profile, never wider than the source, metadata
+    /// stripped. Not memoized: for a source processed once (the <c>images</c> step), whose variants would only stay in
+    /// memory.
     /// </summary>
-    /// <exception cref="DouzeException">The format cannot be encoded, libvips cannot read the source or encode the variant.</exception>
+    /// <exception cref="DouzeException">The format cannot be encoded, the source cannot be read or the variant encoded.</exception>
     public ProcessedImage Encode(ReadOnlyMemory<byte> source, ImageVariant variant)
     {
         var format = ImageFormats.Encodable(variant.Format) ?? throw new DouzeException($"cannot encode images as '{variant.Format}'; expected {ImageFormats.EncodableNames}");
@@ -170,37 +132,91 @@ internal sealed class ImageProcessor
 
     private static ProcessedImage Encode(ReadOnlyMemory<byte> source, ImageVariant variant, ImageFormat format)
     {
+        if (ImageFormats.Sniff(source.Span) is not { CopiedAsIs: false })
+        {
+            throw new DouzeException($"not an image format douze encodes variants of ({ImageFormats.DecodableNames})");
+        }
+
         return Run(() =>
         {
-            // A thumbnail is a sequential pipeline written once: one per output. The height is unbounded (it defaults
-            // to the width, which would fit a portrait image in a square).
-            var image = Image.ThumbnailBuffer(ToArray(source), variant.Width ?? MaxCoordinate, height: MaxCoordinate, size: Enums.Size.Down);
+            var info = Image.Identify(new DecoderOptions { Configuration = Configuration }, source.Span);
+            var transposed = IsTransposed(info);
+            var hasAlpha = info.PixelType.AlphaRepresentation != PixelAlphaRepresentation.None;
+            var (width, height) = transposed ? (info.Height, info.Width) : (info.Width, info.Height);
 
-            try
+            // The size of the variant as displayed: the requested width, never wider than the source.
+            var targetWidth = Math.Min(variant.Width ?? width, width);
+            var targetHeight = targetWidth == width ? height : Math.Clamp((int)Math.Round(height * (double)targetWidth / width, MidpointRounding.AwayFromZero), 1, MaxDimension);
+
+            var options = new DecoderOptions
             {
-                if (format == ImageFormats.Jpeg && image.HasAlpha())
+                Configuration = Configuration,
+                ColorProfileHandling = ColorProfileHandling.Convert,
+                Sampler = KnownResamplers.Lanczos3,
+                MaxFrames = 1,
+
+                // The decoder scales on load to fit this box, in the orientation of the stored pixels.
+                TargetSize = targetWidth == width ? null : transposed ? new Size(targetHeight, targetWidth) : new Size(targetWidth, targetHeight),
+            };
+
+            using var image = Image.Load(options, source.Span);
+
+            image.Mutate(x =>
+            {
+                x.AutoOrient();
+
+                if (image.Width != targetWidth || image.Height != targetHeight)
                 {
-                    var flattened = image.Flatten(background: [255, 255, 255]);
-                    image.Dispose();
-                    image = flattened;
+                    x.Resize(new ResizeOptions { Size = new Size(targetWidth, targetHeight), Mode = ResizeMode.Stretch, Sampler = KnownResamplers.Lanczos3, PremultiplyAlpha = true });
                 }
 
-                var bytes = image.WriteToBuffer(ImageFormats.SaveOptions(format, variant.Quality));
-                return new ProcessedImage(bytes, image.Width, image.Height);
-            }
-            finally
-            {
-                image.Dispose();
-            }
+                if (format == ImageFormats.Jpeg && hasAlpha)
+                {
+                    x.BackgroundColor(Color.White);
+                }
+            });
+
+            using var output = new MemoryStream();
+            image.Save(output, Encoder(format, variant.Quality, hasAlpha && format != ImageFormats.Jpeg));
+            return new ProcessedImage(output.ToArray(), image.Width, image.Height);
         });
     }
 
     /// <summary>
-    /// Rasterizes an SVG at <paramref name="width"/> by <paramref name="height"/> (stretched when its aspect differs),
-    /// as sRGB pixels with an alpha channel. Memoized by SVG and size for the build, within
-    /// <see cref="RasterBudget"/>: the social images of pages with the same background SVG rasterize it once.
+    /// The encoder of a variant. Metadata (EXIF, XMP, ICC) is never kept; PNG is written as 8 bit truecolor, as the
+    /// source's palette or bit depth would not fit a resized image.
     /// </summary>
-    /// <exception cref="DouzeException">libvips cannot read the SVG.</exception>
+    internal static ImageEncoder Encoder(ImageFormat format, int quality, bool hasAlpha)
+    {
+        if (format == ImageFormats.Webp)
+        {
+            return new WebpEncoder { FileFormat = WebpFileFormatType.Lossy, Quality = quality, SkipMetadata = true };
+        }
+
+        if (format == ImageFormats.Jpeg)
+        {
+            return new JpegEncoder { Quality = quality, SkipMetadata = true };
+        }
+
+        if (format == ImageFormats.Png)
+        {
+            return new PngEncoder
+            {
+                ColorType = hasAlpha ? PngColorType.RgbWithAlpha : PngColorType.Rgb,
+                BitDepth = PngBitDepth.Bit8,
+                SkipMetadata = true,
+            };
+        }
+
+        throw new InvalidOperationException($"no encoder for '{format.Name}'");
+    }
+
+    /// <summary>
+    /// Rasterizes an SVG at <paramref name="width"/> by <paramref name="height"/> (stretched when its aspect differs).
+    /// Memoized by SVG and size for the build, within <see cref="RasterBudget"/>: the social images of pages with the
+    /// same background SVG rasterize it once.
+    /// </summary>
+    /// <exception cref="DouzeException">The SVG cannot be read, or uses what <see cref="SvgRenderer"/> does not render.</exception>
     public Raster Rasterize(string svg, int width, int height)
     {
         var key = (Hash128.OfText(svg), width, height);
@@ -222,140 +238,59 @@ internal sealed class ImageProcessor
         return lazy.Value;
     }
 
-    private static Raster RasterizeOnce(string svg, int width, int height)
-    {
-        return Run(() =>
-        {
-            using var image = Image.ThumbnailBuffer(Encoding.UTF8.GetBytes(svg), width, height: height, size: Enums.Size.Force);
-            using var rgba = WithAlpha(image);
-            using var bytes = rgba.Format == Enums.BandFormat.Uchar ? rgba.Copy() : rgba.Cast(Enums.BandFormat.Uchar);
-            return new Raster(bytes.WriteToMemory<byte>(), bytes.Width, bytes.Height, bytes.Xres, bytes.Yres);
-        });
-    }
+    private static Raster RasterizeOnce(string svg, int width, int height) => new(Run(() => SvgRenderer.Render(svg, width, height)));
 
     /// <summary>
-    /// Renders each text block with Pango and composites it over <paramref name="background"/>, as a PNG.
+    /// Lays out each text block and draws it over <paramref name="background"/>, as a PNG.
     /// </summary>
-    /// <exception cref="DouzeException">A color is invalid, or a font file cannot be loaded.</exception>
+    /// <exception cref="DouzeException">A color is invalid, a font cannot be found or a font file read.</exception>
     public ReadOnlyMemory<byte> Compose(Raster background, IReadOnlyList<TextBlock> blocks)
     {
         var colors = blocks.Select(x => ParseColor(x.Color)).ToArray();
+        var fonts = blocks.Select(x => string.IsNullOrWhiteSpace(x.Text) ? null : Fonts.Resolve(x.Font, x.FontFile)).ToArray();
 
         return Run(() =>
         {
-            using var loaded = Image.NewFromMemory(background.Pixels, background.Width, background.Height, 4, Enums.BandFormat.Uchar);
-            var canvas = loaded.Copy(interpretation: Enums.Interpretation.Srgb, xres: background.XResolution, yres: background.YResolution);
+            using var canvas = background.Image.Clone(Configuration);
 
-            try
+            canvas.Mutate(context => context.Paint(drawing =>
             {
                 for (var i = 0; i < blocks.Count; i++)
                 {
+                    if (fonts[i] is not { } font)
+                    {
+                        continue;
+                    }
+
                     var block = blocks[i];
+                    var (r, g, b, a) = colors[i];
 
-                    if (string.IsNullOrWhiteSpace(block.Text))
+                    // 72 dpi: a font size in points is in pixels. The text wraps at the block's width and is aligned in it.
+                    var options = new RichTextOptions(font)
                     {
-                        continue;
-                    }
-
-                    using var layer = TextLayer(block, colors[i]);
-
-                    if (layer == null)
-                    {
-                        continue;
-                    }
-
-                    var x = block.Align switch
-                    {
-                        "center" or "centre" => block.X + (block.Width - layer.Width) / 2,
-                        "right" => block.X + block.Width - layer.Width,
-                        _ => block.X,
+                        Origin = new System.Numerics.Vector2(block.X, block.Y),
+                        WrappingLength = block.Width,
+                        Dpi = 72,
+                        TextAlignment = block.Align switch
+                        {
+                            "center" or "centre" => TextAlignment.Center,
+                            "right" => TextAlignment.End,
+                            _ => TextAlignment.Start,
+                        },
                     };
 
-                    var composed = canvas.Composite2(layer, Enums.BlendMode.Over, x: x, y: block.Y);
-                    canvas.Dispose();
-                    canvas = composed;
+                    drawing.Save();
+                    drawing.Clip(new RectanglePolygon(block.X, block.Y, block.Width, block.Height));
+                    drawing.DrawText(options, block.Text, Brushes.Solid(Color.FromPixel(new Rgba32((byte)r, (byte)g, (byte)b, (byte)a))), null);
+                    drawing.Restore();
                 }
+            }));
 
-                return (ReadOnlyMemory<byte>)canvas.WriteToBuffer(".png[keep=none]");
-            }
-            finally
-            {
-                canvas.Dispose();
-            }
+            using var output = new MemoryStream();
+            canvas.Save(output, Encoder(ImageFormats.Png, 0, hasAlpha: true));
+            return (ReadOnlyMemory<byte>)output.ToArray();
         });
     }
-
-    /// <summary>
-    /// The text of a block as a colored layer with an alpha channel, wrapped at its width and clipped at its box; null
-    /// when it renders nothing.
-    /// </summary>
-    private static Image? TextLayer(TextBlock block, (double R, double G, double B, double A) color)
-    {
-        var align = block.Align switch
-        {
-            "center" or "centre" => Enums.Align.Centre,
-            "right" => Enums.Align.High,
-            _ => Enums.Align.Low,
-        };
-
-        // A one band mask; the text is plain text, not Pango markup. 72 dpi: a font size in points is in pixels.
-        using var rendered = Image.Text(EscapeMarkup(block.Text), font: block.Font, width: block.Width, align: align, dpi: 72, fontfile: block.FontFile);
-
-        if (rendered.Width == 0 || rendered.Height == 0)
-        {
-            return null;
-        }
-
-        // As few libvips operations as possible: each takes process wide locks, which the parallel units contend for.
-        using var cropped = rendered.Width > block.Width || rendered.Height > block.Height
-            ? rendered.Crop(0, 0, Math.Min(rendered.Width, block.Width), Math.Min(rendered.Height, block.Height))
-            : null;
-
-        var mask = cropped ?? rendered;
-
-        using var scaled = color.A >= 255 ? null : mask * (color.A / 255);
-        using var faded = scaled?.Cast(Enums.BandFormat.Uchar);
-        using var fill = Fill(mask.Width, mask.Height, color);
-        using var joined = fill.Bandjoin(faded ?? mask);
-
-        return joined.Copy(interpretation: Enums.Interpretation.Srgb);
-    }
-
-    /// <summary>
-    /// A three band image of one color, made from memory rather than by a chain of operations.
-    /// </summary>
-    private static Image Fill(int width, int height, (double R, double G, double B, double A) color)
-    {
-        var pixels = new byte[width * height * 3];
-        var pattern = pixels.AsSpan();
-        byte[] rgb = [(byte)color.R, (byte)color.G, (byte)color.B];
-
-        for (var i = 0; i < pixels.Length; i += 3)
-        {
-            rgb.CopyTo(pattern[i..]);
-        }
-
-        return Image.NewFromMemory(pixels, width, height, 3, Enums.BandFormat.Uchar);
-    }
-
-    /// <summary>
-    /// An sRGB image with an alpha channel. A synthesized or grey image is copied with the sRGB interpretation, which
-    /// compositing needs.
-    /// </summary>
-    private static Image WithAlpha(Image image)
-    {
-        using var srgb = image.Interpretation == Enums.Interpretation.Srgb ? image.Copy() : image.Colourspace(Enums.Interpretation.Srgb);
-
-        if (srgb.HasAlpha())
-        {
-            return srgb.Copy(interpretation: Enums.Interpretation.Srgb);
-        }
-
-        using var joined = srgb.Bandjoin(255);
-        return joined.Cast(Enums.BandFormat.Uchar).Copy(interpretation: Enums.Interpretation.Srgb);
-    }
-
-    private static string EscapeMarkup(string text) => text.Replace("&", "&amp;", StringComparison.Ordinal).Replace("<", "&lt;", StringComparison.Ordinal).Replace(">", "&gt;", StringComparison.Ordinal);
 
     /// <summary>
     /// <c>#rgb</c>, <c>#rgba</c>, <c>#rrggbb</c> or <c>#rrggbbaa</c>.
@@ -383,15 +318,18 @@ internal sealed class ImageProcessor
         return ((value >> 24) & 0xFF, (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
     }
 
-    private static byte[] ToArray(ReadOnlyMemory<byte> memory)
+    /// <summary>
+    /// Whether the EXIF orientation of an image swaps its width and height (orientations 5 to 8).
+    /// </summary>
+    private static bool IsTransposed(SixLabors.ImageSharp.ImageInfo info)
     {
-        return MemoryMarshal.TryGetArray(memory, out var segment) && segment.Offset == 0 && segment.Count == segment.Array!.Length
-            ? segment.Array
-            : memory.ToArray();
+        return info.Metadata.ExifProfile is { } exif
+            && exif.TryGetValue(ExifTag.Orientation, out var orientation)
+            && orientation.Value is >= 5 and <= 8;
     }
 
     /// <summary>
-    /// Runs a libvips operation, its errors as <see cref="DouzeException"/>s (the first line of the libvips message).
+    /// Runs an operation, the errors of ImageSharp as <see cref="DouzeException"/>s.
     /// </summary>
     private static T Run<T>(Func<T> operation)
     {
@@ -399,10 +337,14 @@ internal sealed class ImageProcessor
         {
             return operation();
         }
-        catch (VipsException e)
+        catch (UnknownImageFormatException)
         {
-            var message = e.Message.ReplaceLineEndings("\n").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            throw new DouzeException(string.Join(": ", message.Distinct()));
+            // Its message lists every decoder of ImageSharp.
+            throw new DouzeException("the image cannot be decoded (corrupt, or a format douze does not read)");
+        }
+        catch (Exception e) when (e is ImageFormatException or NotSupportedException or InvalidImageContentException)
+        {
+            throw new DouzeException(e.Message.ReplaceLineEndings(" ").TrimEnd('.'));
         }
     }
 }

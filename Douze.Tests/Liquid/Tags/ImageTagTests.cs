@@ -65,7 +65,7 @@ public partial class ImageTagTests : CacheTestBase
             var (width, height, loader, _) = TestImages.Describe(await Output.ReadAllBytesAsync(variant));
             var name = Path.GetFileName(variant);
             Assert.Equal(name.Contains("-640.", StringComparison.Ordinal) ? (640, 360) : (1280, 720), (width, height));
-            Assert.StartsWith(name.EndsWith(".webp", StringComparison.Ordinal) ? "webpload" : "pngload", loader);
+            Assert.StartsWith(name.EndsWith(".webp", StringComparison.Ordinal) ? "webp" : "png", loader);
         }
     }
 
@@ -92,7 +92,7 @@ public partial class ImageTagTests : CacheTestBase
     [Fact]
     public async Task SvgIsCopiedWithTheSizeOfItsViewBox()
     {
-        // No libvips needed: the size is read from the file.
+        // Nothing is decoded: the size is read from the file.
         var svg = "<?xml version=\"1.0\"?>\n<!-- <svg width=\"1\"> -->\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 180\"><rect width=\"10\" height=\"10\"/></svg>";
         await Source.WriteTextFileAsync("/_content/images/arch.svg", svg);
 
@@ -245,9 +245,9 @@ public partial class ImageTagTests : CacheTestBase
     }
 
     [Fact]
-    public async Task MissingLibvipsFailsOnlyTheUnitsThatNeedIt()
+    public async Task InvalidImageFailsOnlyTheUnitsThatUseIt()
     {
-        // A PNG needs libvips; an SVG and a page without images do not.
+        // The PNG is a signature without an image; an SVG and a page without images do not decode anything.
         await Source.WriteBinaryFileAsync("/_content/a.png", [0x89, (byte)'P', (byte)'N', (byte)'G', 0, 0, 0, 0]);
         await Source.WriteTextFileAsync("/_content/b.svg", "<svg width=\"1\" height=\"1\"></svg>");
         await Source.WriteTextFileAsync("/_content/png.html", """{% image "a.png" %}""");
@@ -255,7 +255,6 @@ public partial class ImageTagTests : CacheTestBase
         await Source.WriteTextFileAsync("/_content/plain.html", "plain");
 
         var options = Options(cache: false);
-        var missing = new DllNotFoundException("Unable to load shared library 'libvips.42.dylib'");
 
         var result = await BuildAsync(options: new BuildOptions
         {
@@ -266,12 +265,11 @@ public partial class ImageTagTests : CacheTestBase
             View = options.View,
             Cancellation = Ct,
             Failure = FailurePolicy.KeepGoing,
-            Images = _ => throw new DouzeException(ImageProcessor.MissingLibraryMessage(missing)),
         });
 
         var error = Assert.Single(result.Errors);
         Assert.Equal("/png/index.html", error.File?.FullName);
-        Assert.StartsWith("image processing needs libvips, which cannot be loaded (Unable to load shared library 'libvips.42.dylib'). Douze includes it on win-x64", error.Message);
+        Assert.Equal("the image cannot be decoded (corrupt, or a format douze does not read)", error.Message);
         Assert.True(await Output.GetFileEntryAsync("/svg/index.html") is { Exists: true });
         Assert.True(await Output.GetFileEntryAsync("/plain/index.html") is { Exists: true });
     }
@@ -284,6 +282,6 @@ public partial class ImageTagTests : CacheTestBase
 
         var result = await BuildAsync(options: Options(cache: false));
 
-        Assert.Equal("unknown image format 'bmp'; expected 'webp', 'avif', 'png' or 'jpeg'", Assert.Single(result.Errors).Message);
+        Assert.Equal("unknown image format 'bmp'; expected 'webp', 'png' or 'jpeg'", Assert.Single(result.Errors).Message);
     }
 }

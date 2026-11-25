@@ -5,7 +5,7 @@ namespace Douze.Workflow;
 /// Steps declare theirs (<see cref="Step.Requirements"/>); <c>douze doctor</c> checks them without building, and a build
 /// checks them before any unit runs, failing with the <see cref="Hint"/> of each missing one.
 /// </summary>
-/// <param name="name">What is required, as users know it: <c>libvips</c>, <c>typescript 7.0.2</c>, <c>node</c>.</param>
+/// <param name="name">What is required, as users know it: <c>typescript 7.0.2</c>, <c>gopls</c>, <c>node</c>.</param>
 /// <param name="hint">How to fix it when it is missing: what to install or configure.</param>
 internal abstract class Requirement(string name, string hint)
 {

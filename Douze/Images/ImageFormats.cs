@@ -12,15 +12,14 @@ namespace Douze.Images;
 internal sealed record ImageFormat(string Name, string Extension, string ContentType, bool CopiedAsIs, bool HasQuality);
 
 /// <summary>
-/// The formats of the image features: names, extensions and content types, the libvips save options of each, and
-/// the sizes of the formats read without libvips (SVG from its attributes, GIF from its header).
+/// The formats of the image features: names, extensions and content types, and the sizes of the formats read without
+/// decoding them (SVG from its attributes, GIF from its header).
 /// </summary>
 internal static class ImageFormats
 {
     public static readonly ImageFormat Jpeg = new("jpeg", ".jpg", "image/jpeg", CopiedAsIs: false, HasQuality: true);
     public static readonly ImageFormat Png = new("png", ".png", "image/png", CopiedAsIs: false, HasQuality: false);
     public static readonly ImageFormat Webp = new("webp", ".webp", "image/webp", CopiedAsIs: false, HasQuality: true);
-    public static readonly ImageFormat Avif = new("avif", ".avif", "image/avif", CopiedAsIs: false, HasQuality: true);
     public static readonly ImageFormat Gif = new("gif", ".gif", "image/gif", CopiedAsIs: true, HasQuality: false);
     public static readonly ImageFormat Svg = new("svg", ".svg", "image/svg+xml", CopiedAsIs: true, HasQuality: false);
 
@@ -32,12 +31,22 @@ internal static class ImageFormats
     /// <summary>
     /// The image files the <c>images</c> step consumes by default.
     /// </summary>
-    public static readonly GlobSet Sources = GlobSet.Parse(["**/*.{png,jpg,jpeg,webp,avif,gif,svg}"]);
+    public static readonly GlobSet Sources = GlobSet.Parse(["**/*.{png,jpg,jpeg,webp,gif,svg}"]);
 
     /// <summary>
     /// The names variants can be encoded in, for messages.
     /// </summary>
-    public const string EncodableNames = "'webp', 'avif', 'png' or 'jpeg'";
+    public const string EncodableNames = "'webp', 'png' or 'jpeg'";
+
+    /// <summary>
+    /// The formats the image features read, for messages.
+    /// </summary>
+    public const string ReadNames = "png, jpeg, webp, gif, svg";
+
+    /// <summary>
+    /// The formats variants are encoded from, for messages: GIF and SVG are copied as they are.
+    /// </summary>
+    public const string DecodableNames = "png, jpeg, webp";
 
     /// <summary>
     /// A format variants can be encoded in, by name (<c>jpg</c> is <c>jpeg</c>), or null.
@@ -45,7 +54,6 @@ internal static class ImageFormats
     public static ImageFormat? Encodable(string name) => name.ToLowerInvariant() switch
     {
         "webp" => Webp,
-        "avif" => Avif,
         "png" => Png,
         "jpeg" or "jpg" => Jpeg,
         _ => null,
@@ -59,7 +67,6 @@ internal static class ImageFormats
         ".png" => Png,
         ".jpg" or ".jpeg" => Jpeg,
         ".webp" => Webp,
-        ".avif" => Avif,
         ".gif" => Gif,
         ".svg" => Svg,
         _ => null,
@@ -90,24 +97,9 @@ internal static class ImageFormats
             return Webp;
         }
 
-        if (bytes.Length >= 12 && bytes[4..8].SequenceEqual("ftyp"u8))
-        {
-            return Avif;
-        }
-
         // SVG is text: its root element is found in the first kilobytes.
         var head = bytes[..Math.Min(bytes.Length, 4096)];
         return head.IndexOf("<svg"u8) >= 0 ? Svg : null;
-    }
-
-    /// <summary>
-    /// The libvips save options of a variant: <c>.webp[Q=80,keep=none]</c>. Metadata (EXIF, XMP, ICC) is never kept.
-    /// </summary>
-    public static string SaveOptions(ImageFormat format, int quality)
-    {
-        return format.HasQuality
-            ? string.Create(CultureInfo.InvariantCulture, $"{format.Extension}[Q={quality},keep=none]")
-            : $"{format.Extension}[keep=none]";
     }
 
     /// <summary>
@@ -132,7 +124,7 @@ internal static class ImageFormats
             return SvgSize(Encoding.UTF8.GetString(bytes));
         }
 
-        throw new InvalidOperationException($"the size of '{format.Name}' is read by libvips");
+        throw new InvalidOperationException($"the size of '{format.Name}' is read by decoding its header");
     }
 
     private static (int Width, int Height) SvgSize(string svg)

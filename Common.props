@@ -26,6 +26,10 @@
     <VersionSuffix>beta-$(BuildNumber)</VersionSuffix>
 
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- The Six Labors community license key of ImageSharp, which the build of every project referencing a Six Labors
+         package checks (Release builds fail without it): sixlabors.lic at the root of the repository (AGENTS.md). -->
+    <SixLaborsLicenseFile Condition="'$(SixLaborsLicenseFile)' == '' and Exists('$(MSBuildThisFileDirectory)sixlabors.lic')">$(MSBuildThisFileDirectory)sixlabors.lic</SixLaborsLicenseFile>
   </PropertyGroup>
 
 </Project>

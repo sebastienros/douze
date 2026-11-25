@@ -73,7 +73,7 @@ internal sealed class BuildContext : IAsyncDisposable
 
         BaseScopes = ScopeSet.FromSettings(SiteValues(site));
 
-        _images = new Lazy<ImageProcessor>(() => options.Images(message => view.Message(LogLevel.Warning, null, $"libvips: {message}")), LazyThreadSafetyMode.ExecutionAndPublication);
+        _images = new Lazy<ImageProcessor>(() => options.Images(), LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     private readonly Lazy<ImageProcessor> _images;
@@ -143,10 +143,9 @@ internal sealed class BuildContext : IAsyncDisposable
     public ShortcodeRegistry Shortcodes { get; }    // the shortcodes of site.shortcodes, registered on the parser of Templates
 
     /// <summary>
-    /// The libvips bridge of the image features, created on first use, once per build: a build without image features
-    /// never loads it.
+    /// The image engine of the image features, created on first use, once per build: it memoizes the variants and
+    /// rasters of the build.
     /// </summary>
-    /// <exception cref="DouzeException">libvips is missing; every unit that needs it fails with the install hint.</exception>
     public ImageProcessor Images => _images.Value;
 
     public ITraceRecorder Trace { get; }

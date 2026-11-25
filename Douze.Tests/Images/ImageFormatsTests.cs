@@ -46,8 +46,8 @@ public class ImageFormatsTests
 
         Assert.Equal(ImageFormats.Jpeg, ImageFormats.Encodable("JPG"));
         Assert.Null(ImageFormats.Encodable("gif"));
-        Assert.Equal(".webp[Q=75,keep=none]", ImageFormats.SaveOptions(ImageFormats.Webp, 75));
-        Assert.Equal(".png[keep=none]", ImageFormats.SaveOptions(ImageFormats.Png, 75));
+        Assert.Null(ImageFormats.Encodable("avif"));
+        Assert.Null(ImageFormats.Sniff([0, 0, 0, 0x20, .. "ftypavif"u8]));
     }
 
     [Fact]

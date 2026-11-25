@@ -36,10 +36,15 @@ internal readonly record struct ImageVariant(int? Width, string Format, int Qual
 internal sealed record ProcessedImage(ReadOnlyMemory<byte> Bytes, int Width, int Height);
 
 /// <summary>
-/// Decoded pixels: sRGB with an alpha channel, 8 bits per band, row by row, and their resolution in pixels per
-/// millimeter (the <c>pHYs</c> of a PNG made from them).
+/// Decoded pixels: sRGB with an alpha channel, shared by the social images of a build (<see cref="ImageProcessor.Rasterize"/>)
+/// and never changed once made: <see cref="ImageProcessor.Compose"/> draws over a copy.
 /// </summary>
-internal sealed record Raster(byte[] Pixels, int Width, int Height, double XResolution, double YResolution);
+internal sealed record Raster(SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32> Image)
+{
+    public int Width => Image.Width;
+
+    public int Height => Image.Height;
+}
 
 /// <summary>
 /// The size and format of a source image, as displayed (EXIF orientation applied).
@@ -47,8 +52,14 @@ internal sealed record Raster(byte[] Pixels, int Width, int Height, double XReso
 internal readonly record struct ImageInfo(int Width, int Height, string Format, bool HasAlpha);
 
 /// <summary>
-/// A line of text of a social image, rendered with Pango and composited at <see cref="X"/>, <see cref="Y"/>: wrapped
-/// at <see cref="Width"/>, clipped at <see cref="Height"/>, aligned in its box (<c>left</c>, <c>center</c>,
-/// <c>right</c>). <see cref="FontFile"/> is a font file on disk that Pango loads before resolving <see cref="Font"/>.
+/// A font file of the site: its bytes and their hash, by which <see cref="FontResolver"/> loads it once per build.
 /// </summary>
-internal sealed record TextBlock(string Text, string Font, string? FontFile, int X, int Y, int Width, int Height, string Color, string Align);
+internal sealed record FontSource(ReadOnlyMemory<byte> Bytes, Hash128 Hash);
+
+/// <summary>
+/// A block of text of a social image, drawn at <see cref="X"/>, <see cref="Y"/>: wrapped at <see cref="Width"/>,
+/// clipped at <see cref="Height"/>, aligned in its box (<c>left</c>, <c>center</c>, <c>right</c>). <see cref="Font"/>
+/// is a font description (<c>Outfit Bold 56</c>, <see cref="FontResolver"/>); <see cref="FontFile"/> is a font file of
+/// the site, which the description can name.
+/// </summary>
+internal sealed record TextBlock(string Text, string Font, FontSource? FontFile, int X, int Y, int Width, int Height, string Color, string Align);

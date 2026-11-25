@@ -21,7 +21,7 @@ internal sealed class CommandLine
           douze [build] [options]          build once (default command)
           douze watch [options]            build, then rebuild on changes
           douze serve [options]            watch + dev server with live reload
-          douze doctor [options]           check what the steps need (libvips, tools, commands) without building
+          douze doctor [options]           check what the steps need (tools, commands) without building
           douze tools install [options]    download the tools the steps need into the cache folder
           douze worker-helper              print douze-worker.mjs to stdout
 

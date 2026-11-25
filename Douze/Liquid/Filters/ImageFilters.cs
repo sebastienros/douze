@@ -69,7 +69,7 @@ internal static class ImageFilters
         var path = await images.ResolveAsync(src);
         ReadOnlyMemory<byte> bytes = await ImageSources.ReadAsync(images.Build.Source, path, src, images.Step.Dependencies);
 
-        var format = ImageFormats.Sniff(bytes.Span) ?? throw new DouzeException($"'{src}' is not an image format douze reads (png, jpeg, webp, avif, gif, svg)");
+        var format = ImageFormats.Sniff(bytes.Span) ?? throw new DouzeException($"'{src}' is not an image format douze reads ({ImageFormats.ReadNames})");
         var (width, height) = format.CopiedAsIs ? ImageFormats.ReadSize(format, bytes.Span) : Size(images.Build.Images.Probe(bytes));
 
         return new NodeObjectValue(new NodeObject { ["width"] = NodeValue.Create(width), ["height"] = NodeValue.Create(height) });

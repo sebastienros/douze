@@ -14,8 +14,8 @@ namespace Douze.Workflow.Steps;
 /// <summary>
 /// <c>uses: social-image</c>. Renders a social (Open Graph) image per page: <c>with.template</c> (a Liquid template of the
 /// includes folder producing SVG) rendered with the page's model and rasterized at <c>with.width</c> by
-/// <c>with.height</c> (1200 by 630 by default), then each block of <c>with.text</c> rendered with Pango and composited
-/// over it, encoded as PNG at <c>with.output</c> (a Liquid template over the page's model). Pages for which
+/// <c>with.height</c> (1200 by 630 by default, <see cref="SvgRenderer"/>), then each block of <c>with.text</c> laid out
+/// and drawn over it, encoded as PNG at <c>with.output</c> (a Liquid template over the page's model). Pages for which
 /// <c>with.skip</c> (a Liquid expression) is true get none. The step is inline: it passes every page through as the same
 /// instance and adds the image to the outputs of the unit. Images the SVG references by a relative path (to the
 /// template's folder, or to the content folder with <c>/</c>) are inlined as data URIs, since the SVG is rasterized
@@ -31,10 +31,6 @@ internal sealed partial class SocialImageStep : Step, IMapStep
     private readonly string _output;
     private readonly string? _skip;
     private readonly ImmutableArray<TextOptions> _text;
-
-    // Font files copied to the temporary folder of the step, where Pango reads them, by content hash. Each step has its
-    // own folder: on Windows a font Pango has mapped cannot be written again, by another step using the same font.
-    private readonly ConcurrentDictionary<Hash128, Lazy<Task<string>>> _fonts = new();
 
     // The files the cards read (font files, images inlined in the SVG), read once per build: every card reads the same.
     private readonly ConcurrentDictionary<FPath, Lazy<Task<SourceFile>>> _sources = new();
@@ -71,13 +67,10 @@ internal sealed partial class SocialImageStep : Step, IMapStep
 
     public override StepShape NativeShape => StepShape.Map;
 
-    public override IEnumerable<Requirement> Requirements(BuildContext context) => [ImageProcessor.Requirement];
-
     public override GlobSet DefaultMatch => Pages;
 
     public override ValueTask InitializeAsync(BuildContext context, CancellationToken ct)
     {
-        _fonts.Clear();
         _sources.Clear();
         return default;
     }
@@ -268,10 +261,9 @@ internal sealed partial class SocialImageStep : Step, IMapStep
     private static partial Regex Reference();
 
     /// <summary>
-    /// A font file of the source folder, copied once per build to the temporary folder for Pango, which reads fonts
-    /// from the disk; recorded as a dependency of the unit.
+    /// A font file of the source folder, read once per build, recorded as a dependency of the unit.
     /// </summary>
-    private async ValueTask<string> FontFileAsync(string fontFile, StepContext context)
+    private async ValueTask<FontSource> FontFileAsync(string fontFile, StepContext context)
     {
         var path = FPath.Combine(FPath.Root, new FPath(fontFile.TrimStart('/')));
         var source = context.Build.Source;
@@ -282,16 +274,7 @@ internal sealed partial class SocialImageStep : Step, IMapStep
         }
 
         var (bytes, hash) = await ReadAsync(path, fontFile, context);
-
-        return await _fonts.GetOrAdd(hash, static (hash, state) => new Lazy<Task<string>>(async () =>
-        {
-            var folder = Path.Combine(state.Context.Build.TempRoot, "fonts", state.Name);
-            Directory.CreateDirectory(folder);
-
-            var file = Path.Combine(folder, hash + state.Path.GetExtensionWithDot().ToLowerInvariant());
-            await File.WriteAllBytesAsync(file, state.Bytes);
-            return file;
-        }, LazyThreadSafetyMode.ExecutionAndPublication), (Context: context, Name, Path: path, Bytes: bytes)).Value;
+        return new FontSource(bytes, hash);
     }
 
     /// <summary>

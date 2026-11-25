@@ -196,7 +196,6 @@ internal static class PictureMarkup
     private static string? ContentType(string format) => format switch
     {
         "webp" => ImageFormats.Webp.ContentType,
-        "avif" => ImageFormats.Avif.ContentType,
         "png" => ImageFormats.Png.ContentType,
         "jpeg" => ImageFormats.Jpeg.ContentType,
         "gif" => ImageFormats.Gif.ContentType,

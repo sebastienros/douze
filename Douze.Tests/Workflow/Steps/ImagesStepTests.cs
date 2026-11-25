@@ -93,6 +93,6 @@ public partial class ImagesStepTests : CacheTestBase
 
         var error = Assert.Throws<WorkflowValidationException>(() => WorkflowGraph.Build(StepTestBase.Workflow(
             StepTestBase.Step("images", "images", inputs: ["**"], with: StepTestBase.With(("formats", new NodeArray { NodeValue.Create("bmp") }))))));
-        Assert.Equal("option 'formats' of step 'images' must be a list of image formats ('webp', 'avif', 'png' or 'jpeg')", error.Errors.Single().Message);
+        Assert.Equal("option 'formats' of step 'images' must be a list of image formats ('webp', 'png' or 'jpeg')", error.Errors.Single().Message);
     }
 }

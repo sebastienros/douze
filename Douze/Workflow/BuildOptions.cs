@@ -25,5 +25,5 @@ internal sealed class BuildOptions
     public bool RecordWritten { get; init; }         // records the files written without the cache too (a watch session without it deletes stale outputs)
     public SourceSnapshot? Sources { get; init; }    // the source files, kept up to date by the caller (watch mode); null: the build scans the source folder
     public CancellationToken Cancellation { get; init; }
-    public Func<Action<string>, Images.ImageProcessor> Images { get; init; } = Douze.Images.ImageProcessor.Create;  // creates BuildContext.Images (tests replace it)
+    public Func<Images.ImageProcessor> Images { get; init; } = Douze.Images.ImageProcessor.Create;  // creates BuildContext.Images (tests replace it)
 }

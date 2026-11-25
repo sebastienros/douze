@@ -2,7 +2,7 @@ using Douze.FileSystems;
 using Douze.Nodes;
 using Douze.Tests.Images;
 using Douze.Workflow;
-using NetVips;
+using SixLabors.ImageSharp;
 using Xunit;
 
 namespace Douze.Tests.Workflow.Steps;
@@ -40,8 +40,6 @@ public class SocialImageStepTests : StepTestBase
 
     private async Task<NodeObject> WriteSiteAsync(bool withFont = true)
     {
-        TestImages.RequireLibvips();
-
         await Source.WriteTextFileAsync("/_includes/og/card.svg.liquid", "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"1200\" height=\"630\"><rect width=\"1200\" height=\"630\" fill=\"{{ background }}\"/><image xlink:href=\"logo.svg\" x=\"20\" y=\"20\" width=\"100\" height=\"100\"/></svg>");
         await Source.WriteTextFileAsync("/_includes/og/logo.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"><rect width=\"10\" height=\"10\" fill=\"#ff0000\"/></svg>");
         await Source.WriteTextFileAsync("/_includes/page.html", "<html><head><meta property=\"og:image\" content=\"{{ page | social_image_url: 'og/{{ slug }}.png' }}\"></head><body>{{ content }}</body></html>");
@@ -75,21 +73,14 @@ public class SocialImageStepTests : StepTestBase
         Assert.Equal(["/docs/a.html", "/docs/b.html", "/og/a.png"], result.Outputs.Select(x => x.Path.FullName));
 
         var png = await Output.ReadAllBytesAsync("/og/a.png");
-        Assert.Equal((1200, 630, "pngload_buffer", 4), TestImages.Describe(png));
+        Assert.Equal((1200, 630, "png", 4), TestImages.Describe(png));
 
         // The background of the template, the logo it references (inlined), and the text of the blocks.
         Assert.Equal([32, 64, 128, 255], TestImages.Pixel(png, 600, 610));
         Assert.Equal([255, 0, 0, 255], TestImages.Pixel(png, 70, 70));
 
-        // Without a font file (a machine without fonts), Pango may render nothing.
-        if (TestImages.FontFile() != null)
-        {
-            using var image = Image.NewFromBuffer(png);
-            using var title = image.Crop(80, 160, 1040, 220);
-            using var description = image.Crop(80, 400, 1040, 150);
-            Assert.True(title.ExtractBand(2).Max() > 240, "no white title");
-            Assert.True(description.ExtractBand(0).Max() > 240 && description.ExtractBand(1).Max() > 240, "no yellow description");
-        }
+        Assert.True(TestImages.Range(png, new Rectangle(80, 160, 1040, 220), 2).Max > 240, "no white title");
+        Assert.True(TestImages.Range(png, new Rectangle(80, 400, 1040, 150), 0).Max > 240 && TestImages.Range(png, new Rectangle(80, 400, 1040, 150), 1).Max > 240, "no yellow description");
 
         // The page goes through as it is; the image is an output of its unit; the layout finds the same url.
         var unit = result["og"].Results.Single(x => x.Key.Unit == "/docs/a.md");
@@ -102,8 +93,7 @@ public class SocialImageStepTests : StepTestBase
     [Fact]
     public async Task StepsShareAFontFile()
     {
-        // Each step copies the font to its own folder: on Windows, the copy of the first step is mapped by Pango and
-        // cannot be written again.
+        // Font files are loaded once per build, by content.
         var with = await WriteSiteAsync();
         var second = (NodeObject)with.Clone();
         second["output"] = NodeValue.Create("og/second/{{ slug }}.png");

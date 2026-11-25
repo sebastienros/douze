@@ -1,60 +1,98 @@
 using Douze.Images;
-using NetVips;
-using Xunit;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Webp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace Douze.Tests.Images;
 
 /// <summary>
-/// Images made with libvips for the image tests, which are skipped when libvips is not available.
+/// Images made with ImageSharp for the image tests.
 /// </summary>
 internal static class TestImages
 {
     /// <summary>
-    /// The processor, or skips the test when libvips cannot be loaded.
-    /// </summary>
-    public static ImageProcessor RequireLibvips()
-    {
-        try
-        {
-            return ImageProcessor.Create();
-        }
-        catch (DouzeException e)
-        {
-            Assert.Skip(e.Message);
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// A plain image of one color, encoded with libvips save options (<c>.png</c>, <c>.jpg[Q=90]</c>).
+    /// A plain image of one color, encoded as <c>.png</c>, <c>.jpg</c> (quality 90) or <c>.webp</c>.
     /// </summary>
     public static byte[] Solid(int width, int height, (int R, int G, int B) color, string format = ".png")
     {
-        RequireLibvips();
-
-        using var black = Image.Black(width, height, bands: 3);
-        using var filled = black + new double[] { color.R, color.G, color.B };
-        using var image = filled.Cast(Enums.BandFormat.Uchar).Copy(interpretation: Enums.Interpretation.Srgb);
-        return image.WriteToBuffer(format);
+        using var image = new Image<Rgb24>(width, height, new Rgb24((byte)color.R, (byte)color.G, (byte)color.B));
+        return Encode(image, format);
     }
 
     /// <summary>
-    /// The size, format (loader) and bands of encoded image bytes.
+    /// An image encoded as <c>.png</c>, <c>.jpg</c> (quality 90) or <c>.webp</c>, with its metadata.
     /// </summary>
-    public static (int Width, int Height, string Loader, int Bands) Describe(ReadOnlyMemory<byte> bytes)
+    public static byte[] Encode(Image image, string format)
     {
-        using var image = Image.NewFromBuffer(bytes.Span);
-        return (image.Width, image.Height, (string)image.Get("vips-loader"), image.Bands);
+        using var output = new MemoryStream();
+
+        image.Save(output, format switch
+        {
+            // The default of the PNG encoder adds an alpha channel to an RGB image.
+            ".png" => new PngEncoder { ColorType = image.PixelType.AlphaRepresentation == PixelAlphaRepresentation.None ? PngColorType.Rgb : PngColorType.RgbWithAlpha },
+            ".jpg" => new JpegEncoder { Quality = 90 },
+            ".webp" => new WebpEncoder(),
+            _ => throw new ArgumentException($"unknown format '{format}'", nameof(format)),
+        });
+
+        return output.ToArray();
     }
 
     /// <summary>
-    /// The pixel of encoded image bytes at <paramref name="x"/>, <paramref name="y"/>.
+    /// The size, format and channels (3, or 4 with alpha) of encoded image bytes.
+    /// </summary>
+    public static (int Width, int Height, string Format, int Channels) Describe(ReadOnlyMemory<byte> bytes)
+    {
+        var info = Image.Identify(bytes.Span);
+        var format = ImageFormats.Sniff(bytes.Span)?.Name ?? "unknown";
+        return (info.Width, info.Height, format, info.PixelType.AlphaRepresentation == PixelAlphaRepresentation.None ? 3 : 4);
+    }
+
+    /// <summary>
+    /// The RGBA pixel of encoded image bytes at <paramref name="x"/>, <paramref name="y"/>.
     /// </summary>
     public static double[] Pixel(ReadOnlyMemory<byte> bytes, int x, int y)
     {
-        using var image = Image.NewFromBuffer(bytes.Span);
-        return image.Getpoint(x, y);
+        using var image = Image.Load<Rgba32>(bytes.Span);
+        var pixel = image[x, y];
+        return [pixel.R, pixel.G, pixel.B, pixel.A];
     }
+
+    /// <summary>
+    /// The largest and the smallest value of a channel (0 to 3: red, green, blue, alpha) in a region of encoded image
+    /// bytes.
+    /// </summary>
+    public static (int Max, int Min) Range(ReadOnlyMemory<byte> bytes, Rectangle region, int channel)
+    {
+        using var image = Image.Load<Rgba32>(bytes.Span);
+        var (max, min) = (0, 255);
+
+        for (var y = region.Top; y < region.Bottom; y++)
+        {
+            for (var x = region.Left; x < region.Right; x++)
+            {
+                var pixel = image[x, y];
+                int value = channel switch
+                {
+                    0 => pixel.R,
+                    1 => pixel.G,
+                    2 => pixel.B,
+                    _ => pixel.A,
+                };
+
+                (max, min) = (Math.Max(max, value), Math.Min(min, value));
+            }
+        }
+
+        return (max, min);
+    }
+
+    /// <summary>
+    /// The decoded pixels of encoded image bytes.
+    /// </summary>
+    public static Image<Rgba32> Decode(ReadOnlyMemory<byte> bytes) => Image.Load<Rgba32>(bytes.Span);
 
     /// <summary>
     /// A font file of the system for the text tests, or null.
@@ -67,6 +105,7 @@ internal static class TestImages
             "/Library/Fonts/Arial.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             @"C:\Windows\Fonts\arial.ttf",
         ];
 

@@ -154,22 +154,22 @@ internal sealed record ImageOutput(FPath Path, ReadOnlyMemory<byte> Bytes, strin
 
 /// <summary>
 /// Turns a source image into its variants (<see cref="ImageSet"/> and the files to emit). An SVG or a GIF is copied as
-/// it is, with a fingerprinted name and the size read from the file, without libvips.
+/// it is, with a fingerprinted name and the size read from the file, without decoding it.
 /// </summary>
 internal static class ImageBuilder
 {
-    /// <param name="images">The processor, created only for formats that need libvips.</param>
+    /// <param name="images">The processor, created only for formats that are decoded.</param>
     /// <param name="source">The url of the source image (<see cref="ImageSources.Url"/>).</param>
     /// <param name="bytes">The content of the source image.</param>
     /// <param name="request">The variants to produce.</param>
     /// <param name="original">Whether to emit the original with a fingerprinted name too (the <c>images</c> step, which
     /// processes each source once: its variants are not memoized).</param>
-    /// <exception cref="DouzeException">The image cannot be read or encoded, or libvips is missing.</exception>
+    /// <exception cref="DouzeException">The image cannot be read or encoded.</exception>
     public static async ValueTask<(ImageSet Set, IReadOnlyList<ImageOutput> Files)> BuildAsync(Func<ImageProcessor> images, string source, ReadOnlyMemory<byte> bytes, ImageRequest request, bool original)
     {
         var name = Path.GetFileNameWithoutExtension(source);
         var extension = Path.GetExtension(source);
-        var format = ImageFormats.Sniff(bytes.Span) ?? ImageFormats.FromExtension(extension) ?? throw new DouzeException($"'{source}' is not an image format douze reads (png, jpeg, webp, avif, gif, svg)");
+        var format = ImageFormats.Sniff(bytes.Span) ?? ImageFormats.FromExtension(extension) ?? throw new DouzeException($"'{source}' is not an image format douze reads ({ImageFormats.ReadNames})");
         var files = new List<ImageOutput>();
 
         string? originalUrl = null;
