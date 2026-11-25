@@ -1302,7 +1302,7 @@ YAML files. Patterns compile to `Regex` with `RegexOptions.CultureInvariant` (in
 
 Validation happens in `WorkflowLoader` (YAML shape) and `WorkflowGraph.Build` (semantics). Every
 error is a `WorkflowValidationException` with `Location` (file, line, column of the offending node,
-from SharpYaml's parsing event marks) and is printed as `douze.yml(12,5): error: <message>`. All
+from the token offsets of Styml's `Utf8YamlReader`) and is printed as `douze.yml(12,5): error: <message>`. All
 errors are collected and printed together before the build stops with exit code 2. Loader errors point at the
 offending node (the key for an unknown key or a field that is not allowed, the value for a wrong type, the list
 item for a bad glob) and are sorted by position. Graph errors, and the option errors raised by the steps, point at
@@ -1328,7 +1328,7 @@ Loader rules:
   `'incremental' must be true or false`, `'env' must be a mapping of names to strings`, `unknown key 'x' in 'site';
   expected 'content', 'data', 'includes', 'output', 'url' or 'parallelism'`, `'parallelism' must be a positive
   integer`, `'content' must be a folder inside the source folder`, `a workflow file has a single YAML document`,
-  and SharpYaml's syntax errors with their position (`while parsing a flow sequence, did not find expected ',' or ']'`).
+  and Styml's syntax errors with their position (`unexpected end of input inside a YAML flow collection`).
 - A field set to `null` (or left empty) is absent; `steps:` with no value is the same as no `steps`.
 
 Graph rules:
@@ -2165,8 +2165,8 @@ missing (manual check documented in the PR), and `git grep -l "IFileProcessor\|I
 
 **Goal.** `douze.yml` with `site` and `steps`, validation with file and line, `--print-workflow`.
 
-**Owns.** `Douze/Workflow/Yaml/WorkflowLoader.cs`, `YamlSource.cs` (reads SharpYaml model nodes
-with their parsing event marks and exposes `Location(node)`), `WorkflowSchema.cs` (field table of
+**Owns.** `Douze/Workflow/Yaml/WorkflowLoader.cs`, `YamlSource.cs` (reads the nodes of `YamlStream`,
+which keep their position, and exposes `Location(node)`), `WorkflowSchema.cs` (field table of
 4.3 as data, used by the loader and by `WorkflowGraph.ToYaml`), `Douze/Workflow/WorkflowGraph.cs`
 (`ToYaml` over the schema), `Douze/Cli/WorkflowSource.cs` (real implementation: it already builds the
 `SiteOptions`, so `site:` is applied there and `BuildCommand.cs` is not touched; `site.output` applies

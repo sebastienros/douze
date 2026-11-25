@@ -34,17 +34,17 @@ internal sealed class ParseStep : Step, IMapStep
 
     internal static async ValueTask<Node?> ParseAsync(VirtualFile file, CancellationToken ct)
     {
+        var extension = file.Path.GetExtensionWithDot().ToLowerInvariant();
+
+        if (extension is ".yml" or ".yaml")
+        {
+            return YamlHelper.Parse(await file.Content.ReadBytesAsync(ct));
+        }
+
         await using var stream = await file.Content.OpenReadAsync(ct);
 
-        switch (file.Path.GetExtensionWithDot().ToLowerInvariant())
+        switch (extension)
         {
-            case ".yml":
-            case ".yaml":
-                using (var reader = new StreamReader(stream))
-                {
-                    return YamlHelper.Parse(reader);
-                }
-
             case ".json":
                 return JsonHelper.Convert(await JsonNode.ParseAsync(stream, cancellationToken: ct));
 

@@ -77,7 +77,7 @@ Each error names the page by its source file, the fence by its language and its 
 page, its first line, then the line and column in the fence:
 
 ```txt
-error: check-code: /guide/assets/index.html: /_content/guide/assets.md: yaml fence 3 ('steps:'): line 4, column 5: mapping values are not allowed in this context
+error: check-code: /guide/assets/index.html: /_content/guide/assets.md: yaml fence 3 ('steps:'): line 4, column 5: a YAML block sequence entry is not allowed here
 error: check-code: /guide/images/index.html: /_content/guide/images.md: yaml fence 2 ('markdown:'): line 3, column 5: unknown key 'widthz' in 'markdown.images'; expected 'widths', 'formats', 'quality', 'output' or 'loading'
 error: check-code: /reference/liquid/index.html: /_content/reference/liquid.md: liquid fence 21 ('{% for p in collections.all | locale_pages %}'): line 1, column 7: Invalid 'for' tag
 error: check-code: /feed.xml: /feed.xml (/_content/feed.xml.liquid): xml: line 12, column 3: The 'item' start tag on line 9 position 4 does not match the end tag of 'channel'.

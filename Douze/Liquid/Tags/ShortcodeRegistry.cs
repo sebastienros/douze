@@ -136,7 +136,7 @@ internal sealed class ShortcodeRegistry
             {
                 (values, body) = FrontMatter.Parse(text);
             }
-            catch (Exception e) when (e is DouzeException or SharpYaml.YamlException)
+            catch (DouzeException e)
             {
                 errors.Add(new($"invalid front matter: {e.Message}", location));
                 continue;

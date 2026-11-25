@@ -6,8 +6,6 @@ using System.Xml;
 using Douze.Liquid;
 using Douze.Workflow.Yaml;
 using Fluid;
-using SharpYaml;
-using SharpYaml.Model;
 
 namespace Douze.Validation;
 
@@ -70,26 +68,25 @@ internal static partial class CodeValidators
     {
         try
         {
-            using var reader = new StringReader(code);
-            stream = YamlStream.Load(reader);
+            stream = YamlStream.Parse(code);
         }
-        catch (YamlException e)
+        catch (YamlSyntaxException e)
         {
             stream = null;
-            return [new CodeError(e.Start.Line + 1, e.Start.Column + 1, YamlSource.ErrorMessage(e.Message))];
+            return [new CodeError(e.Line, e.Column, e.Reason)];
         }
 
         var errors = new List<CodeError>();
 
-        foreach (var document in stream)
+        foreach (var document in stream.Documents)
         {
-            AddDuplicateKeys(document.Contents, errors);
+            AddDuplicateKeys(stream, document, errors);
         }
 
         return errors;
     }
 
-    private static void AddDuplicateKeys(YamlElement? node, List<CodeError> errors)
+    private static void AddDuplicateKeys(YamlStream stream, YamlSyntax node, List<CodeError> errors)
     {
         switch (node)
         {
@@ -99,14 +96,14 @@ internal static partial class CodeValidators
                 foreach (var (key, value) in mapping)
                 {
                     // '<<' merges a mapping: it is not a key of the data.
-                    if (key is YamlValue { Value: var text } && text != "<<" && !keys.Add(text))
+                    if (key is YamlScalar { Value: var text } && text != "<<" && !keys.Add(text))
                     {
-                        var start = YamlSource.Start(key);
-                        errors.Add(new CodeError(start.Line + 1, start.Column + 1, $"duplicate key '{text}'"));
+                        var (line, column) = stream.Position(key);
+                        errors.Add(new CodeError(line, column, $"duplicate key '{text}'"));
                     }
 
-                    AddDuplicateKeys(key, errors);
-                    AddDuplicateKeys(value, errors);
+                    AddDuplicateKeys(stream, key, errors);
+                    AddDuplicateKeys(stream, value, errors);
                 }
 
                 break;
@@ -114,7 +111,7 @@ internal static partial class CodeValidators
             case YamlSequence sequence:
                 foreach (var item in sequence)
                 {
-                    AddDuplicateKeys(item, errors);
+                    AddDuplicateKeys(stream, item, errors);
                 }
 
                 break;

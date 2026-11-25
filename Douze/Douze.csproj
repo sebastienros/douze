@@ -63,8 +63,8 @@
     <PackageReference Include="Markdig" />
     <PackageReference Include="NetVips" />
     <PackageReference Include="Fluid.Core" />
-    <PackageReference Include="SharpYaml" />
     <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="Styml" />
     <PackageReference Include="System.IO.Hashing" />
     <PackageReference Include="Tint" />
     <PackageReference Include="Tint.Grammars" />

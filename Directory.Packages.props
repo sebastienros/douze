@@ -16,8 +16,8 @@
     <PackageVersion Include="NetVips.Native.osx-x64" Version="8.18.7" />
     <PackageVersion Include="NetVips.Native.win-arm64" Version="8.18.7" />
     <PackageVersion Include="NetVips.Native.win-x64" Version="8.18.7" />
-    <PackageVersion Include="SharpYaml" Version="3.18.0" />
     <PackageVersion Include="Spectre.Console" Version="0.57.2" />
+    <PackageVersion Include="Styml" Version="0.1.1" />
     <PackageVersion Include="System.IO.Hashing" Version="11.0.0" />
     <PackageVersion Include="Tint" Version="0.3.0" />
     <PackageVersion Include="Tint.Grammars" Version="0.3.0" />

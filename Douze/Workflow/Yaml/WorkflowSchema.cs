@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Douze.Nodes;
-using SharpYaml.Model;
 
 namespace Douze.Workflow.Yaml;
 
@@ -291,9 +290,9 @@ internal static partial class WorkflowSchema
 
             foreach (var (key, _, value) in yaml.Entries(mapping, errors))
             {
-                if (value is null || YamlSource.Scalar(value) is not { } text)
+                if (YamlSource.Scalar(value) is not { } text)
                 {
-                    errors.Add(new($"'{name}' must be a mapping of names to strings", yaml.Location(value ?? node)));
+                    errors.Add(new($"'{name}' must be a mapping of names to strings", yaml.Location(value)));
                     return step;
                 }
 
@@ -321,7 +320,7 @@ internal static partial class WorkflowSchema
     /// <summary>
     /// Reads a scalar or a sequence of scalars, or reports the offending node.
     /// </summary>
-    private static bool TryReadStrings(YamlSource yaml, string name, string expected, YamlElement node, ICollection<WorkflowValidationError> errors, out ImmutableArray<string> values, out ImmutableArray<YamlElement> nodes)
+    private static bool TryReadStrings(YamlSource yaml, string name, string expected, YamlSyntax node, ICollection<WorkflowValidationError> errors, out ImmutableArray<string> values, out ImmutableArray<YamlSyntax> nodes)
     {
         if (YamlSource.Scalar(node) is { } single)
         {
@@ -340,13 +339,13 @@ internal static partial class WorkflowSchema
         }
 
         var valueBuilder = ImmutableArray.CreateBuilder<string>(sequence.Count);
-        var nodeBuilder = ImmutableArray.CreateBuilder<YamlElement>(sequence.Count);
+        var nodeBuilder = ImmutableArray.CreateBuilder<YamlSyntax>(sequence.Count);
 
         foreach (var item in sequence)
         {
-            if (item is null || YamlSource.Scalar(item) is not { } value)
+            if (YamlSource.Scalar(item) is not { } value)
             {
-                errors.Add(new($"'{name}' must be {expected}", yaml.Location(item ?? node)));
+                errors.Add(new($"'{name}' must be {expected}", yaml.Location(item)));
                 return false;
             }
 
@@ -379,7 +378,7 @@ internal sealed class WorkflowField
     /// Returns the step with the field set, the step unchanged after adding specific errors, or <c>null</c> when the
     /// node has the wrong type.
     /// </summary>
-    public delegate StepDefinition? Reader(YamlSource yaml, YamlElement node, StepDefinition step, WorkflowEnvironment environment, ICollection<WorkflowValidationError> errors);
+    public delegate StepDefinition? Reader(YamlSource yaml, YamlSyntax node, StepDefinition step, WorkflowEnvironment environment, ICollection<WorkflowValidationError> errors);
 
     private readonly Reader _read;
     private readonly Func<StepDefinition, string?> _write;
@@ -405,7 +404,7 @@ internal sealed class WorkflowField
     /// </summary>
     public string Expected { get; }
 
-    public StepDefinition Read(YamlSource yaml, YamlElement node, StepDefinition step, WorkflowEnvironment environment, ICollection<WorkflowValidationError> errors)
+    public StepDefinition Read(YamlSource yaml, YamlSyntax node, StepDefinition step, WorkflowEnvironment environment, ICollection<WorkflowValidationError> errors)
     {
         if (_read(yaml, node, step, environment, errors) is { } result)
         {

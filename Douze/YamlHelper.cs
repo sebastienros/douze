@@ -1,75 +1,81 @@
-﻿using Douze.Nodes;
-using SharpYaml.Model;
+﻿using System.Text;
+using Douze.Nodes;
+using Douze.Workflow.Yaml;
 
 namespace Douze;
 
-internal sealed class YamlHelper
+/// <summary>
+/// Reads the YAML of front matter and data files into nodes.
+/// </summary>
+internal static class YamlHelper
 {
-    public static Node? Parse(string content)
-    {
-        using var reader = new StringReader(content);
-        return Parse(reader);
-    }
+    /// <exception cref="YamlSyntaxException">The text is not valid YAML, or has a key that is not a scalar.</exception>
+    public static Node? Parse(string content) => Parse(Encoding.UTF8.GetBytes(content));
 
-    public static Node? Parse(TextReader reader)
+    /// <param name="utf8">The UTF-8 text, with or without a byte order mark.</param>
+    /// <exception cref="YamlSyntaxException">The text is not valid YAML, or has a key that is not a scalar.</exception>
+    public static Node? Parse(ReadOnlyMemory<byte> utf8)
     {
-        var stream = YamlStream.Load(reader);
+        var stream = YamlStream.Parse(utf8);
 
-        // An empty document has no contents.
-        return stream.Count == 0 ? null : Convert(stream[0].Contents);
+        // An empty document has no contents; the documents after the first one are ignored.
+        return stream.Documents.IsEmpty ? null : Convert(stream, stream.Documents[0]);
     }
 
     /// <summary>
-    /// Transform any Yaml node into a CLR object
+    /// Transforms a YAML node into a node: plain scalars are integers, decimals or booleans when they parse as one.
     /// </summary>
-    /// <param name="node"></param>
-    /// <returns></returns>
-    private static Node? Convert(YamlNode? node)
+    private static Node? Convert(YamlStream stream, YamlSyntax node)
     {
-        if (node is YamlMapping yamlMapping)
+        switch (node)
         {
-            var dictionary = new NodeObject();
+            case YamlMapping mapping:
+                var dictionary = new NodeObject();
 
-            foreach (var child in yamlMapping)
-            {
-                dictionary[child.Key.ToString()] = Convert(child.Value);
-            }
+                foreach (var (key, value) in mapping)
+                {
+                    if (key is not YamlScalar { Value: var name })
+                    {
+                        var (line, column) = stream.Position(key);
+                        throw new YamlSyntaxException(line, column, "keys must be strings");
+                    }
 
-            return dictionary;
-        }
-        else if (node is YamlValue yamlValue)
-        {
-            if (yamlValue.Style == SharpYaml.ScalarStyle.Plain)
-            {
-                if (int.TryParse(yamlValue.Value, out var intValue))
+                    dictionary[name] = Convert(stream, value);
+                }
+
+                return dictionary;
+
+            case YamlSequence sequence:
+                var array = new NodeArray();
+
+                foreach (var item in sequence)
+                {
+                    array.Add(Convert(stream, item));
+                }
+
+                return array;
+
+            case YamlScalar { IsPlain: true, Value: var text }:
+                if (int.TryParse(text, out var intValue))
                 {
                     return intValue;
                 }
-                else if (decimal.TryParse(yamlValue.Value, out var decimalValue))
+                else if (decimal.TryParse(text, out var decimalValue))
                 {
                     return decimalValue;
                 }
-                else if (bool.TryParse(yamlValue.Value, out var boolValue))
+                else if (bool.TryParse(text, out var boolValue))
                 {
                     return boolValue;
                 }
-            }
 
-            return yamlValue.Value;
+                return text;
+
+            case YamlScalar scalar:
+                return scalar.Value;
+
+            default:
+                return null;
         }
-        else if (node is YamlSequence yamlSequence)
-        {
-            var length = yamlSequence.Count;
-            var array = new NodeArray();
-
-            for (var i = 0; i < length; i++)
-            {
-                array.Add(Convert(yamlSequence[i]));
-            }
-
-            return array;
-        }
-
-        return null;
     }
 }
