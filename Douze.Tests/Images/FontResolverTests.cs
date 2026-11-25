@@ -13,7 +13,8 @@ public class FontResolverTests
     [InlineData("DejaVu Sans Bold Italic 24px", "DejaVu Sans", FontStyle.BoldItalic, "bold", 24f)]
     [InlineData("Inter Light 20.5", "Inter", FontStyle.Regular, "light", 20.5f)]
     [InlineData("serif italic", "serif", FontStyle.Italic, null, 16f)]
-    [InlineData("Regular 12", "Regular", FontStyle.Regular, null, 12f)]
+    [InlineData("bold 64", "sans", FontStyle.Bold, "bold", 64f)]
+    [InlineData("Regular 12", "sans", FontStyle.Regular, null, 12f)]
     public void ParsesPangoLikeDescriptions(string description, string family, FontStyle style, string? weight, float size)
     {
         var parsed = FontResolver.Parse(description);

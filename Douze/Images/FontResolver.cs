@@ -127,8 +127,9 @@ internal sealed class FontResolver
         var italic = false;
         string? weight = null;
 
-        // Style words end the description, after the families: 'Outfit Bold', 'sans italic bold'.
-        while (words.Count > 1 && StyleWords.TryGetValue(words[^1], out var word))
+        // Style words end the description, after the families: 'Outfit Bold', 'sans italic bold'; without a family
+        // ('bold 64'), the family is sans.
+        while (words.Count > 0 && StyleWords.TryGetValue(words[^1], out var word))
         {
             bold |= word.Style == FontStyle.Bold;
             italic |= word.Style == FontStyle.Italic;

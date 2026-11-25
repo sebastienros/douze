@@ -72,11 +72,12 @@ A block whose rendered text is empty or white space is skipped.
   `extrabold` (or `ultrabold`), `heavy` and `black`, which are bold. The words take a dash too (`semi-bold`). A weight
   is first tried as part of the family name: `Outfit Light` finds a family named `Outfit Light`, the name a font file
   of that weight often has. A family without the requested style uses its closest one: a font file of one style is
-  used for every style.
+  used for every style. A description without a family (`bold 64`) uses `sans`.
 - The size is in pixels, with an optional `px`, and is 16 without one. A size that is not a positive number fails the
   page: `invalid font size '0' in font 'sans 0'`.
 
-Text wraps at the width of the block's box, is aligned in it, and is clipped at its height.
+Text wraps at the width of the block's box, is aligned in it, and is clipped at its height. Lines are the font's line
+height apart (its ascender, descender and line gap), as in a browser.
 
 ## Supported SVG
 

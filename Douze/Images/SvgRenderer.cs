@@ -379,7 +379,7 @@ internal static partial class SvgRenderer
         }
 
         /// <summary>
-        /// A nested <c>svg</c> (the root's view box is applied by <see cref="Render"/>): a new viewport at x, y.
+        /// A nested <c>svg</c> (the root's view box is applied by <see cref="Render(string, int, int)"/>): a new viewport at x, y.
         /// </summary>
         private void RenderViewport(XElement element, DrawingCanvas canvas, Context context, bool isRoot)
         {
