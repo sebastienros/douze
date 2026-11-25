@@ -19,6 +19,7 @@
     <Project Path="bench/Douze.Bench/Douze.Bench.csproj" />
     <Project Path="bench/Douze.ImageBench/Douze.ImageBench.csproj" />
   </Folder>
+  <Project Path="Douze.Tests.ApiSample/Douze.Tests.ApiSample.csproj" />
   <Project Path="Douze.Tests.FakeTool/Douze.Tests.FakeTool.csproj" />
   <Project Path="Douze.Tests/Douze.Tests.csproj" />
   <Project Path="Douze/Douze.csproj" />

@@ -29,6 +29,7 @@ steps:
 | [data](data.md) | reduce | `**/*.{yml,yaml,json,xml}` | `site-data`, `folder-data` | Reads data files as site data or folder data. |
 | [frontmatter](frontmatter.md) | map | `**/*.{md,html,liquid}` | `pages` | Moves the front matter into the file's data and sets `page.date`. |
 | [parse](parse.md) | map | `**/*.{json,yml,yaml,xml}` | | Parses a data file into the file's data, under a name. |
+| [dotnet-api](dotnet-api.md) | reduce | `**/*.{dll,xml}` | | Reads .NET assemblies and their XML documentation into `api`, for API reference pages. |
 | [replace](replace.md) | map | `**/*.md`, `**/*.html` | | Replaces literal tokens with rendered values, code blocks included. |
 | [permalink](permalink.md) | map | every file | `permalink` | Computes output paths and sets `url`. |
 | [collect](collect.md) | reduce | `**/*.html`, `**/*.md` | `collections` | Builds `collections.all`, `collections.<tag>` and `collections.urls`. |
@@ -63,9 +64,9 @@ Only `liquid` with a `template` supports `group-by`; on other built-in steps it 
 |---|---|---|
 | map | One unit per file, as soon as the file arrives. | `markdown`, `layout`, `write` |
 | group | One unit per group of files, with `group-by`. | `liquid` with `template` |
-| reduce | One unit for every file the step consumes, once all of them arrived. | `collect`, `data`, the hover steps |
+| reduce | One unit for every file the step consumes, once all of them arrived. | `collect`, `data`, `dotnet-api`, the hover steps |
 
-A reduce step is a barrier: the steps after it wait for it. Some reduce steps (`data`, `collect`, `image-map`)
+A reduce step is a barrier: the steps after it wait for it. Some reduce steps (`data`, `collect`, `image-map`, `dotnet-api`)
 publish site data instead of passing files on, so a step that needs both their data and the pages needs both
 steps: `needs: [permalink, collections]`. See [Workflow architecture](../../guide/workflow-architecture.md).
 
