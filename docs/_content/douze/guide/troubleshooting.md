@@ -9,9 +9,9 @@ then the errors that come up most, with their fixes.
 
 ## Check the requirements
 
-Some steps need something outside Douze: libvips for the image steps, the .NET SDK for `hover-csharp`, Go for
-`hover-go`, the program a command step runs. Every build checks them before any unit runs, and fails at once when one
-is missing. `douze doctor` checks them all without building:
+Some steps need something outside Douze: the TypeScript engine for `hover-typescript`, the .NET SDK for
+`hover-csharp`, Go for `hover-go`, the program a command step runs. Every build checks them before any unit runs, and
+fails at once when one is missing. `douze doctor` checks them all without building:
 
 ```sh
 douze doctor
@@ -19,7 +19,6 @@ douze doctor
 
 ```
 STEP        REQUIREMENT       STATUS    DETAILS
-images      libvips           ok        8.18.7
 typescript  typescript 7.0.2  download  is not installed: it is downloaded for osx-arm64 on first use, or now by 'douze tools install'
 minify      esbuild           missing   is not on PATH: install esbuild and add its folder to PATH, or change the 'run' line of step 'minify'
 
@@ -190,18 +189,25 @@ warning: the cache '.../.douze/cache' is used by another build: building without
 A `douze serve` or `douze watch` session holds the cache. The build works, without it. Stop the session, or pass
 another `--cache-dir`.
 
-### Fontconfig error on macOS
+### Font not found in a social image
 
 ```
-Fontconfig error: Cannot load default config file: File not found
+error: og: /docs/a/index.md: font 'Outfit Bold 64' not found; set 'fontfile' to a font file of the site, or install the font
 ```
 
-Pango prints this when a `social-image` step lays out text on a machine without a Fontconfig configuration. On macOS
-douze configures Fontconfig itself when neither `FONTCONFIG_FILE` nor `FONTCONFIG_PATH` is set and
-`/usr/local/etc/fonts/fonts.conf` (an Intel Homebrew install) does not exist: it writes a configuration of the macOS
-font folders to a `douze-fontconfig` folder of the temporary folder. If you still see the message, one of those
-points to a configuration that cannot be read. Either way the build succeeds; set `fontfile` on each text block so
-that the fonts do not depend on the system.
+No family of the text block's `font` is a font of the system, and the block has no `fontfile`. Containers and CI
+machines usually have no fonts: set `fontfile` to a font file of the site, so that the images do not depend on the
+machine. See [Fonts](../reference/steps/social-image.md#fonts).
+
+### Unsupported SVG in a social image
+
+```
+error: og: /docs/a/index.md: SVG <text> (line 3): <text> is not supported; lay out text with the 'text' blocks of the step
+```
+
+The template of a `social-image` step uses SVG that Douze does not draw: text, clipping paths, masks, filters,
+markers, patterns, or an image by an absolute url. The line is the line of the rendered SVG. Move text to the `text`
+blocks of the step, and see [Supported SVG](../reference/steps/social-image.md#supported-svg) for the rest.
 
 ## Still stuck
 

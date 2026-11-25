@@ -528,8 +528,8 @@ custom domains.
    soon as they come out of them.
 2. Both work on the HTML of the pages: they must run after `markdown` has turned the Markdown into HTML, and before
    `layout` wraps it in the layouts. Each step needs the one before it, which builds the chain.
-3. What the steps of the workflow need outside Douze: libvips for images, the executables of command steps, and the
-   tools that Douze downloads, such as Pagefind.
+3. What the steps of the workflow need outside Douze: the executables of command steps, and the tools that Douze
+   downloads, such as Pagefind.
 
 </details>
 

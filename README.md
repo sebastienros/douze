@@ -29,8 +29,8 @@ post pages in the Markdown benchmark, so it does less work there. The setup, the
 
 # installation
 
-Douze is a native executable for Windows, Linux and macOS (x64 and arm64), with libvips for the image features (see
-"images"). There is no stable release yet: every push to `main` publishes a preview.
+Douze is a native executable for Windows, Linux and macOS (x64 and arm64), with everything the built-in steps need,
+image processing included. There is no stable release yet: every push to `main` publishes a preview.
 
 As a .NET tool, from the preview feed (the package of the machine's platform is the native build; elsewhere it runs on
 the .NET runtime):
@@ -66,7 +66,7 @@ Or download the archive of your platform from the [releases](https://github.com/
 douze [build] [options]          build once (default command)
 douze watch [options]            build, then rebuild on changes
 douze serve [options]            watch + dev server with live reload
-douze doctor [options]           check what the steps need (libvips, tools, commands) without building
+douze doctor [options]           check what the steps need (tools, commands) without building
 douze tools install [options]    download the tools the steps need into the cache folder
 douze worker-helper              print douze-worker.mjs to stdout
 
@@ -152,10 +152,9 @@ douze serve -s Sample
 
 # doctor
 
-Some steps need something outside Douze: the image steps need libvips, `twoslash` its engine, `csharp` the .NET SDK's
-`dotnet` and the Roslyn language server, `go` the `go` executable and gopls, a command step the executable its `run`
-line starts with. Every build checks them before any unit runs, and fails at once when one is
-missing, with what to install or configure:
+Some steps need something outside Douze: `twoslash` its engine, `csharp` the .NET SDK's `dotnet` and the Roslyn
+language server, `go` the `go` executable and gopls, a command step the executable its `run` line starts with. Every
+build checks them before any unit runs, and fails at once when one is missing, with what to install or configure:
 
 ```
 error: minify: esbuild is not on PATH: install esbuild and add its folder to PATH, or change the 'run' line of step 'minify'
@@ -165,7 +164,6 @@ error: minify: esbuild is not on PATH: install esbuild and add its folder to PAT
 
 ```
 STEP      REQUIREMENT       STATUS    DETAILS
-images    libvips           ok        8.18.7
 twoslash  typescript 7.0.2  download  is not installed: it is downloaded for linux-x64 on first use, or now by 'douze tools install'
 minify    esbuild           missing   is not on PATH: install esbuild and add its folder to PATH, or change the 'run' line of step 'minify'
 og        node              ok        /usr/bin/node
@@ -670,7 +668,9 @@ The `image` tag, in a page or a layout, makes the variants of a source image and
   of the page: changing the image renders the page again.
 - Each variant (a width, a format) is written to `output` (default `/assets/images/`) as
   `<name>-<width>.<hash>.<ext>`, the hash being that of the variant, so a changed image gets new names. Variants are
-  never wider than the source; metadata (EXIF, XMP, ICC) is stripped; a variant used by several pages is written once.
+  turned upright by the EXIF orientation, resized with a Lanczos filter, never wider than the source, converted to
+  sRGB, and stripped of their metadata (EXIF, XMP, ICC); JPEG is flattened on white, PNG is 8-bit RGB or RGBA. A
+  variant used by several pages is written once.
 - The markup is a `<picture>` with a `<source>` per format but the last, whose `srcset` lists every width, and an
   `<img>` of the last format with its largest width, `width`, `height` (no layout shift), `alt`, `loading` (`lazy`),
   `decoding="async"`, `class`, and any other named argument as an attribute (`true` without a value). One format gives
@@ -680,7 +680,7 @@ The `image` tag, in a page or a layout, makes the variants of a source image and
   attribute and hides one in CSS.
 - An SVG or a GIF is copied as it is (`<name>.<hash>.<ext>`), its size read from the file (an SVG's `width` and
   `height`, or its `viewBox`).
-- `widths`, `formats` (`webp`, `avif`, `png`, `jpeg`), `quality` (default 80), `output` and `loading` default to the
+- `widths`, `formats` (`webp`, `png`, `jpeg`), `quality` (default 80), `output` and `loading` default to the
   `images` settings of the `markdown` section; without widths, the source's width, without formats, its format.
 - Arguments take strings, numbers, `true`, `false`, lists (`[640, 1280]`) and variables (`page.hero`).
 
@@ -690,7 +690,7 @@ The `image` tag, in a page or a layout, makes the variants of a source image and
 For Markdown images (`![alt](images/x.png)`), three steps do the same without a tag:
 
 ```yaml
-  images:    { inputs: "docs/**/*.{png,jpg,jpeg,webp,avif,gif,svg}", uses: images, with: { widths: [640, 1280], formats: [webp] } }
+  images:    { inputs: "docs/**/*.{png,jpg,jpeg,webp,gif,svg}", uses: images, with: { widths: [640, 1280], formats: [webp] } }
   image-map: { needs: images, uses: image-map }
   pictures:  { needs: [markdown, image-map], uses: pictures }
   write:     { needs: [layout, images], uses: write }
@@ -701,15 +701,13 @@ For Markdown images (`![alt](images/x.png)`), three steps do the same without a 
 `images`, by source url (`images["/docs/images/x.png"]`), for templates and `pictures`, which rewrites the `<img>` of
 the images it knows into the tag's markup, keeping their other attributes. A page depends on the images it shows only.
 
-Image processing uses libvips (NetVips), included in the native AOT packages. Without it, a workflow with an `images`
-or `social-image` step fails before building, with the steps to get it (`douze doctor` checks it); the `image` tag
-and the `image_url` and `image_size` filters fail only the pages that use them on an image other than an SVG or a
-GIF, which never need it.
+Douze reads PNG, JPEG, WebP, GIF and SVG, and makes variants of PNG, JPEG and WebP in WebP, PNG or JPEG. Image
+processing is built in, fully managed: there is nothing to install on any platform.
 
 # social images
 
 The `social-image` step renders an Open Graph image per page: an SVG Liquid template rasterized as the background,
-with text laid out over it.
+with text laid out over it. Douze draws both, with no browser, Node or native library.
 
 ```yaml
   og: { needs: pages, uses: social-image, match: "docs/**/*.md",
@@ -720,10 +718,19 @@ with text laid out over it.
 
 - `template` is in the includes folder and renders with the page's model; images it references by a relative path
   (to the template's folder, or to the content folder with `/`) are inlined, and are dependencies of the page.
-- Each `text` block renders its `value` (a Liquid template) with Pango as plain text: `font` (a Pango font: family,
-  style, size in pixels), wrapped at `width`, clipped at `height`, aligned `left`, `center` or `right` in its box,
-  colored (`#rrggbb` or `#rrggbbaa`), at `x`, `y`. `fontfile` (relative to the source folder) loads a font file first:
-  containers usually have no system fonts.
+- The SVG is drawn by Douze's own renderer, a static subset: shapes and paths, transforms, view boxes, colors, linear
+  and radial gradients, opacity, `use`, inlined images, and style sheets of type, class and id selectors. `text`,
+  clipping paths, masks, filters, markers, patterns, images by an absolute url and other selectors fail the page with
+  the element and its line; animation elements and elements of other namespaces are ignored:
+  `SVG <text> (line 3): <text> is not supported; lay out text with the 'text' blocks of the step`.
+- Each `text` block renders its `value` (a Liquid template) as plain text: wrapped at `width`, clipped at `height`,
+  aligned `left`, `center` or `right` in its box, colored (`#rrggbb` or `#rrggbbaa`), at `x`, `y`. `font` is
+  `[families] [style words] [size]` (`Inter, sans italic 24`): the families are tried in order in the block's
+  `fontfile` (relative to the source folder), then among the system's fonts (`sans`, `serif`, `monospace` are
+  generic), the `fontfile` is used when none is found; style words are `italic`, `oblique` and weights from `thin` to
+  `black` (`semibold` and above are bold; `Outfit Light` is first tried as a family); the size is in pixels, 16 by
+  default. Containers usually have no system fonts: without a `fontfile`, a font that is not found fails the page
+  (`font '...' not found; set 'fontfile' to a font file of the site, or install the font`).
 - `output` (a Liquid template) is the image's path; `skip` (a Liquid condition) leaves a page without one; `width` and
   `height` default to 1200 and 630.
 - The step passes every page through unchanged and adds the image to the page's outputs: it sits in the page chain,

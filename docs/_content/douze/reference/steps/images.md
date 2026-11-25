@@ -11,7 +11,7 @@ images of Markdown pages (`![alt](images/x.png)`) the same markup as the `image`
 | | |
 |---|---|
 | Shape | map (no `group-by`) |
-| Default `match` | `**/*.{png,jpg,jpeg,webp,avif,gif,svg}` |
+| Default `match` | `**/*.{png,jpg,jpeg,webp,gif,svg}` |
 | Default workflow | no |
 
 ## What it does
@@ -22,12 +22,18 @@ For each image it consumes, the step emits these files instead of the image:
 - one variant per width and format: `<name>-<width>.<hash>.<ext>`, the hash being the first 8 characters of the
   hash of the variant's content, so that a changed image gets new names.
 
-All of them are written to the `output` folder (`/assets/images/` by default). Variants are never wider than the
-source (a width larger than the source gives the source's width), and metadata (EXIF, XMP, ICC) is stripped. Without
-`widths`, the only width is the source's; without `formats`, the only format is the source's.
+All of them are written to the `output` folder (`/assets/images/` by default). Without `widths`, the only width is
+the source's; without `formats`, the only format is the source's. A variant is:
 
-An SVG or a GIF is only copied, as `<name>.<hash>.<ext>`, without libvips; its size is read from the file (an SVG's
-`width` and `height`, or its `viewBox`).
+- never wider than the source: a width larger than the source gives the source's width;
+- turned upright by the EXIF orientation of the source, then resized with a Lanczos filter;
+- converted to sRGB when the source embeds a color profile;
+- stripped of its metadata (EXIF, XMP, ICC);
+- in JPEG, flattened on white when the source has transparency; in PNG, 8-bit RGB, or RGBA when the source has
+  transparency.
+
+An SVG or a GIF is only copied, as `<name>.<hash>.<ext>`; its size is read from the file (an SVG's `width` and
+`height`, or its `viewBox`, a GIF's header).
 
 Every file the step emits carries the same `image` value:
 
@@ -36,7 +42,7 @@ Every file the step emits carries the same `image` value:
 | `image.source` | the url of the source image: its path without the content folder (`/docs/images/x.png`) |
 | `image.url` | the url of the fingerprinted original |
 | `image.width`, `image.height` | the size of the source, as displayed (EXIF orientation applied) |
-| `image.format` | the format of the source (`png`, `jpeg`, `webp`, `avif`, `gif`, `svg`) |
+| `image.format` | the format of the source (`png`, `jpeg`, `webp`, `gif`, `svg`) |
 | `image.variants` | a list of `{ url, width, height, format }`, by format in the order of `formats`, then by width ascending |
 
 The files that leave the step are images, not pages: a `write` step must need it for them to reach the output folder.
@@ -46,8 +52,8 @@ The files that leave the step are images, not pages: a `write` step must need it
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | `widths` | integer or list of integers | `markdown.images.widths`, else the source's width | the widths of the variants, in pixels |
-| `formats` | string or list of strings | `markdown.images.formats`, else the source's format | the formats of the variants: `webp`, `avif`, `png`, `jpeg` (`jpg` is `jpeg`) |
-| `quality` | integer, 1 to 100 | `markdown.images.quality`, else `80` | the quality of the lossy formats (`webp`, `avif`, `jpeg`) |
+| `formats` | string or list of strings | `markdown.images.formats`, else the source's format | the formats of the variants: `webp`, `png`, `jpeg` (`jpg` is `jpeg`) |
+| `quality` | integer, 1 to 100 | `markdown.images.quality`, else `80` | the quality of the lossy formats (`webp`, `jpeg`) |
 | `output` | string | `markdown.images.output`, else `/assets/images/` | the folder of the variants and of the copies |
 
 The defaults come from the `images` settings of the [`markdown` section](../configuration.md) of `douze.yml`,
@@ -55,10 +61,7 @@ which the `image` tag and the `image_url` filter use too.
 
 ## Requirements
 
-libvips, included in the native packages of Douze for `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`, `osx-x64`
-and `osx-arm64`. On other platforms, put libvips 8.18 (`libvips.so.42`, `libvips.42.dylib` or `libvips-42.dll`) next
-to the `douze` executable or on the library path. A workflow with an `images` step checks it before building, and
-`douze doctor` reports it.
+None to install: image processing is built into Douze, on every platform it runs on.
 
 ## Caching
 
@@ -68,13 +71,13 @@ Each image is a unit: its result is reused while the image, the step's options a
 ## Errors
 
 ```
-douze.yml(2,3): error: option 'formats' of step 'images' must be a list of image formats ('webp', 'avif', 'png' or 'jpeg')
+douze.yml(2,3): error: option 'formats' of step 'images' must be a list of image formats ('webp', 'png' or 'jpeg')
 douze.yml(3,3): error: step 'images' needs positive widths and a quality from 1 to 100
 douze.yml(2,3): error: unknown option 'width' for step 'images'; did you mean 'widths'?
 ```
 
 A file that is not an image Douze reads fails its unit:
-`'/docs/a.bmp' is not an image format douze reads (png, jpeg, webp, avif, gif, svg)`.
+`'/docs/a.bmp' is not an image format douze reads (png, jpeg, webp, gif, svg)`.
 
 ## Example
 
@@ -84,7 +87,7 @@ site:
 
 steps:
   pages:
-    inputs: ["docs/**", "!docs/**/*.{png,jpg,jpeg,webp,avif,gif,svg}"]
+    inputs: ["docs/**", "!docs/**/*.{png,jpg,jpeg,webp,gif,svg}"]
     uses: frontmatter
   permalink:
     needs: pages
@@ -95,7 +98,7 @@ steps:
     needs: permalink
     uses: markdown
   images:
-    inputs: "docs/**/*.{png,jpg,jpeg,webp,avif,gif,svg}"
+    inputs: "docs/**/*.{png,jpg,jpeg,webp,gif,svg}"
     uses: images
     with:
       widths: [320, 640]
@@ -120,4 +123,3 @@ steps:
 - [The `image` tag and the image filters](../liquid.md)
 - [The `markdown.images` settings](../configuration.md)
 - [Images guide](../../guide/images.md)
-- [`douze doctor`](../cli.md)

@@ -108,8 +108,8 @@ agent instructions (`AGENTS.md`, `CLAUDE.md`):
 
   The file of a build error is the file's path in the workflow at that step (after `permalink`, its output path), and
   the line is in the page's body, after its front matter.
-- **Check requirements before building.** `douze doctor` lists what the steps need (libvips, downloaded tools, the
-  programs of command steps) and exits with `1` when one is missing.
+- **Check requirements before building.** `douze doctor` lists what the steps need (downloaded tools, the programs of
+  command steps) and exits with `1` when one is missing.
 - **Make mistakes fail.** `strict: true` on the `liquid` step makes an undefined variable an error, and the
   `frontmatter` step's `require` lists keys every page must have:
 

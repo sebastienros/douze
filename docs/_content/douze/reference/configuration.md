@@ -245,7 +245,7 @@ The defaults of the `image` tag, the `image_url` filter and the [images](steps/i
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `widths` | list of positive integers | the source's width | The widths of the variants. |
-| `formats` | string or list | the source's format | `webp`, `avif`, `png`, `jpeg`. |
+| `formats` | string or list | the source's format | `webp`, `png`, `jpeg`. |
 | `quality` | integer, 1 to 100 | `80` | The quality of lossy formats. |
 | `output` | folder | `/assets/images/` | The folder of the variants. |
 | `loading` | `lazy` or `eager` | `lazy` | The `loading` attribute of the `<img>`. |
