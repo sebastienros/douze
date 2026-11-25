@@ -143,6 +143,8 @@ internal sealed class AssemblyReader
 
             foreach (var handle in reader.TypeDefinitions)
             {
+                assembly.DefinedTypes.Add(provider.Definition(handle).DefinitionId);
+
                 if (reader.GetTypeDefinition(handle).GetDeclaringType().IsNil)
                 {
                     assemblyReader.ReadType(handle, null);
@@ -155,15 +157,20 @@ internal sealed class AssemblyReader
         {
             throw new DouzeException($"'{path}' is not a .NET assembly: {e.Message}");
         }
+        catch (Exception e) when (e is not DouzeException and not OperationCanceledException)
+        {
+            // System.Reflection.Metadata throws others on corrupt metadata (OverflowException, NullReferenceException).
+            throw new DouzeException($"'{path}' could not be read: {e.GetType().Name}: {e.Message}");
+        }
     }
 
-    private void ReadType(TypeDefinitionHandle handle, ApiType? declaring)
+    private void ReadType(TypeDefinitionHandle handle, ApiType? declaring, int depth = 0)
     {
         var definition = _reader.GetTypeDefinition(handle);
         var metadataName = _reader.GetString(definition.Name);
         var attributes = definition.Attributes;
 
-        if (metadataName == "<Module>" || metadataName.Contains('<') || Accessibility(attributes) is not { } accessibility)
+        if (metadataName == "<Module>" || metadataName.Contains('<') || Accessibility(definition) is not { } accessibility)
         {
             return;
         }
@@ -300,7 +307,7 @@ internal sealed class AssemblyReader
 
         foreach (var nested in definition.GetNestedTypes())
         {
-            ReadType(nested, type);
+            ReadType(nested, type, SignatureProvider.Nest(depth));
         }
     }
 
@@ -309,25 +316,28 @@ internal sealed class AssemblyReader
         return _reader.GetString(method.Name) == "PrintMembers" && Has(method.GetCustomAttributes(), CompilerServices, "CompilerGeneratedAttribute");
     }
 
-    private bool IsVisible(TypeDefinitionHandle handle)
+    private bool IsVisible(TypeDefinitionHandle handle, int depth = 0)
     {
         var definition = _reader.GetTypeDefinition(handle);
 
-        if (Accessibility(definition.Attributes) == null)
+        if (Accessibility(definition) == null)
         {
             return false;
         }
 
-        return definition.GetDeclaringType() is not { IsNil: false } declaring || IsVisible(declaring);
+        return definition.GetDeclaringType() is not { IsNil: false } declaring || IsVisible(declaring, SignatureProvider.Nest(depth));
     }
 
-    private string? Accessibility(TypeAttributes attributes)
+    private string? Accessibility(TypeDefinition definition)
     {
-        return (attributes & TypeAttributes.VisibilityMask) switch
+        // A protected type of a sealed type or of a struct cannot be reached from outside, as its protected members.
+        var sealedType = definition.GetDeclaringType() is { IsNil: false } declaring && (_reader.GetTypeDefinition(declaring).Attributes & TypeAttributes.Sealed) != 0;
+
+        return (definition.Attributes & TypeAttributes.VisibilityMask) switch
         {
             TypeAttributes.Public or TypeAttributes.NestedPublic => "public",
-            TypeAttributes.NestedFamily when _includeProtected => "protected",
-            TypeAttributes.NestedFamORAssem when _includeProtected => "protected internal",
+            TypeAttributes.NestedFamily when _includeProtected && !sealedType => "protected",
+            TypeAttributes.NestedFamORAssem when _includeProtected && !sealedType => "protected internal",
             _ => null,
         };
     }

@@ -53,7 +53,7 @@ public sealed class DotNetApiStepTests : DotNetApiTestBase
         var ids = (NodeObject)api["ids"]!;
 
         // The compiler documents every member; what is not in the API: internal and private members, the protected
-        // members of a sealed class, the class that documents a namespace. Explicit implementations of generic
+        // members and types of a sealed class, the class that documents a namespace. Explicit implementations of generic
         // interfaces are found, with their metadata names (IConverter{nint,System#String}).
         var documented = XDocument.Load(SampleXml).Root!.Element("members")!.Elements("member").Select(x => (string)x.Attribute("name")!);
         var missing = documented.Where(x => !ids.ContainsKey(x)).Order(StringComparer.Ordinal);
@@ -62,6 +62,7 @@ public sealed class DotNetApiStepTests : DotNetApiTestBase
         [
             "M:Contoso.Widgets.Gadget.OnChanged",
             "M:Contoso.Widgets.Widget.Hidden",
+            "T:Contoso.Widgets.Gadget.Part",
             "T:Contoso.Widgets.NamespaceDoc",
         ], missing);
     }
@@ -299,6 +300,12 @@ public sealed class DotNetApiStepTests : DotNetApiTestBase
         Assert.Equal("/reference/contoso.widgets.color/#red", Text(Member(Type(api, "Contoso.Widgets.Color"), "fields", "Red"), "url"));
         Assert.DoesNotContain(groups, x => Text(x!["type"], "name") == "Color");
         Assert.Equal("/reference/contoso.widgets.widget.resize/", Text(groups.Single(x => Text(x, "title") == "Widget.Resize method"), "url"));
+
+        // The conversions of a kind are one name: their title and name have no target type.
+        var implicitGroup = groups.Single(x => Text(x, "title") == "Widget.implicit operator");
+        Assert.Equal("implicit operator", Text(implicitGroup, "name"));
+        Assert.Equal("/reference/contoso.widgets.widget.op_implicit/", Text(implicitGroup, "url"));
+        Assert.Equal("Widget.implicit operator", Text(Member(widget, "operators", "implicit operator string(Widget)"), "title"));
     }
 
     [Fact]
@@ -312,6 +319,10 @@ public sealed class DotNetApiStepTests : DotNetApiTestBase
 
         api = await BuildApiAsync(StepTestBase.With(("external", new NodeObject())));
         Assert.Null(Text(((NodeArray)Type(api, "Contoso.Widgets.Bag<T>")["interfaces"]!)[0], "url"));
+
+        // The types of the assemblies that have no page, and their members, are not another library's.
+        api = await BuildApiAsync(StepTestBase.With(("external", new NodeObject { ["Contoso"] = NodeValue.Create("https://docs.example.com/{name}") })));
+        Assert.Equal("The largest size, checked by <code>Widget.Hidden</code> and <code>InternalThing</code>.", Text(Member(Type(api, "Contoso.Widgets.Widget"), "fields", "MaxSize"), "summary"));
     }
 
     [Fact]
@@ -381,11 +392,19 @@ public sealed class DotNetApiStepTests : DotNetApiTestBase
     public async Task AnAssemblyWithoutDocumentation()
     {
         await CopySampleAsync(xml: false);
-        var result = await BuildCachedAsync(StepTestBase.Workflow(Api()));
+        var workflow = StepTestBase.Workflow(Api());
+        var result = await BuildCachedAsync(workflow);
+        const string Warning = "'/lib/Contoso.Widgets.dll' has no XML documentation file next to it ('/lib/Contoso.Widgets.xml'): its API is listed without documentation";
 
         Assert.True(result.Succeeded);
-        Assert.Contains(Messages, x => x.Level == LogLevel.Warning && x.Message == "'/lib/Contoso.Widgets.dll' has no XML documentation file next to it ('/lib/Contoso.Widgets.xml'): its API is listed without documentation");
+        Assert.Contains(Messages, x => x.Level == LogLevel.Warning && x.Message == Warning);
         Assert.Null(Type(ApiValue(result), "Contoso.Widgets.Widget")["summary"]);
+
+        // A replayed build still says so.
+        Messages.Clear();
+        result = await BuildCachedAsync(workflow);
+        Assert.Empty(Executed(result, "api"));
+        Assert.Contains(Messages, x => x.Level == LogLevel.Warning && x.Message == Warning);
     }
 
     [Fact]

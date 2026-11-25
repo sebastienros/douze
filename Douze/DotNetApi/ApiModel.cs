@@ -16,6 +16,12 @@ internal sealed class ApiAssembly
     public required string Path { get; init; }
 
     public List<ApiType> Types { get; } = [];
+
+    /// <summary>
+    /// The documentation comment IDs of every type the assembly defines, public or not: a reference to one of them that
+    /// has no page is not to a type of another library.
+    /// </summary>
+    public HashSet<string> DefinedTypes { get; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>

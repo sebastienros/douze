@@ -35,6 +35,7 @@ internal sealed class ApiNodeBuilder
 
     private readonly Dictionary<string, ApiType> _types = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ApiMember> _members = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _defined = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _urls = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _anchors = new(StringComparer.Ordinal);
     private readonly HashSet<string> _slugs = new(StringComparer.Ordinal);
@@ -58,6 +59,8 @@ internal sealed class ApiNodeBuilder
     {
         foreach (var assembly in assemblies)
         {
+            _defined.UnionWith(assembly.DefinedTypes);
+
             foreach (var type in assembly.Types)
             {
                 if (!_types.TryAdd(type.Id, type))
@@ -284,7 +287,7 @@ internal sealed class ApiNodeBuilder
             allGroups.Add(new NodeObject
             {
                 ["kind"] = first.Kind,
-                ["name"] = first.Name,
+                ["name"] = GroupName(first),
                 ["title"] = title,
                 ["url"] = _urls[GroupKey(first)],
                 ["type"] = TypeRef(type.Ref),
@@ -675,6 +678,12 @@ internal sealed class ApiNodeBuilder
         var name = DocSet.NameOf(id[2..]);
         var typeName = id[0] is 'T' or 'N' ? name : name[..Math.Max(0, name.LastIndexOf('.'))];
 
+        // A type of the assemblies, or a member of one, that has no page (not public): no other library documents it.
+        if (_defined.Contains("T:" + typeName))
+        {
+            return null;
+        }
+
         foreach (var external in _external)
         {
             if (typeName == external.Prefix || typeName.StartsWith(external.Prefix + ".", StringComparison.Ordinal))
@@ -777,9 +786,31 @@ internal sealed class ApiNodeBuilder
         return member.Kind switch
         {
             "constructor" => typeName + " constructor",
+            "operator" when IsConversion(member) => typeName + "." + GroupName(member),
             "operator" => typeName + "." + member.Name.Replace("operator ", "", StringComparison.Ordinal) + " operator",
             var kind => typeName + "." + member.Name + " " + kind,
         };
+    }
+
+    /// <summary>
+    /// The name of a member's overloads: its name, without the target type for a conversion operator, since the
+    /// overloads of <c>implicit operator</c> convert to different types.
+    /// </summary>
+    private static string GroupName(ApiMember member)
+    {
+        if (!IsConversion(member))
+        {
+            return member.Name;
+        }
+
+        var name = member.Name;
+        var at = name.LastIndexOf("operator ", StringComparison.Ordinal);
+        return name[..at] + (name.AsSpan(at + 9).StartsWith("checked ", StringComparison.Ordinal) ? "operator checked" : "operator");
+    }
+
+    private static bool IsConversion(ApiMember member)
+    {
+        return member.Kind == "operator" && (member.MetadataName.EndsWith("op_Implicit", StringComparison.Ordinal) || member.MetadataName.EndsWith("op_Explicit", StringComparison.Ordinal) || member.MetadataName.EndsWith("op_CheckedExplicit", StringComparison.Ordinal));
     }
 
     /// <summary>

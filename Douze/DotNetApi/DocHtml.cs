@@ -50,17 +50,65 @@ internal sealed class DocHtml(DocHtml.CrefResolver resolve)
     {
         foreach (var node in parent.Nodes())
         {
-            switch (node)
-            {
-                case XText text:
-                    writer.Text(text.Value);
-                    break;
-                case XElement element:
-                    Element(element, writer);
-                    break;
-            }
+            Node(node, writer);
         }
     }
+
+    private void Node(XNode node, Writer writer)
+    {
+        switch (node)
+        {
+            case XText text:
+                writer.Text(text.Value);
+                break;
+            case XElement element:
+                Element(element, writer);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// A <c>&lt;para&gt;</c>: a paragraph, or one per run of inline content around the blocks it has (a
+    /// <c>&lt;code&gt;</c> or a <c>&lt;list&gt;</c>), which HTML does not allow in a paragraph.
+    /// </summary>
+    private void Paragraph(XElement element, Writer writer)
+    {
+        var run = new List<XNode>();
+
+        foreach (var node in element.Nodes())
+        {
+            if (node is XElement child && IsBlock(child.Name.LocalName))
+            {
+                Run(run, writer);
+                Element(child, writer);
+            }
+            else
+            {
+                run.Add(node);
+            }
+        }
+
+        Run(run, writer);
+    }
+
+    private void Run(List<XNode> run, Writer writer)
+    {
+        if (run.Any(x => x is XElement || x is XText text && !string.IsNullOrWhiteSpace(text.Value)))
+        {
+            writer.Block("<p>");
+
+            foreach (var node in run)
+            {
+                Node(node, writer);
+            }
+
+            writer.Block("</p>");
+        }
+
+        run.Clear();
+    }
+
+    private static bool IsBlock(string tag) => tag is "para" or "p" or "code" or "list" or "note" || BlockTags.Contains(tag);
 
     private void Element(XElement element, Writer writer)
     {
@@ -69,9 +117,7 @@ internal sealed class DocHtml(DocHtml.CrefResolver resolve)
         switch (tag)
         {
             case "para" or "p":
-                writer.Block("<p>");
-                Nodes(element, writer);
-                writer.Block("</p>");
+                Paragraph(element, writer);
                 break;
 
             case "c":

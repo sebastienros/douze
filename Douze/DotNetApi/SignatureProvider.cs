@@ -19,6 +19,9 @@ internal sealed class SignatureProvider(MetadataReader reader) : ISignatureTypeP
 
     private readonly Dictionary<EntityHandle, NamedTypeRef> _named = [];
 
+    // The type specifications being decoded: corrupt metadata can make one contain itself.
+    private int _specifications;
+
     public MetadataReader Reader => reader;
 
     public ApiTypeRef GetArrayType(ApiTypeRef elementType, ArrayShape shape) => new ArrayTypeRef(elementType, shape.Rank);
@@ -68,7 +71,16 @@ internal sealed class SignatureProvider(MetadataReader reader) : ISignatureTypeP
 
     public ApiTypeRef GetTypeFromSpecification(MetadataReader reader, GenericContext genericContext, TypeSpecificationHandle handle, byte rawTypeKind)
     {
-        return reader.GetTypeSpecification(handle).DecodeSignature(this, genericContext);
+        _specifications = Nest(_specifications);
+
+        try
+        {
+            return reader.GetTypeSpecification(handle).DecodeSignature(this, genericContext);
+        }
+        finally
+        {
+            _specifications--;
+        }
     }
 
     /// <summary>
@@ -90,7 +102,9 @@ internal sealed class SignatureProvider(MetadataReader reader) : ISignatureTypeP
         };
     }
 
-    public NamedTypeRef Definition(TypeDefinitionHandle handle)
+    public NamedTypeRef Definition(TypeDefinitionHandle handle) => Definition(handle, 0);
+
+    private NamedTypeRef Definition(TypeDefinitionHandle handle, int depth)
     {
         if (_named.TryGetValue(handle, out var named))
         {
@@ -107,7 +121,7 @@ internal sealed class SignatureProvider(MetadataReader reader) : ISignatureTypeP
         }
         else
         {
-            var outer = Definition(declaring);
+            var outer = Definition(declaring, Nest(depth));
             named = outer with { Names = outer.Names.Add(name) };
         }
 
@@ -115,7 +129,9 @@ internal sealed class SignatureProvider(MetadataReader reader) : ISignatureTypeP
         return named;
     }
 
-    public NamedTypeRef Reference(TypeReferenceHandle handle)
+    public NamedTypeRef Reference(TypeReferenceHandle handle) => Reference(handle, 0);
+
+    private NamedTypeRef Reference(TypeReferenceHandle handle, int depth)
     {
         if (_named.TryGetValue(handle, out var named))
         {
@@ -127,7 +143,7 @@ internal sealed class SignatureProvider(MetadataReader reader) : ISignatureTypeP
 
         if (reference.ResolutionScope.Kind == HandleKind.TypeReference)
         {
-            var outer = Reference((TypeReferenceHandle)reference.ResolutionScope);
+            var outer = Reference((TypeReferenceHandle)reference.ResolutionScope, Nest(depth));
             named = outer with { Names = outer.Names.Add(name) };
         }
         else
@@ -138,6 +154,18 @@ internal sealed class SignatureProvider(MetadataReader reader) : ISignatureTypeP
         _named[handle] = named;
         return named;
     }
+
+    /// <summary>
+    /// The depth of the next declaring type, or type specification: corrupt metadata can make a type its own declaring
+    /// type, or a type specification contain itself.
+    /// </summary>
+    /// <exception cref="BadImageFormatException">The types are nested more than <see cref="MaxNesting"/> deep.</exception>
+    internal static int Nest(int depth)
+    {
+        return depth < MaxNesting ? depth + 1 : throw new BadImageFormatException($"types are nested more than {MaxNesting} deep, or in a cycle");
+    }
+
+    internal const int MaxNesting = 64;
 
     /// <summary>
     /// The type that declares a method or a field a custom attribute or a method implementation names.

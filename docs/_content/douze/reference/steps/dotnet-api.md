@@ -20,7 +20,7 @@ has a complete site.
 The step reads the metadata of each assembly, without loading or running it: a reference assembly works as well as
 the assembly of a build. The API is what another assembly can use: the public types and their public and protected
 members (`protected: false` leaves the protected ones out). Internal and private members, compiler-generated members
-and the protected members of a sealed class or a struct are left out.
+and the protected members and nested types of a sealed class or a struct are left out.
 
 From the metadata, the step reads what the XML documentation file does not have: the kind of each type, its
 modifiers, base type and interfaces, type parameters and their constraints, parameters with their modifiers and default
@@ -142,7 +142,7 @@ A member:
 | `id` | `M:Contoso.Widgets.Widget.Resize(System.Int32,System.Int32)` |
 | `name` | `Resize`, the type's name for a constructor, `this[]` for an indexer, `operator +`, `IDisposable.Dispose` |
 | `displayName` | With the parameter types: `Resize(int, int)`, `this[int]` |
-| `title` | `Widget.Resize method`, `Widget constructor` |
+| `title` | `Widget.Resize method`, `Widget constructor`, `Widget.+ operator`, `Widget.implicit operator` |
 | `url`, `anchor` | Its url, and the id of its element on the page |
 | `accessibility`, `modifiers` | As for a type (empty for an explicit implementation); `static`, `virtual`, `abstract`, `override`, `sealed override`, `const`, `readonly`, `required` |
 | `signature` | `public bool Resize(int width, int height)`, `public int Width { get; protected set; }` |
@@ -157,8 +157,9 @@ A member:
 | `obsolete` | `{ message }` |
 | documentation | `summary`, `remarks`, `example`, `exceptions`, `seeAlso` |
 
-An item of `members`: `kind`, `name`, `title`, `url` (the page of the name, or the first overload without
-`member-pages`), `type` (the declaring type, a type reference) and `overloads`, its members.
+An item of `members`: `kind`, `name` (without the target type for conversions: `implicit operator`), `title`, `url`
+(the page of the name, or the first overload without `member-pages`), `type` (the declaring type, a type reference) and
+`overloads`, its members.
 
 Parameters: `name`, `type` (a type reference), `modifier` (`ref`, `out`, `in`, `ref readonly`, `params`, `this`),
 `defaultValue` (`"widget"`, `Color.Red`, `null`, `default`) and `description`. Type parameters: `name`, `variance`

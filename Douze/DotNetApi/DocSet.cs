@@ -1,4 +1,5 @@
-﻿using System.Xml;
+﻿using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 
 namespace Douze.DotNetApi;
@@ -65,14 +66,50 @@ internal sealed class DocSet
     public XElement? Find(string id) => _members.GetValueOrDefault(Normalize(id));
 
     /// <summary>
-    /// An ID with the type arguments of an explicit implementation's name separated by <c>,</c>, as the C# compiler
-    /// writes them: the documentation of .NET writes <c>@</c> (<c>IEquatable{System#Int32@System#Int32}</c>).
+    /// An ID with the type arguments of an explicit implementation's name in <c>{}</c> and separated by <c>,</c>, as
+    /// the C# compiler writes them, and <c>nint</c> and <c>nuint</c> as their types: the documentation of .NET also
+    /// writes <c>@</c> (<c>IEquatable{System#Int32@System#Int32}</c>), <c>&lt;&gt;</c>
+    /// (<c>IBinaryInteger&lt;System#Byte&gt;</c>) and <c>System#IntPtr</c> where the compiler keeps <c>nint</c>.
     /// </summary>
     internal static string Normalize(string id)
     {
         var end = id.IndexOfAny(['(', '~']);
         var name = end < 0 ? id : id[..end];
-        return name.Contains('@') ? name.Replace('@', ',') + (end < 0 ? "" : id[end..]) : id;
+
+        if (name.AsSpan().IndexOfAny('@', '<', '>') < 0 && !name.Contains("nint", StringComparison.Ordinal) && !name.Contains("nuint", StringComparison.Ordinal))
+        {
+            return id;
+        }
+
+        name = name.Replace('@', ',').Replace('<', '{').Replace('>', '}');
+        name = ReplaceTypeArgument(ReplaceTypeArgument(name, "nint", "System#IntPtr"), "nuint", "System#UIntPtr");
+        return name + (end < 0 ? "" : id[end..]);
+    }
+
+    /// <summary>
+    /// Replaces a type argument of a name (between <c>{</c> or <c>,</c> and <c>,</c> or <c>}</c>).
+    /// </summary>
+    private static string ReplaceTypeArgument(string name, string argument, string replacement)
+    {
+        var builder = new StringBuilder(name.Length + 16);
+        var i = 0;
+
+        while (i < name.Length)
+        {
+            if ((name[i] is '{' or ',') && string.CompareOrdinal(name, i + 1, argument, 0, argument.Length) == 0
+                && i + 1 + argument.Length < name.Length && name[i + 1 + argument.Length] is ',' or '}')
+            {
+                builder.Append(name[i]).Append(replacement);
+                i += 1 + argument.Length;
+            }
+            else
+            {
+                builder.Append(name[i]);
+                i++;
+            }
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>

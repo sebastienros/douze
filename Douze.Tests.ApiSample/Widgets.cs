@@ -33,7 +33,7 @@ namespace Contoso.Widgets
         /// <summary>The name of a widget created without one.</summary>
         public const string DefaultName = "widget";
 
-        /// <summary>The largest size.</summary>
+        /// <summary>The largest size, checked by <see cref="Hidden"/> and <see cref="InternalThing"/>.</summary>
         public static readonly int MaxSize = 100;
 
         private int _width;
@@ -233,6 +233,13 @@ namespace Contoso.Widgets
         protected override void OnChanged()
         {
         }
+
+#pragma warning disable CS0628 // A protected type in a sealed class, which the API does not list.
+        /// <summary>Not visible: the class is sealed.</summary>
+        protected class Part
+        {
+        }
+#pragma warning restore CS0628
     }
 
     /// <summary>A color.</summary>
