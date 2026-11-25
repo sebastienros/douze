@@ -8,7 +8,7 @@ namespace Douze.Bench;
 
 /// <summary>
 /// A site of the image features: JPEG photos (1600x1200, gradients with a quarter of every row noise, quality 85, about
-/// 1.2 MB each, the set of the first image benchmark) and PNG screenshots (1440x900, flat panels) through the
+/// 0.5 MB each) and PNG screenshots (1440x900, flat panels) through the
 /// <c>images</c>, <c>image-map</c> and <c>pictures</c> steps (640 and 1280 wide WebP), and Markdown pages that show
 /// them, each with a social image (<c>social-image</c>: an SVG card with a gradient, shapes and an inlined PNG logo,
 /// and two text blocks with a font file). The content only depends on the counts, so two generations are identical.
