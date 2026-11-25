@@ -266,11 +266,15 @@ internal sealed class ImageProcessor
                     var (r, g, b, a) = colors[i];
 
                     // 72 dpi: a font size in points is in pixels. The text wraps at the block's width and is aligned in it.
+                    // Lines are the font's line height apart (ascender, descender and line gap), as browsers and Pango
+                    // space them, not one em.
+                    var metrics = font.FontMetrics;
                     var options = new RichTextOptions(font)
                     {
                         Origin = new System.Numerics.Vector2(block.X, block.Y),
                         WrappingLength = block.Width,
                         Dpi = 72,
+                        LineSpacing = metrics.HorizontalMetrics.LineHeight > 0 ? metrics.HorizontalMetrics.LineHeight / (float)metrics.UnitsPerEm : 1,
                         TextAlignment = block.Align switch
                         {
                             "center" or "centre" => TextAlignment.Center,

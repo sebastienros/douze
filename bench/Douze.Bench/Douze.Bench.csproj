@@ -6,4 +6,9 @@
     <RootNamespace>Douze.Bench</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- The images of the image site (ImageSite); the Six Labors license key covers this assembly (AGENTS.md). -->
+    <PackageReference Include="SixLabors.ImageSharp" />
+  </ItemGroup>
+
 </Project>

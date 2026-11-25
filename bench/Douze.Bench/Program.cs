@@ -9,6 +9,9 @@ const string Usage = """
       api-reference --data <dir> --out <dir> [--mode full|data]
                     generates a site that renders the pages of a real-world API reference from its JSON data
                     (bench/fetch-api-data.sh fetches the data); --mode data writes the data and a single page
+      images        --out <dir> [--photos 200] [--screenshots 100] [--cards 100] [--font <file.ttf>]
+                    generates a site of JPEG photos and PNG screenshots through the images, image-map and pictures
+                    steps, and pages with a social image each (an SVG card and two text blocks)
       run           --site <dir> --out <dir> [--douze <path>] [--repeat 3] [--label <text>] [--cache clean|warm|edit|tag]
                     [-- <douze options>]
                     builds the site with the douze binary (default: tool-out/douze) and prints a Markdown table row;
@@ -38,6 +41,9 @@ try
                 "data" => true,
                 var other => throw new BenchException($"--mode must be 'full' or 'data', not '{other}'"),
             });
+            return 0;
+        case "images":
+            ImageSite.Generate(options.Required("out"), options.Int("photos", 200, minimum: 0), options.Int("screenshots", 100, minimum: 0), options.Int("cards", 100, minimum: 0), options.Get("font"));
             return 0;
         case "run":
             return await Runner.RunAsync(

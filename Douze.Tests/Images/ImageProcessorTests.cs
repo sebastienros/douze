@@ -196,6 +196,28 @@ public class ImageProcessorTests
     }
 
     [Fact]
+    public void LinesAreTheFontsLineHeightApart()
+    {
+        var path = TestImages.FontFile();
+        Assert.SkipWhen(path == null, "no font file on this machine");
+
+        var images = ImageProcessor.Create();
+        var bytes = File.ReadAllBytes(path!);
+        var font = new FontSource(bytes, Douze.Workflow.Hash128.Of(bytes));
+        var family = images.Fonts.Resolve("x 10", font);
+        var lineHeight = family.FontMetrics.HorizontalMetrics.LineHeight / (float)family.FontMetrics.UnitsPerEm * 100;
+        var background = images.Rasterize("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"><rect width=\"10\" height=\"10\"/></svg>", 400, 400);
+
+        // Two lines of a bar-like glyph: the second starts a line height below the first.
+        var png = images.Compose(background, [new TextBlock("I\nI", $"{family.Family.Name} 100", font, 0, 0, 400, 400, "#fff", "left")]);
+
+        using var image = TestImages.Decode(png);
+        var rows = Enumerable.Range(0, 400).Where(y => Enumerable.Range(0, 400).Any(x => image[x, y].R > 128)).ToArray();
+        var second = rows.First(y => y > rows[0] + 10 && !rows.Contains(y - 1));
+        Assert.InRange(second - rows[0], lineHeight - 2, lineHeight + 2);
+    }
+
+    [Fact]
     public void ColorsAreValidated()
     {
         Assert.Equal((255, 0, 0, 255), ImageProcessor.ParseColor("#f00"));

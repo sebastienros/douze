@@ -40,15 +40,15 @@ internal sealed class Arguments
 
     public string Required(string name) => Get(name) ?? throw new BenchException($"--{name} is required");
 
-    public int Int(string name, int defaultValue)
+    public int Int(string name, int defaultValue, int minimum = 1)
     {
         if (Get(name) is not { } value)
         {
             return defaultValue;
         }
 
-        return int.TryParse(value, CultureInfo.InvariantCulture, out var result) && result > 0
+        return int.TryParse(value, CultureInfo.InvariantCulture, out var result) && result >= minimum
             ? result
-            : throw new BenchException($"--{name} must be a positive integer, not '{value}'");
+            : throw new BenchException(minimum == 1 ? $"--{name} must be a positive integer, not '{value}'" : $"--{name} must be an integer from {minimum}, not '{value}'");
     }
 }
