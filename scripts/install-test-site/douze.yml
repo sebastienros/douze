@@ -1,5 +1,5 @@
-# The default workflow with the highlight step: the smoke test of the packages checks that the native library the image
-# features load (libvips) is found next to the binary, and that code blocks are highlighted.
+# The default workflow with the highlight step: the smoke test of the packages checks that the image features (compiled
+# ahead of time) encode a variant, and that code blocks are highlighted.
 steps:
   pages:     { inputs: ["**", "!douze.yml"], uses: frontmatter }
   permalink: { needs: pages, uses: permalink }
