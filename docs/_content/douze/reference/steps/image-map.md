@@ -49,7 +49,7 @@ site:
 
 steps:
   pages:
-    inputs: ["docs/**", "!docs/**/*.{png,jpg,jpeg,webp,avif,gif,svg}"]
+    inputs: ["docs/**", "!docs/**/*.{png,jpg,jpeg,webp,gif,svg}"]
     uses: frontmatter
   permalink:
     needs: pages
@@ -60,7 +60,7 @@ steps:
     needs: permalink
     uses: markdown
   images:
-    inputs: "docs/**/*.{png,jpg,jpeg,webp,avif,gif,svg}"
+    inputs: "docs/**/*.{png,jpg,jpeg,webp,gif,svg}"
     uses: images
   image-map:
     needs: images

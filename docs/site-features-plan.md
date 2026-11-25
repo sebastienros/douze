@@ -84,8 +84,8 @@ The decision for each feature, with the reason, is in its subsection and summari
 **Native tools first.** When a feature is delegated to an executable, a fast native tool is preferred over a Node
 script when one exists with the fidelity needed and builds for macOS, Linux and Windows on x64 and arm64: the search
 indexer (a native binary), the JavaScript bundler (esbuild, a Go binary), the CSS bundler and minifier (lightningcss,
-Rust), SVG rasterization (libvips through NetVips in the tool itself, 3.8; `resvg` is the standalone alternative),
-image processing (libvips). Node stays where it is the only faithful option: the highlighter of 3.7 (the Expressive
+Rust). SVG rasterization and image processing need no tool at all: they are managed code in the tool itself
+(ImageSharp, 3.8). Node stays where it is the only faithful option: the highlighter of 3.7 (the Expressive
 Code engine's frames, markers and collapsible sections are the site's rendering contract, and twoslash needs the
 TypeScript compiler; a TextMate engine through a native library or tree-sitter would highlight but not reproduce that
 output) and any tool that only exists as a JavaScript library. Each choice and its reason is recorded in 5.4.
@@ -148,9 +148,11 @@ Douze/
     ShortcodeModel.cs            the FluidValue a shortcode renders with (args, body, source)
     DouzeParser.cs               FluidParser subclass exposing the argument list parser to the shortcode tags (3.1)
   Images/
-    ImageProcessor.cs            NetVips bridge: resize, convert, read size, strip metadata (3.8)
+    ImageProcessor.cs            the ImageSharp engine: resize, convert, read size, strip metadata, compose text (3.8)
+    SvgRenderer.cs               rasterizes the SVG of social images (a static subset) on ImageSharp.Drawing (3.8)
+    FontResolver.cs              font descriptions of text blocks, with SixLabors.Fonts (3.8)
     ImageVariant.cs              a requested output (width, format, quality) and its file name
-    ImageFormats.cs              extension, content type and NetVips saver per format
+    ImageFormats.cs              extension, content type and signature per format, SVG and GIF sizes
   Workflow/
     Steps/HeadingsStep.cs        uses: headings (3.3)
     Steps/LocalizeStep.cs        uses: localize (3.6)
@@ -274,7 +276,7 @@ like an include does, with the same dependency recording.
 
 | Package | Why | AOT |
 |---|---|---|
-| `NetVips` (latest stable) and `NetVips.Native.<rid>` per tool package RID | Image resizing and format conversion (3.8), text rendering for social images (3.8) | Verified empirically in 3.8; a missing native library is recorded by the module initializer and reported by the first image call, so a tool package without it still builds sites that use no image feature |
+| `SixLabors.ImageSharp` 4, `SixLabors.ImageSharp.Drawing` 3, `SixLabors.Fonts` 3 (versions moved together) | Image resizing and format conversion (3.8), SVG rasterization and text rendering for social images (3.8) | Managed, AOT compatible, no native library; the build checks a Six Labors license key (`sixlabors.lic`, `AGENTS.md`) |
 
 No other package. HTML scanning (headings, links, code fences) is done with small hand written scanners over the
 regular markup Markdig emits, not an HTML parser: the input is Markdig's output and the layouts of a site, never
@@ -935,31 +937,43 @@ printing: overload counts, alias lines, union order).
 ### 3.8 Images and social images
 
 **What the site needs.** About 680 images imported by the articles (550 PNG, 110 SVG, a few GIF and WebP),
-rendered with width and height attributes (no layout shift), hashed file names, WebP or AVIF variants and lazy
+rendered with width and height attributes (no layout shift), hashed file names, WebP variants and lazy
 loading; a light and a dark variant of the same figure (160 usages); and about 540 social (Open Graph) images, a
 title and a description laid out over a branded background, one per page of the root locale.
 
-**NetVips under native AOT (verified 2026-10-21, `osx-arm64`, .NET 11 RC 2 SDK).** `NetVips` 3.2.0 declares
-`IsAotCompatible`; it binds libvips with classic `DllImport`s (no reflection), publishes with zero IL warnings with
-the standard GC and with the Satori GC, and its results are identical to the JIT run. `NetVips.Native` 8.18.7 ships
-one statically linked library per RID (`libvips.42.dylib`, `libvips.so.42`, `libvips-42.dll`; packages exist for
-`osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, `linux-musl-x64`, `linux-musl-arm64`, `win-x64`, `win-arm64`,
-`win-x86`), 7 to 8.3 MB per package, 16 to 20 MB on disk, depending only on OS libraries; `dotnet pack -r <rid>
--p:PackTool=true` packs it next to the binary (a tool package grows by 7 to 8 MB; the AOT binary by 0.7 MB).
-With the library missing, the process still starts (the module initializer records the `DllNotFoundException`) and
-the first image call throws, so a build without image features never needs it. Loaders: JPEG, PNG, WebP, GIF, TIFF,
-HEIF/AVIF, SVG (librsvg), no JPEG XL or PDF; savers: JPEG, PNG, WebP, AVIF/HEIF, GIF, TIFF. Pango text rendering
-(`Image.Text` with `width` for wrapping, markup, `fontfile:` for a bundled `.ttf`) and `Composite2` work, which is
-what social images need. Throughput: about 400 thumbnails per second (1600x1200 JPEG to 400 px WebP) on 14 cores with
-`Concurrency = 1` per operation and `Parallel.For`; 216 MB peak RSS for the test. Details and commands: the check's
-report, summarized in `bench/README.md` by the phase that adopts it.
+**Engine.** The image features first shipped on NetVips (libvips, a native library per RID in the tool packages,
+SVG through librsvg and text through Pango; its AOT check of 2026-10-21 is in the history of this document).
+They now run on ImageSharp 4, ImageSharp.Drawing 3 and SixLabors.Fonts 3, fully managed: no native library ships
+with the tool, no requirement is checked (`douze doctor` lists none for the image steps), and the features work on
+every platform the tool runs on, the CoreCLR `any` package included. ImageSharp has no AVIF codec, so AVIF is
+neither a source nor a variant format: sources are PNG, JPEG, WebP, GIF and SVG, variants WebP (lossy), PNG and
+JPEG, and GIF and SVG are copied as they are. librsvg and Pango have no managed equivalent in the Six Labors
+libraries: `SvgRenderer` rasterizes the static subset of SVG that card backgrounds use, and `FontResolver` reads the
+font descriptions of the text blocks.
 
-Rules the bridge follows (from the check): `NetVips.Cache.Max = 0` and `NetVips.Concurrency = 1` (the engine
-parallelizes per unit); `Image.ThumbnailBuffer` (shrink on load, auto rotation, premultiplied alpha) rather than
-`Resize`; a thumbnail result is a sequential pipeline written once (one `Thumbnail` per output); `keep: none` on
-every save (strip EXIF, XMP and ICC: 446 bytes against 194 for a small WebP); a synthesized background is copied with
-`interpretation: Srgb` before compositing; VIPS warnings are captured with `Log.SetLogHandler` and forwarded as
-`warn` messages rather than left on stderr.
+Rules the engine follows: one thread per operation (`Configuration.MaxDegreeOfParallelism = 1`: the engine
+parallelizes per unit); a variant is scaled on load where the decoder can (JPEG, `DecoderOptions.TargetSize`),
+auto rotated by its EXIF orientation, resized with Lanczos 3 in premultiplied alpha, converted to sRGB from an
+embedded ICC profile, never upscaled, and saved with `SkipMetadata` (no EXIF, XMP or ICC); JPEG with alpha is
+flattened on white; PNG is written as 8 bit truecolor (RGB or RGBA), since the source's palette or bit depth would
+not fit a resized image; variants and rasters are memoized for the build (rasters within a 256 MB budget).
+
+**SVG subset** (`SvgRenderer`, documented in `docs/_content/douze/reference/steps/social-image.md`, Supported SVG):
+`svg` (nested), `g`, `a`, `switch` (first child), `use` (of elements and symbols), the basic shapes, `path` and
+`image` (data URIs: the step inlines relative paths); `transform`, `viewBox`, `preserveAspectRatio`; fills and
+strokes with their properties; colors (hex, `rgb()`, `hsl()`, names, `currentColor`); linear and radial gradients
+(units, transforms, spread methods, focal points, `href` inheritance); opacity; presentation attributes, `style`
+attributes and `<style>` sheets of type, class and id selectors. `text`, `tspan`, `textPath`, `clip-path`, `mask`,
+`filter`, markers, pattern paints, `foreignObject`, images that are not inlined and other selectors are errors with
+the element's line (`SVG <text> (line 3): <text> is not supported; lay out text with the 'text' blocks of the
+step`); animation elements and foreign namespace elements are ignored.
+
+**Font descriptions** (`FontResolver`): `[family list] [style words] [size]`. The families are tried in order, each
+as the family of the block's font file, then among the system's fonts (`sans`, `serif`, `monospace` are generic);
+the font file is used when none is found, and without one the page fails (`font '...' not found; set 'fontfile' to a
+font file of the site, or install the font`). Style words: `italic`, `oblique`, weights `thin` to `black`
+(`semibold` and above are bold; a weight is first tried as part of the family name, `Outfit Light`). Size in pixels,
+16 by default.
 
 **Design: the `image` tag.** In a page or a layout:
 
@@ -1002,7 +1016,7 @@ page still references with its old name until that page re-renders.
 step over image files produces the variants and a map step over HTML rewrites the tags:
 
 ```yaml
-images:    { inputs: "docs/**/*.{png,jpg,jpeg,webp,avif,gif,svg}", uses: images, with: { widths: [640, 1280], formats: [webp], output: assets/images } }
+images:    { inputs: "docs/**/*.{png,jpg,jpeg,webp,gif,svg}", uses: images, with: { widths: [640, 1280], formats: [webp], output: assets/images } }
 image-map: { needs: images, uses: image-map }               # contributes images[source url]
 pictures:  { needs: [markdown, image-map], uses: pictures }  # rewrites <img src> to <picture> with width and height
 ```
@@ -1033,59 +1047,59 @@ page's image url with the same `output` template through the `social_image_url` 
 (`{{ page | social_image_url: "og{{ locale_url }}index.png" }}`, `Filters/ImageFilters.cs`; `locale_url` is
 normalized, so the result is `/og/docs/x/index.png`). For each page not skipped (`skip` is a Liquid expression rendered with the page's model): renders `template` (a
 Liquid template producing SVG: logos, gradients, badges, anything static or data driven) with the page's model,
-rasterizes it with libvips at `width` x `height` (the SVG is the background; it may reference images of the source
-tree by relative path, which the step inlines as data URIs before rasterizing, recording them as dependencies),
-renders each `text` block with Pango (`Image.Text(value, font, fontfile, width, height clipped, align, rgba)`,
-colored, composited at `x`, `y`), encodes PNG, and emits it at `output` (a Liquid template over the page's model). Cost: about 20 to 40 ms per image; 540 images
-in a few seconds across cores. `fontfile` is required on Linux CI (no system fonts in containers): the step warns
-when a block has a `font` family that fontconfig cannot resolve and no `fontfile`.
+rasterizes it with `SvgRenderer` at `width` x `height` (the SVG is the background; it may reference images of the
+source tree by relative path, which the step inlines as data URIs before rasterizing, recording them as
+dependencies), draws each `text` block over it (wrapped at `width`, clipped at `height`, aligned, colored, at `x`,
+`y`, its font resolved by `FontResolver`), encodes PNG, and emits it at `output` (a Liquid template over the page's model). Cost: about 20 to 40 ms per image; 540 images
+in a few seconds across cores. `fontfile` is needed on Linux CI (no system fonts in containers): a block whose
+families are not found fails the page when it has no `fontfile`.
 
 `Douze/Images/ImageProcessor.cs`
 
 ```csharp
 internal sealed class ImageProcessor
 {
-    public static ImageProcessor Create();   // throws DouzeException with the install hint when libvips is missing (ModuleInitializer.Exception)
-    public ImageInfo Probe(ReadOnlyMemory<byte> source);                                   // width, height, format, hasAlpha, pages
-    public ProcessedImage Variant(ReadOnlyMemory<byte> source, ImageVariant variant);   // ThumbnailBuffer + save (keep: none); bytes, width, height
-    public ReadOnlyMemory<byte> Rasterize(string svg, int width, int height);              // svgload at scale
-    public ReadOnlyMemory<byte> Compose(ReadOnlyMemory<byte> background, IReadOnlyList<TextBlock> blocks);   // Pango text layers, PNG
+    public static ImageProcessor Create();
+    public ImageInfo Probe(ReadOnlyMemory<byte> source);                                       // width, height, format, hasAlpha
+    public Task<ProcessedImage> VariantAsync(ReadOnlyMemory<byte> source, ImageVariant variant);   // memoized for the build
+    public ProcessedImage Encode(ReadOnlyMemory<byte> source, ImageVariant variant);            // not memoized (the images step)
+    public Raster Rasterize(string svg, int width, int height);                               // SvgRenderer, memoized
+    public ReadOnlyMemory<byte> Compose(Raster background, IReadOnlyList<TextBlock> blocks);   // text drawn over a copy, PNG
 }
 
 internal readonly record struct ImageVariant(int? Width, string Format, int Quality);
-internal sealed record TextBlock(string Text, string Font, string? FontFile, int X, int Y, int Width, int Height, string Color, string Align);
+internal sealed record FontSource(ReadOnlyMemory<byte> Bytes, Hash128 Hash);
+internal sealed record TextBlock(string Text, string Font, FontSource? FontFile, int X, int Y, int Width, int Height, string Color, string Align);
 internal readonly record struct ImageInfo(int Width, int Height, string Format, bool HasAlpha);
 internal sealed record ProcessedImage(ReadOnlyMemory<byte> Bytes, int Width, int Height);
 ```
 
-**As implemented** (phase S4). `Variant` returns the size with the bytes: the markup needs the height libvips rounds
-to. `BuildContext.Images` is an `ImageProcessor` created on first use that throws the install hint, rather than a
-nullable property. The `image` tag has its own small argument parser (Parlot), since Fluid's argument list has no list
+**As implemented** (phase S4, then the move to ImageSharp). A variant returns its size with the bytes: the markup
+needs the height the resize rounds to. `BuildContext.Images` is an `ImageProcessor` created on first use. The `image` tag has its own small argument parser (Parlot), since Fluid's argument list has no list
 literal (`widths: [640, 1280]`); values are strings, numbers, booleans, lists and variables. `write` waits for the
 first writer of an identical file before recording it, so that a replayed unit always finds the file it depends on.
 `WorkflowSchema` has no table of built-in steps: registering the steps in `BuiltInSteps` is enough. `liquid` and
 `layout` fold `MarkdownOptions.Hash` into their cache version, since the tag reads the image defaults. Assets paths
-(3.9) as sources, the fontconfig warning for an unresolved family, and the Sample's docs section are not done yet.
+(3.9) as sources and the Sample's docs section are not done yet.
 
-**Tests** (`Douze.Tests/Images/`, `Liquid/Tags/ImageTagTests.cs`, `Steps/SocialImageStepTests.cs`; skipped with
-`Assert.Skip` when libvips is not available, and CI runs them on `linux-x64` and `osx-arm64`): variants have the
-requested widths and formats, names carry the hash, metadata stripped (output smaller than a `keep: all` save);
+**Tests** (`Douze.Tests/Images/`, `Liquid/Tags/ImageTagTests.cs`, `Steps/SocialImageStepTests.cs`; they run
+everywhere, with no native library): variants have the
+requested widths and formats, names carry the hash, metadata stripped;
 `<picture>` markup with `srcset`, `sizes`, width and height of the fallback; single `<img>`; SVG copied with size
 from `viewBox`; light and dark sources; two pages using one image produce one output file; source edit re-renders
 the page and renames the variant (`EarlyCutoffTests`); second build processes nothing; `image_url` and `image_size`;
 `images` and `pictures` steps on a page with Markdown images; social image rendered from an SVG template with two
 text blocks (checked by size and by sampling a few pixels), `skip`, `output` template, `social_image_url` filter,
-missing font file error; missing libvips gives the install hint and fails only the units that need it.
+missing font file error; the SVG subset and its errors (`SvgRendererTests`); font descriptions (`FontResolverTests`).
 
-**Acceptance.** Shared criteria plus: the tool packages for every RID include `NetVips.Native.<rid>` (the library
-is loaded by the module initializer at process start, harmless when missing: the first image call reports it); the `any`
-(CoreCLR) package has no native library and reports the hint; the AOT publish with the Satori GC passes the image
-tests; `bench/README.md` records the variants per second on the benchmark machine. The Sample's docs section uses the
+**Acceptance.** Shared criteria plus: the tool packages carry no native library and the image features work in
+every one of them, the `any` (CoreCLR) package included; the AOT publish with the Satori GC passes the image tests; `bench/README.md` records the variants per second on the benchmark machine. The Sample's docs section uses the
 `image` tag and the `social-image` step.
 
-**Where it lives and why.** Built-in (C# with NetVips): the check shows libvips works under AOT with both GCs, is
-fast, and covers resizing, formats, SVG and text layout; a Node step with `sharp` would need the same native library
-plus Node, and `satori` only adds flex layout over Pango's wrapping, which the SVG template plus text blocks cover.
+**Where it lives and why.** Built-in (C# with ImageSharp): managed, so it works on every platform without a native
+library in the packages, AOT compatible, and covers resizing, formats, SVG backgrounds and text layout; a Node step
+with `sharp` would need a native library plus Node, and `satori` only adds flex layout over the wrapping of the text
+blocks, which the SVG template plus text blocks cover.
 The decision for a site that must keep its exact `satori` output is a `batch` command step over the pages (engine plan
 5.2), which stays available; the migration plan of a site decides.
 
@@ -1919,7 +1933,7 @@ exercises.
 | Navigation | Liquid filters over data | pure functions, data stays YAML |
 | Locales | built-in step + filters | copies are files; `collections.urls` makes it precise |
 | Code highlighting, twoslash | command step contract (worker) | grammars, themes, TypeScript compiler, exact output parity |
-| Images, social images | built-in (NetVips) | verified under AOT, fast, covers resize, formats, SVG, text |
+| Images, social images | built-in (ImageSharp) | managed, no native library, covers resize, formats, SVG, text |
 | Asset fingerprinting | built-in reduce step + filters | the map must exist before pages render |
 | Git dates | built-in step running `git` once | a git library is native or a project |
 | Link validation | two built-in steps | all paths and anchors are known in the build |
@@ -1931,7 +1945,7 @@ exercises.
 | Search | command step (batch, native binary) | indexer and client are one product |
 | CSS bundling and minification | command step (batch, lightningcss: native) | not a site generator's job |
 | JavaScript bundling | command step (batch, esbuild: native) | not a site generator's job |
-| SVG rasterization | built-in (libvips) or resvg | native either way; libvips is already in the tool |
+| SVG rasterization | built-in (`SvgRenderer` on ImageSharp.Drawing) | the static subset of card backgrounds; no native library |
 
 ---
 
@@ -1975,11 +1989,10 @@ Each item has a recommended answer; implementers use it unless the user decides 
    its id would be deduplicated against the first page only. Recommended: document that cached fragments must not
    contain headings; `headings` runs before `layout`, where fragments live, so page bodies are unaffected.
 
-4. **Native library in the tool packages** adds 7 to 8 MB per RID package and 16 to 20 MB on disk; Linux containers
-   without fonts need `fontfile` for social images; `linux-musl` and `win-x86` have no tool package today (the
-   `ToolPackageRuntimeIdentifiers` list stays as it is). Recommended: ship the library in every RID package (a tool
-   that cannot process images is a surprise), keep `any` without it with the hint; verify Linux text rendering in S4
-   on CI (the check ran on macOS only).
+4. **Image engine.** Resolved by moving to ImageSharp: no native library in the tool packages, so every package,
+   `any` included, processes images. Linux containers without fonts need `fontfile` for social images; the SVG of a
+   social image is limited to the subset `SvgRenderer` draws (no text, clipping, masks, filters or patterns), which
+   fails with the element's line rather than rendering differently; AVIF is not available (no ImageSharp codec).
 
 5. **Front matter schemas.** The target site validates front matter with a schema library today. `with.require`
    covers presence; types and enums are not checked. Recommended: not in this plan; a `schema:` section mapping folders
@@ -1998,8 +2011,8 @@ Each item has a recommended answer; implementers use it unless the user decides 
    worker keeps the fence and warns instead). Recommended: keep the contract; it is the engine's worker protocol with
    no new message types.
 
-9. **Social images without `satori`.** Pango wraps text; it does not do flex layout, emoji fonts or gradients
-   (the SVG template does gradients). Recommended: the built-in step, with a `batch` command step on `satori` as the
+9. **Social images without `satori`.** The text blocks wrap text; they do not do flex layout or emoji fonts (the
+   SVG template does gradients). Recommended: the built-in step, with a `batch` command step on `satori` as the
    documented alternative for a site that must keep pixel parity with a previous renderer.
 
 10. **`git log` on a large repository** with `--name-status` for every commit is seconds; a shallow CI clone gives

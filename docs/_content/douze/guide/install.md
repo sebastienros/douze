@@ -105,9 +105,8 @@ In PowerShell, pass them to the script block:
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/sebastienros/douze/main/install.ps1))) -Version 1.0.0-preview.36
 ```
 
-The installed files are a folder per version, `<install dir>/<version>`, with the `douze` executable and the native
-library it loads (libvips, for images). `<install dir>/bin` is a link to the
-current version.
+The installed files are a folder per version, `<install dir>/<version>`, with the `douze` executable.
+`<install dir>/bin` is a link to the current version.
 
 ## Install as a .NET tool
 
@@ -135,8 +134,6 @@ tar -xzf douze-<version>-linux-x64.tar.gz
 export PATH="$PWD/douze-<version>-linux-x64:$PATH"
 ```
 
-Keep the files of the folder together: `douze` loads the native libraries next to it.
-
 ## Check the installation
 
 Open a new terminal and run:
@@ -150,11 +147,12 @@ not on your `PATH` yet: open a new terminal, or run the `export PATH=...` line t
 
 `douze --help` lists the commands and options; the [command line reference](../reference/cli.md) describes them.
 
-### Image features and libvips
+### What else the steps need
 
-The image features (the `image` tag, the `images` and `social-image` steps) use [libvips](https://www.libvips.org).
-It ships with Douze, next to the executable, in every native build and in the .NET tool packages: there is nothing
-else to install. `douze doctor` checks what the steps of a site need, libvips included, without building it:
+The image features (the `image` tag, the `images` and `social-image` steps) and syntax highlighting are built into
+Douze: there is nothing else to install. Some steps need a tool or a program, such as the language servers of the
+code hover steps or the program of a command step. `douze doctor` checks what the steps of a site need without
+building it:
 
 ```sh
 douze doctor

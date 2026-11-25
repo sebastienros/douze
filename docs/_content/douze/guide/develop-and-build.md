@@ -174,7 +174,7 @@ jobs:
 
 - Caching the `.douze` folder between runs makes CI builds incremental, and keeps the tools that steps download.
   Without it, every CI build is a full build, which is correct, only slower.
-- `douze doctor` checks what the steps need (libvips, tools, commands) without building, and exits with `1` when
+- `douze doctor` checks what the steps need (tools, commands) without building, and exits with `1` when
   something is missing.
 - `douze tools install` downloads the tools of the workflow ahead of time, for a cached or offline build.
 

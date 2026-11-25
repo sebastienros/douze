@@ -9,7 +9,7 @@ description: Every command and option of the douze command line, with defaults, 
 douze [build] [options]          build once (default command)
 douze watch [options]            build, then rebuild on changes
 douze serve [options]            watch + dev server with live reload
-douze doctor [options]           check what the steps need (libvips, tools, commands) without building
+douze doctor [options]           check what the steps need (tools, commands) without building
 douze tools install [options]    download the tools the steps need into the cache folder
 douze worker-helper              print douze-worker.mjs to stdout
 ```
@@ -23,7 +23,7 @@ douze worker-helper              print douze-worker.mjs to stdout
 | `build` | Builds the site once. This is the default: `douze -s site` is `douze build -s site`. |
 | `watch` | Builds the site, then builds again after every change of its sources, until Ctrl+C. |
 | `serve` | Does what `watch` does and serves the output folder on `http://localhost:8080/` with live reload. |
-| `doctor` | Loads the workflow and checks the requirements of every step (libvips, downloaded tools, the executables of command steps) without building. |
+| `doctor` | Loads the workflow and checks the requirements of every step (downloaded tools, the executables of command steps) without building. |
 | `tools install` | Downloads every tool the steps of the workflow download on first use into the tools folder of the cache. |
 | `worker-helper` | Prints `douze-worker.mjs`, the Node helper for [worker command steps](commands.md#the-worker-helper), to stdout. |
 
@@ -88,7 +88,6 @@ Prints one row per requirement of the workflow's steps, then a summary:
 
 ```text
 STEP      REQUIREMENT       STATUS    DETAILS
-images    libvips           ok        8.18.7
 twoslash  typescript 7.0.2  download  is not installed: it is downloaded for linux-x64 on first use, or now by 'douze tools install'
 minify    esbuild           missing   is not on PATH: install esbuild and add its folder to PATH, or change the 'run' line of step 'minify'
 

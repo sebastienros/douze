@@ -356,7 +356,7 @@ labels, else the default locale's, else its first one. A bare url is its own lab
 ```
 
 Makes one variant of a source image, adds it to the outputs of the page, and returns its url
-(`/assets/images/hero-1200.<hash>.jpeg`). Arguments: `width`, `format`, `quality`, `output`. Without `width` or
+(`/assets/images/hero-1200.<hash>.jpg`). Arguments: `width`, `format`, `quality`, `output`. Without `width` or
 `format`, the first of the `markdown.images` defaults, else the source's own. An SVG or a GIF is copied as it is. The
 source is relative to the page's folder, or to the content folder when it starts with `/`. See
 [Images](../guide/images.md).
@@ -368,7 +368,7 @@ source is relative to the page's folder, or to the content folder when it starts
 ```
 
 `{ width, height }` of a source image, as displayed. Nothing is written; the source is a dependency of the page. A file
-that is not an image is an error: `'<src>' is not an image format douze reads (png, jpeg, webp, avif, gif, svg)`.
+that is not an image is an error: `'<src>' is not an image format douze reads (png, jpeg, webp, gif, svg)`.
 
 ### social_image_url
 
@@ -411,7 +411,7 @@ comma separated, positional or `name: value`; values are strings, numbers, `true
 | `theme` | `media` | `attribute` writes two elements with `data-theme="light"` and `data-theme="dark"` instead. |
 | `alt` | none | The `alt` attribute. |
 | `widths` | `markdown.images.widths`, else the source's width | Variant widths; never wider than the source. |
-| `formats` | `markdown.images.formats`, else the source's format | `webp`, `avif`, `png`, `jpeg`. |
+| `formats` | `markdown.images.formats`, else the source's format | `webp`, `png`, `jpeg`. |
 | `quality` | `markdown.images.quality`, else `80` | The quality of lossy formats. |
 | `output` | `markdown.images.output`, else `/assets/images/` | The folder of the variants. |
 | `sizes` | none | The `sizes` attribute. |
@@ -430,8 +430,7 @@ format at its largest width with `width` and `height`; one format gives a plain 
 
 Errors: `the image tag needs a source: {% image "path" %} or {% image light: "path", dark: "path" %}`,
 `the image tag takes one source; name the other arguments`, `the image tag takes a source or 'light', not both`,
-`image theme must be 'media' or 'attribute', not '<value>'`. Images other than SVG and GIF need libvips. See
-[Images](../guide/images.md).
+`image theme must be 'media' or 'attribute', not '<value>'`. See [Images](../guide/images.md).
 
 ### markdown
 

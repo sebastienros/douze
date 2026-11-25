@@ -19,7 +19,7 @@ migration code.
 | `Douze.Tests/` | The tests (xUnit v3) and their fixtures |
 | `Douze.Tests.FakeTool/` | A small program the command step tests run |
 | `Sample/` | A sample site that exercises most features |
-| `bench/` | Benchmarks of large sites and image processing ([Benchmarks](guide/benchmarks.md)) |
+| `bench/` | Benchmarks of large sites ([Benchmarks](guide/benchmarks.md)) |
 | `docs/` | This documentation site, built by Douze, and design documents |
 | `scripts/` | Maintenance scripts: the TextMate bundle, Sample output comparison, install script tests |
 | `install.sh`, `install.ps1` | The install scripts ([Installation](guide/install.md)) |
@@ -37,6 +37,12 @@ dotnet test
 Tests use xUnit v3 on Microsoft.Testing.Platform, which `global.json` opts into. The build treats warnings as errors
 and enforces the code style (`Common.props`).
 
+The image features use ImageSharp, whose build checks a Six Labors license key: a Debug build only warns without
+one, a Release build fails. The key is read from `sixlabors.lic` at the root of the repository: the free Six Labors
+community license that Douze applies for as an open source project, scoped to the assemblies of Douze (`douze` and
+`Douze.Bench`). Until it is committed, a Release build needs a key of your own in that file. A new project that
+references a Six Labors package needs its assembly name added to the key.
+
 Build the sample site with the working tree's Douze:
 
 ```bash
@@ -49,7 +55,8 @@ working tree, and diffs the two outputs: run it when a change should not change 
 ## Check the native AOT build
 
 Douze ships as a native AOT `dotnet tool`, and continuous integration smoke tests the AOT build of every pull request.
-Publish it and build the sample with it:
+Publish it (a Release build: it needs the license key of [Build and test](#build-and-test)) and build the sample
+with it:
 
 ```bash
 dotnet publish Douze -c Release -o tool-out

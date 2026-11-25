@@ -4,10 +4,11 @@ description: Responsive images with the image tag, the image_url and image_size 
 liquid: false
 ---
 
-Douze resizes and converts images at build time with [libvips](https://www.libvips.org), and writes the markup that
-goes with them: `<picture>`, `srcset`, `width` and `height`. You can do this in two ways. The `image` tag works in
-any template. Three workflow steps do the same for the plain `![alt](src)` images of Markdown pages. This page covers
-both, the filters, light and dark images, and what libvips is needed for.
+Douze resizes and converts images at build time, and writes the markup that goes with them: `<picture>`, `srcset`,
+`width` and `height`. Image processing is built into Douze: it works on every platform Douze runs on, with nothing to
+install. You can do this in two ways. The `image` tag works in any template. Three workflow steps do the same for the
+plain `![alt](src)` images of Markdown pages. This page covers both, the filters, light and dark images, and the
+formats.
 
 ## The image tag
 
@@ -28,13 +29,13 @@ both, the filters, light and dark images, and what libvips is needed for.
   gives a plain `<img>`, with a `srcset` when there are several widths.
 - Each variant is written to `/assets/images/` (`output`) as `<name>-<width>.<hash>.<ext>`. The hash is the variant's,
   so a changed image gets new urls and can be cached forever. A variant that several pages use is written once.
-- Variants are never wider than the source. EXIF, XMP and ICC metadata are stripped.
+- Variants are never wider than the source. EXIF, XMP and ICC metadata are stripped (see [Formats](#formats)).
 - `width` and `height` are always set, so the page does not shift while images load. `loading` is `lazy` and
   `decoding` is `async` unless you set them.
 - Any other named argument is an attribute (`data-zoom: true` writes `data-zoom`).
 
-Arguments take strings, numbers, `true`, `false`, lists and variables (`page.hero`). `formats` are `webp`, `avif`,
-`png` and `jpeg`, and `quality` defaults to 80.
+Arguments take strings, numbers, `true`, `false`, lists and variables (`page.hero`). `formats` are `webp`, `png`
+and `jpeg`, and `quality` defaults to 80.
 
 ### Defaults
 
@@ -66,7 +67,7 @@ theme attribute instead uses `theme: "attribute"`: the tag writes two elements, 
 ### SVG and GIF
 
 An SVG or a GIF is copied as it is, fingerprinted (`arch.ca50de10.svg`), with its size read from the file: an SVG's
-`width` and `height`, or its `viewBox`. These need no libvips.
+`width` and `height`, or its `viewBox`. They are never resized or converted.
 
 ## Filters
 
@@ -98,7 +99,7 @@ steps:
     needs: render
     uses: markdown
   images:
-    inputs: "_content/**/*.{png,jpg,jpeg,webp,avif,gif,svg}"
+    inputs: "_content/**/*.{png,jpg,jpeg,webp,gif,svg}"
     uses: images
     with:
       widths: [640, 1280]
@@ -134,21 +135,22 @@ steps:
 
 The `render` step of this workflow runs before `image-map`, so the Liquid of a page does not see `images`.
 
-## libvips
+## Formats
 
-Image processing uses libvips through NetVips. The native builds of Douze include it, next to the `douze` executable.
-Without it:
+Douze reads PNG, JPEG, WebP, GIF and SVG images. It makes variants of PNG, JPEG and WebP sources, in WebP (lossy),
+PNG or JPEG; SVG and GIF files are copied as they are. A file of another format fails the page or the unit that uses
+it: `'<src>' is not an image format douze reads (png, jpeg, webp, gif, svg)`.
 
-- a workflow with an `images` or `social-image` step fails before building, and says how to get libvips;
-- the `image` tag and the `image_url` and `image_size` filters fail only the pages that use them on an image other
-  than an SVG or a GIF.
+Each variant is:
 
-`douze doctor` checks it:
+- turned upright by the EXIF orientation of the source, so the `width` and `height` of the markup are the displayed
+  ones;
+- resized with a Lanczos filter, never wider than the source;
+- converted to sRGB when the source embeds a color profile, then stripped of its metadata;
+- in JPEG, flattened on white when the source has transparency; in PNG, 8-bit RGB, or RGBA when the source has
+  transparency.
 
-```
-STEP    REQUIREMENT  STATUS  DETAILS
-images  libvips      ok      8.18.7
-```
+`quality`, from 1 to 100, applies to WebP and JPEG.
 
 ## See also
 

@@ -29,8 +29,8 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 - **The build image** must use glibc: Douze does not run on musl distributions such as Alpine. It needs glibc 2.38 or
   later (Debian 13 "trixie", Ubuntu 24.04) and ICU, the `libicu` package (`libicu76` on Debian 13, `libicu74` on
-  Ubuntu 24.04). Without ICU, the install script stops with `the downloaded douze does not run`. libvips, for the
-  image steps, is in the Douze package.
+  Ubuntu 24.04). Without ICU, the install script stops with `the downloaded douze does not run`. The image steps
+  need nothing more, but a slim image has no fonts: give the text blocks of a `social-image` step a `fontfile`.
 - **The install script** needs `curl` (or `wget`) and `unzip`. `--install-dir /opt/douze` installs Douze outside the
   home folder, and `--no-modify-path` skips the shell profile; `ENV PATH` adds its `bin` folder instead. Add
   `--version <version>` to pin a version.

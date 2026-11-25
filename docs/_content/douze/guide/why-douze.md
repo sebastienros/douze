@@ -59,7 +59,7 @@ This documentation site is built with Douze and a workflow of its own: its sourc
 
 ### One binary
 
-The native executable contains everything the built-in steps need, including libvips for images and the TextMate
+The native executable contains everything the built-in steps need, including the image processing and the TextMate
 grammars for syntax highlighting. Tools that a step downloads on first use, such as Pagefind or the TypeScript
 language server, are pinned and verified, and `douze tools install` downloads them ahead of time. A site needs Node
 only when its own [command steps](command-steps.md) run Node scripts.
