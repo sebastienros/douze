@@ -569,6 +569,52 @@ per build:
   site with thousands of large variants), the better fix is a `FileContent` that reads the written output file instead
   of encoding again.
 
+### ImageSharp and Styml, 2026-11-25
+
+Douze moved from NetVips (libvips) to ImageSharp 4 (with ImageSharp.Drawing 3 and Fonts 3) for the image features, and
+from SharpYaml to Styml for YAML. Linux x64 cloud container, 4 cores, 15 GB, native AOT with the Satori GC, clean builds
+without the cache, `-p 4`. Three binaries:
+
+- **baseline**: `main` before the change (c9e9cf5), NetVips and SharpYaml, Release.
+- **Styml**: the Styml commit alone (ae8d95c, still NetVips), Release.
+- **ImageSharp**: both changes. ImageSharp's build fails in Release without a Six Labors license key (AGENTS.md), so this
+  binary is `dotnet publish -c Debug -p:Optimize=true` (the C# and native AOT compilers optimize; `DEBUG` keeps 13
+  `Debug.Assert`s). The Styml commit built both ways gives the same times (images-all 18.46 and 18.62 s, images-variants
+  17.01 and 16.90 s, images-cards 1.27 and 1.13 s).
+
+Image site (`Douze.Bench images`: 200 JPEG photos of 0.5 MB, 100 PNG screenshots, 100 social cards), three rounds
+interleaved, median wall (user CPU, peak RSS):
+
+| Scenario | baseline | Styml | ImageSharp |
+|---|---:|---:|---:|
+| `images-variants`: 300 sources to 640 and 1280 wide WebP | 17.01 s (61.1 s, 439 MB) | 17.20 s (62.1 s, 449 MB) | 18.93 s (72.6 s, 473 MB) |
+| `images-cards`: 100 social cards | 1.04 s (3.0 s, 139 MB) | 1.00 s (2.9 s, 141 MB) | 1.87 s (6.5 s, 154 MB) |
+| `images-all`: both | 17.93 s (64.7 s, 497 MB) | 17.87 s (63.8 s, 498 MB) | 20.46 s (78.0 s, 539 MB) |
+
+- **WebP effort.** ImageSharp's default effort (4 of 6) made the variants three times slower (51.7 s on
+  `images-variants`): its managed lossy WebP encoder takes 523 ms for a 1280 px photo at effort 4, 134 ms at effort 2,
+  63 ms at effort 0, against 20 to 35 ms for decoding (scaled on load), resizing (Lanczos 3) or encoding a JPEG.
+  Effort 2 gives photos of the same size and quality as effort 4 (196 and 199 KB, 36.9 and 37.1 dB) and screenshots as
+  small (11 KB, where efforts 0 and 1 give 16 to 17 KB): `ImageProcessor.Encoder` uses it. Variants then cost 11% more
+  wall time and 19% more CPU than with libvips (libjpeg-turbo and libwebp).
+- **Social cards** are 1.8 times slower, about 8 ms of wall time more per card at `-p 4`: per card, 21 to 34 ms to lay out
+  and draw the two text blocks (SixLabors.Fonts; a shared `DrawingTextCache` changes nothing) and 36 ms to encode the
+  1200x630 PNG at level 6 (libvips' default level too; level 3 takes 24 ms for a file 20% larger). The SVG background is
+  rasterized once per build (`_rasters`).
+- **Outputs**, ImageSharp against libvips on `images-all`: photo variants 2.2% smaller (PSNR median 39.8 dB, lowest
+  37.8 dB), screenshot variants 7.1% larger (44.6 dB), same dimensions everywhere. The cards differ in their font: the
+  description `sans` resolves through Fontconfig to Inter for Pango, to DejaVu Sans for `FontResolver`'s generic list,
+  which also makes them 10.7% larger.
+- **Distribution**: the linux-x64 binary is 51.1 MB with no library next to it, against 35.2 MB and an 18.5 MB
+  `libvips.so.42`; 21.9 MB compressed against 22.7 MB.
+
+**Styml** changes nothing measurable end to end: on the synthetic sites (`synthetic 8000`, `synthetic 32000, nav
+index`), the three binaries have the same user CPU (5.2 to 5.4 s for 8,000 pages) and page faults. Walls and system
+times on this container drift up with every run, whatever the binary (from 2.7 to 5.7 s for one binary over a series),
+so the first series, always in the order baseline, Styml, ImageSharp, made the later binaries look slower; with the
+order rotated and `sync` between runs, 8,000 pages build in 5.35, 5.30 and 5.20 s (medians). Front matter is a small
+part of these builds; Styml's own benchmarks put its reader at 3 to 5 times SharpYaml's speed.
+
 ### Small Markdown posts: the SSG comparison's blog, 2026-10-23
 
 `bench/ssg-comparison` builds a blog of 250 to 4000 posts of about 1 KB (the Douze version of eleventy-base-blog), so
